@@ -1,0 +1,12 @@
+{
+  "aggregate_sha256": "a90d46fc0e9523a227ad0df88a5cdbfaa2fb8abf74e94f2ee3c9aedfa2733744",
+  "file_count": 5,
+  "files": {
+    "constitution/IMMUTABLE_CONSTITUTION.json": "b1fe67d4d453c60d8fbb2c2f5859549dcc5f2d04fd0513f7a58acc05c8adee76",
+    "eval/chaos_qualification_suite.py": "47e6f433aeed98598b0e860cf946c69f64b0f59a3fc00fa6a2300f9e8e18f443",
+    "eval/extreme_stress_suite.py": "505e768332f9a9926220ee7f0760cd0fa594af8d9ff150a446d55423731742ba",
+    "eval/test_alpha_c13_stateful_selection.py": "efdf70cc7eac839e05341ea3de334dff17229bb6d27fa19add2de5c4d3823f91",
+    "src/am_ua/governance/seal_guard.py": "f45075ed7d251bd8fe8c55feb9db3ba8351faa7b84ad464f57b5b0508069c620"
+  },
+  "schema_version": "aethermind_seal_manifest/v1"
+}

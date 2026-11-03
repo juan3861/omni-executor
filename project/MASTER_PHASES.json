@@ -1,0 +1,266 @@
+{
+  "schema_version": "aethermind_master_phases/v1",
+  "project_name": "AetherMind Universal Agent (Super-Union v3.1)",
+  "project_root": "F:\\AetherMind_Universal_Agent",
+  "grand_narrative": "Unir 100% das engrenagens SOTA mundiais do Plano 1 (codex-rs, OpenHands SDK, hermes-agent, Letta Core Blocks, LangGraph checkpoints, browser-use + Stagehand + E2B, aider RepoMap + codebase-memory-mcp + ast-grep, gemini-cli evals, ASI-Evolve + AutoHarness) + oh-my-hermes v4.0.4 + arsenal provado AetherMind & Tags\\Projetos (Mnemos, URE Alpha-C10, MSEA Frankenstein v5 + FairScheduler + SafeEditPlan + PAF + DPAPI, MSEA Factory M0-M3 + Topology V2, AetherScan v1.3.0 Go 61ms + UCIP + Casimir, OmniRoute + rotor-llm adapter, RPA Bridge + Strict Auditor, AetherRE MCP, rotor-seed, Olho de Deus) + 8 refinamentos cirurgicos do Astra (R01, R04, R06, R08 OUTCOME_UNKNOWN, R10, R16, R18, Harbor Chaos Suite).",
+  "phases": [
+    {
+      "id": "P0",
+      "title": "Fundacao, Bussola Anti-Perda, Constituicao Imutavel e Homeostase (AM-08 / R09 / R17)",
+      "subphases": [
+        {
+          "id": "P0.1",
+          "title": "Workspace Blindado contra WpSystem e Farois de Entrada Multi-Agente",
+          "depends_on": [],
+          "required_files": ["pyproject.toml", "AGENTS.md", "CLAUDE.md", ".cursorrules", "START_HERE.md", "src/am_ua/__init__.py"],
+          "required_symbols": ["PROJECT_ROOT"],
+          "test_command": "tests/test_p0_foundation.py"
+        },
+        {
+          "id": "P0.2",
+          "title": "Motor Anti-Amnesia / Anti-Drift (Project Compass + SQLite WAL + Narrative State)",
+          "depends_on": ["P0.1"],
+          "required_files": ["project/MASTER_PHASES.json", "tools/project_compass.py", "aether-compass.cmd"],
+          "required_symbols": ["ProjectCompass", "SubphaseVerificationError"],
+          "test_command": "tests/test_p0_foundation.py"
+        },
+        {
+          "id": "P0.3",
+          "title": "Constituicao Imutavel e Seal Guard SHA-256 de Conteudo Real (R17)",
+          "depends_on": ["P0.1"],
+          "required_files": ["constitution/IMMUTABLE_CONSTITUTION.json", "src/am_ua/governance/seal_guard.py"],
+          "required_symbols": ["ConstitutionSealGuard", "ConstitutionalViolationError", "compute_content_sha256"],
+          "test_command": "tests/test_p0_foundation.py"
+        },
+        {
+          "id": "P0.4",
+          "title": "Governador de Homeostase Fisica, Poco de Casimir e Stop-Loss Economico (R09)",
+          "depends_on": ["P0.3"],
+          "required_files": ["src/am_ua/governance/homeostasis.py", "tests/test_p0_foundation.py"],
+          "required_symbols": ["HomeostasisGovernor", "casimir_collapse_force", "ResourceExhaustedError"],
+          "test_command": "tests/test_p0_foundation.py"
+        }
+      ]
+    },
+    {
+      "id": "P1",
+      "title": "Contratos Canonicos, Epistemologia Calibrada, Seguranca DPAPI e Motor Duravel OUTCOME_UNKNOWN (M0 / R01-R10 / R16)",
+      "subphases": [
+        {
+          "id": "P1.1",
+          "title": "CognitiveEnvelope v1, 6 Contratos Factory, ProblemFramingGate (R01), Taint (R16) e Hipotese Falsificavel (R04)",
+          "depends_on": ["P0.4"],
+          "required_files": ["src/am_ua/contracts/contracts.py"],
+          "required_symbols": ["CognitiveEnvelope", "MissionContract", "VerificationReceipt", "ProblemFramingGate", "HypothesisRecord", "TrustLevel", "EpistemicTag"],
+          "test_command": "tests/test_p1_contracts_durable.py"
+        },
+        {
+          "id": "P1.2",
+          "title": "CalibrationLedger com Brier Score por Dominio e Ajuste Dinamico de Autonomia (R06)",
+          "depends_on": ["P1.1"],
+          "required_files": ["src/am_ua/contracts/calibration.py"],
+          "required_symbols": ["CalibrationLedger", "DomainCalibrationStats"],
+          "test_command": "tests/test_p1_contracts_durable.py"
+        },
+        {
+          "id": "P1.3",
+          "title": "Envelope Criptografico Windows DPAPI e Protecao Anti-Replay Persistente",
+          "depends_on": ["P1.1"],
+          "required_files": ["src/am_ua/security/dpapi_envelope.py"],
+          "required_symbols": ["WindowsDPAPIProvider", "AuthenticatedEnvelopeManager", "ReplayAttackError"],
+          "test_command": "tests/test_p1_contracts_durable.py"
+        },
+        {
+          "id": "P1.4",
+          "title": "DurableStateEngine (LangGraph + FairScheduler + FencedWriter + R08 OUTCOME_UNKNOWN + Last-Mile URE Sieve)",
+          "depends_on": ["P1.2", "P1.3"],
+          "required_files": ["src/am_ua/execution/durable_engine.py", "tests/test_p1_contracts_durable.py"],
+          "required_symbols": ["DurableExecutionEngine", "FairDispatchScheduler", "FencedEffectWriter", "EffectClass", "OutcomeUnknownError"],
+          "test_command": "tests/test_p1_contracts_durable.py"
+        }
+      ]
+    },
+    {
+      "id": "P2",
+      "title": "Kernel hermes-win32-native, oh-my-hermes v4.0.4 Maestro e Enhancers DSH/OpenHands",
+      "subphases": [
+        {
+          "id": "P2.1",
+          "title": "Sincronizacao Vendor Isolada com PROVENANCE_LOCK.json SHA-256 (Zero Mutacao Externa)",
+          "depends_on": ["P1.4"],
+          "required_files": ["tools/vendor_sync.py", "vendor/PROVENANCE_LOCK.json"],
+          "required_symbols": ["sync_vendor_trees", "verify_vendor_provenance"],
+          "test_command": "tests/test_p2_hermes_omh_win32.py"
+        },
+        {
+          "id": "P2.2",
+          "title": "Patch Kernel Win32 Nativo (PTC TCP+HMAC Loopback, msvcrt Locks, Windows JobObjects e Browser ContextVars)",
+          "depends_on": ["P2.1"],
+          "required_files": ["vendor/hermes_agent/tools/win32_compat.py", "vendor/hermes_agent/tools/code_execution_tool.py", "vendor/hermes_agent/tools/environments/local.py"],
+          "required_symbols": ["Win32JobObject", "flock_exclusive"],
+          "test_command": "tests/test_p2_hermes_omh_win32.py"
+        },
+        {
+          "id": "P2.3",
+          "title": "Enhancers Runtime DSH e OpenHands SDK (PersistentPwsh, SpillToDisk, AntiLoop, ContextCondenser)",
+          "depends_on": ["P2.2"],
+          "required_files": ["src/am_ua/runtime/enhancers.py"],
+          "required_symbols": ["PersistentPwshSession", "SpillToDiskMiddleware", "RepeatToolLoopBreaker", "AmortizedContextCondenser"],
+          "test_command": "tests/test_p2_hermes_omh_win32.py"
+        },
+        {
+          "id": "P2.4",
+          "title": "Host Wiring oh-my-hermes v4.0.4 (/dag-ulw, Maestro Lanes) e Arbitro Experimental R10",
+          "depends_on": ["P2.3"],
+          "required_files": ["src/am_ua/runtime/omh_wiring.py", "tests/test_p2_hermes_omh_win32.py"],
+          "required_symbols": ["OMHMaestroBridge", "ExperimentalArbitrator"],
+          "test_command": "tests/test_p2_hermes_omh_win32.py"
+        }
+      ]
+    },
+    {
+      "id": "P3",
+      "title": "Triade de Memoria Universal (AM-02 / R13: Letta RAM + Mnemos Bi-Temporal + MSEA Frankenstein v5)",
+      "subphases": [
+        {
+          "id": "P3.1",
+          "title": "Camada 1: Letta Self-Editable Core Memory Blocks em RAM",
+          "depends_on": ["P2.4"],
+          "required_files": ["src/am_ua/memory/core_blocks.py"],
+          "required_symbols": ["CoreMemoryBlockStore", "CoreMemoryBlock"],
+          "test_command": "tests/test_p3_triad_memory.py"
+        },
+        {
+          "id": "P3.2",
+          "title": "Camada 2: Conector F:\\Mnemos (Hopfield + ACT-R + FSRS + HippoRAG + Graphiti Bi-Temporal)",
+          "depends_on": ["P3.1"],
+          "required_files": ["src/am_ua/memory/mnemos_connector.py"],
+          "required_symbols": ["MnemosBiTemporalAdapter"],
+          "test_command": "tests/test_p3_triad_memory.py"
+        },
+        {
+          "id": "P3.3",
+          "title": "Camada 3: Ponte MSEA Frankenstein Memory v5 (Q-Utility, Ancestor Credit, Conflict Preservation, Quarantine)",
+          "depends_on": ["P3.1"],
+          "required_files": ["src/am_ua/memory/msea_memory_bridge.mjs", "src/am_ua/memory/msea_client.py"],
+          "required_symbols": ["MSEAFrankensteinClient"],
+          "test_command": "tests/test_p3_triad_memory.py"
+        },
+        {
+          "id": "P3.4",
+          "title": "TriadMemoryProvider Oficial (Implementando Hermes MemoryProvider ABC)",
+          "depends_on": ["P3.2", "P3.3"],
+          "required_files": ["src/am_ua/memory/triad_provider.py", "tests/test_p3_triad_memory.py"],
+          "required_symbols": ["TriadMemoryProvider"],
+          "test_command": "tests/test_p3_triad_memory.py"
+        }
+      ]
+    },
+    {
+      "id": "P4",
+      "title": "Olhos Multi-Escala (AM-01), Musculo Codex Sandbox + SafeEditPlan e Roteador Cognitivo Universal (M1-M3)",
+      "subphases": [
+        {
+          "id": "P4.1",
+          "title": "Olhos de Silicio: fastmft / AetherScan v1.3.0 Wrapper + Compressao Topologica UCIP",
+          "depends_on": ["P3.4"],
+          "required_files": ["src/am_ua/perception/silicon_radar.py"],
+          "required_symbols": ["SiliconProjectRadar", "UCIPSummary"],
+          "test_command": "tests/test_p4_eyes_muscle_router.py"
+        },
+        {
+          "id": "P4.2",
+          "title": "Olhos Poliglotas: aider RepoMap PageRank + ast-grep + OMNI_TOPOLOGY_V2 + Federacao MCP (codebase-memory / AetherRE)",
+          "depends_on": ["P4.1"],
+          "required_files": ["src/am_ua/perception/polyglot_repomap.py"],
+          "required_symbols": ["PolyglotRepoMapper", "InterRepoTopologyGate", "MCPStdioClient"],
+          "test_command": "tests/test_p4_eyes_muscle_router.py"
+        },
+        {
+          "id": "P4.3",
+          "title": "Musculo de Codigo: codex.exe Precompiled MCP/Sandbox + MSEA SafeEditPlan + SAST StaticVerificationGate + Git Worktree Isolation + E2B",
+          "depends_on": ["P4.2"],
+          "required_files": ["src/am_ua/execution/safe_edit_bridge.mjs", "src/am_ua/execution/codex_muscle.py"],
+          "required_symbols": ["CodexSandboxMuscle", "SafeEditTransactionalJournal", "StaticVerificationGate", "WorktreeIsolationManager", "E2BRemoteSandboxAdapter"],
+          "test_command": "tests/test_p4_eyes_muscle_router.py"
+        },
+        {
+          "id": "P4.4",
+          "title": "Roteador Cognitivo Universal: OmniRoute v3.8.51 (/v1/responses + RTK) + Mesh Translator + rotor-llm Read-Only Adapter",
+          "depends_on": ["P4.3"],
+          "required_files": ["src/am_ua/routing/omni_router.py", "tests/test_p4_eyes_muscle_router.py"],
+          "required_symbols": ["UniversalCognitiveRouter", "ResponsesWireTranslator"],
+          "test_command": "tests/test_p4_eyes_muscle_router.py"
+        }
+      ]
+    },
+    {
+      "id": "P5",
+      "title": "Browser/GUI Fechado (Stagehand + PAF + RPA Bridge + Olho de Deus) e Auto-Evolucao Neuro-Simbolica (URE + ASI-Evolve)",
+      "subphases": [
+        {
+          "id": "P5.1",
+          "title": "VerifiedBrowserAdapter (Contrato OMH + Stagehand + PAF + RPA Janela Isolada + Exa OSINT + DocumentMultimodalOrgan Taint R16)",
+          "depends_on": ["P4.4"],
+          "required_files": ["src/am_ua/gui/verified_browser_adapter.py"],
+          "required_symbols": ["VerifiedBrowserAdapter", "OlhoDeDeusOSINT", "DocumentMultimodalOrgan"],
+          "test_command": "tests/test_p5_gui_ure_evolve.py"
+        },
+        {
+          "id": "P5.2",
+          "title": "Ponte Neuro-Simbolica URE Alpha-C10 (CFGGrammarSieve, PearlCausalEngine, Z3 UnsatCore, TimeTravelEngine)",
+          "depends_on": ["P5.1"],
+          "required_files": ["src/am_ua/cognition/ure_bridge.py"],
+          "required_symbols": ["URENeuroSymbolicBridge"],
+          "test_command": "tests/test_p5_gui_ure_evolve.py"
+        },
+        {
+          "id": "P5.3",
+          "title": "Motor Constitucional ASI-Evolve (UCB1 / MAP-Elites) + AutoHarness com Gate Pareto Selado",
+          "depends_on": ["P5.2"],
+          "required_files": ["src/am_ua/evolution/constitutional_evolver.py", "tests/test_p5_gui_ure_evolve.py"],
+          "required_symbols": ["ConstitutionalEvolver", "AutoHarnessSynthesizer"],
+          "test_command": "tests/test_p5_gui_ure_evolve.py"
+        }
+      ]
+    },
+    {
+      "id": "P6",
+      "title": "Orquestrador Universal, CLI aether-ua, Qualificacao Caotica Harbor (7 Cenarios), Handoff R18 e Auditoria OMEGA",
+      "subphases": [
+        {
+          "id": "P6.1",
+          "title": "Fachada Universal AgentKernel (SingleStateOwner + OTel TelemetrySpanLedger + FastPathBaseline + AutonomousTriggerScheduler) e CLI aether-ua.cmd",
+          "depends_on": ["P5.3"],
+          "required_files": ["src/am_ua/agent_kernel.py", "src/am_ua/cli.py", "aether-ua.cmd"],
+          "required_symbols": ["AetherMindUniversalAgent", "TelemetrySpanLedger", "AutonomousTriggerScheduler"],
+          "test_command": "tests/test_p6_kernel_cli_handoff.py"
+        },
+        {
+          "id": "P6.2",
+          "title": "Exportador de Transferencia a Frio HandoffPackExporter (Astra R18)",
+          "depends_on": ["P6.1"],
+          "required_files": ["src/am_ua/lifecycle/handoff_exporter.py", "tests/test_p6_kernel_cli_handoff.py"],
+          "required_symbols": ["HandoffPackExporter"],
+          "test_command": "tests/test_p6_kernel_cli_handoff.py"
+        },
+        {
+          "id": "P6.3",
+          "title": "Bateria Adversarial de Qualificacao Caotica de 7 Cenarios (Harbor-Style) e Selagem Final",
+          "depends_on": ["P6.2"],
+          "required_files": ["eval/chaos_qualification_suite.py", "constitution/SEAL_SHA256_MANIFEST.json"],
+          "required_symbols": ["run_all_chaos_scenarios"],
+          "test_command": "eval/chaos_qualification_suite.py"
+        },
+        {
+          "id": "P6.4",
+          "title": "Homologacao Final no AetherMind_Strict_Auditor.py e Geracao do Handoff Pack Oficial",
+          "depends_on": ["P6.3"],
+          "required_files": [".proof/STRICT_AUDITOR_RECEIPT.json", "HANDOFF_PACK/VERIFICATION_RECEIPT.json"],
+          "required_symbols": [],
+          "test_command": "eval/chaos_qualification_suite.py"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aethermind-universal-agent"
+version = "1.0.0"
+description = "AetherMind Universal Ceiling-Level Engineering & General Agent (Super-Union v3.1)"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = []
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests", "eval"]
+pythonpath = ["src", "vendor/oh_my_hermes/src", "vendor/hermes_agent"]
+norecursedirs = [
+    "WpSystem",
+    "$RECYCLE.BIN",
+    "System Volume Information",
+    "vendor",
+    ".git",
+    ".venv",
+    "__pycache__",
+    "HANDOFF_PACK",
+]
+addopts = "-ra --strict-markers"

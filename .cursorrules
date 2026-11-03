@@ -1,0 +1,4 @@
+Always read AGENTS.md and run `F:\AetherMind_Universal_Agent\aether-compass.cmd resume-brief` before making changes.
+Never touch external canonical repositories (F:\rotor-llm, rotor-seed, D:\AetherRE_Megazord, MSEA, E:\Tools\maps\aetherscan).
+Always keep TMP=F:\AetherMind_Temp and TEMP=F:\AetherMind_Temp. Never run git push or use -ngl 99 on RX 580.
+Advance subphases exclusively via `F:\AetherMind_Universal_Agent\aether-compass.cmd verify <SUBPHASE_ID>`.

@@ -1,0 +1,246 @@
+"""TriadMemoryProvider — Unified Hermes `MemoryProvider` Subclass (P3.4).
+
+Unifies all 3 memory tiers behind the official `hermes-agent` `MemoryProvider` ABC:
+  1. `CoreMemoryBlockStore` (Letta self-editable RAM blocks)
+  2. `MnemosBiTemporalAdapter` (Hopfield + ACT-R + FSRS + Graphiti bi-temporal)
+  3. `MSEAFrankensteinClient` (Q-Utility learning, ancestor provenance credit,
+     R13 conflict preservation, low-confidence quarantine, evidence projection).
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+ROOT = Path(__file__).resolve().parents[3]
+VENDOR_HERMES = ROOT / "vendor" / "hermes_agent"
+if VENDOR_HERMES.is_dir() and str(VENDOR_HERMES) not in sys.path:
+    sys.path.insert(0, str(VENDOR_HERMES))
+
+from agent.memory_provider import MemoryProvider  # type: ignore[import-untyped]
+
+from .core_blocks import CoreMemoryBlockStore
+from .mnemos_connector import MnemosBiTemporalAdapter
+from .msea_client import MSEAFrankensteinClient
+
+
+class TriadMemoryProvider(MemoryProvider):
+    """Sovereign Triad Memory Provider implementing Hermes `MemoryProvider` ABC."""
+
+    def __init__(
+        self,
+        data_dir: Optional[Path | str] = None,
+        *,
+        embedding_dim: int = 256,
+    ) -> None:
+        base_dir = Path(data_dir or (ROOT / "data" / "triad_memory")).resolve()
+        base_dir.mkdir(parents=True, exist_ok=True)
+        self.data_dir = base_dir
+        self.core_blocks = CoreMemoryBlockStore(base_dir / "core_blocks.json")
+        self.mnemos = MnemosBiTemporalAdapter(base_dir / "mnemos_triad.db", embedding_dim=embedding_dim)
+        self.msea = MSEAFrankensteinClient(base_dir / "msea_atoms.json")
+        self._session_id: str = "default"
+        self._agent_context: str = "primary"
+        self._prefetched_cache: Dict[str, str] = {}
+
+    @property
+    def name(self) -> str:
+        return "aethermind_triad"
+
+    def is_available(self) -> bool:
+        return self.msea.bridge_script.is_file() and self.msea.msea_root.is_dir()
+
+    def initialize(self, session_id: str, **kwargs: Any) -> None:
+        self._session_id = session_id or "default"
+        self._agent_context = str(kwargs.get("agent_context", "primary"))
+
+    def system_prompt_block(self) -> str:
+        return self.core_blocks.compile_system_prompt()
+
+    def recall_triad(self, query: str, *, limit: int = 4) -> Dict[str, Any]:
+        """Cross-tier retrieval combining Mnemos bi-temporal + MSEA Q-utility + conflicts."""
+        mnemos_res = self.mnemos.retrieve(query, limit=limit)
+        msea_res = self.msea.retrieve(query, limit=limit)
+        all_atoms = self.msea.inspect_atoms(include_inactive=False)
+        unresolved_conflicts = [
+            {
+                "id": a["id"],
+                "factKey": a.get("factKey"),
+                "content": a.get("content"),
+                "conflictsWith": a.get("conflictsWith", []),
+            }
+            for a in all_atoms
+            if a.get("conflictsWith")
+        ]
+        return {
+            "mnemos": mnemos_res,
+            "msea": msea_res,
+            "unresolved_conflicts": unresolved_conflicts,
+        }
+
+    def prefetch(self, query: str, *, session_id: str = "") -> str:
+        sid = session_id or self._session_id
+        if sid in self._prefetched_cache and not query.strip():
+            return self._prefetched_cache.pop(sid)
+        if not query or not query.strip():
+            return ""
+        recalled = self.recall_triad(query, limit=3)
+        lines: List[str] = ["<triad_memory_recall>"]
+        for item in recalled["mnemos"]["items"]:
+            lines.append(
+                f"  <mnemos id='{item['id'][:8]}' score='{item['score']:.3f}'>{item['content']}</mnemos>"
+            )
+        for hit in recalled["msea"].get("hits", []):
+            atom = hit.get("atom", hit)
+            q_val = float(atom.get("qValue", 0.0))
+            lines.append(
+                f"  <msea id='{str(atom.get('id', ''))[:8]}' q='{q_val:.3f}'>{atom.get('content', '')}</msea>"
+            )
+        for conf in recalled["unresolved_conflicts"]:
+            lines.append(
+                f"  <conflict factKey='{conf['factKey']}' id='{str(conf['id'])[:8]}'>{conf['content']}</conflict>"
+            )
+        lines.append("</triad_memory_recall>")
+        rendered = "\n".join(lines) if len(lines) > 2 else ""
+        self._prefetched_cache[sid] = rendered
+        return rendered
+
+    def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
+        if query and query.strip():
+            self.prefetch(query, session_id=session_id)
+
+    def sync_turn(self, user_content: str, assistant_content: str, *, session_id: str = "") -> None:
+        if self._agent_context not in ("primary", ""):
+            return
+        summary = f"User: {user_content.strip()[:240]} | Agent: {assistant_content.strip()[:240]}"
+        if not summary.strip(" |User:Agent"):
+            return
+        self.mnemos.write_memory(
+            summary,
+            memory_type="episodic",
+            importance=0.55,
+            source_origin=f"session:{session_id or self._session_id}",
+        )
+        self.msea.ingest_atom(
+            summary,
+            kind="episodic",
+            confidence=0.75,
+            source=f"session://{session_id or self._session_id}",
+        )
+
+    def record_verified_fact(
+        self,
+        content: str,
+        *,
+        fact_key: Optional[str] = None,
+        confidence: float = 0.85,
+        parent_msea_ids: Optional[List[str]] = None,
+        trust_level: str = "TRUSTED_INTERNAL",
+    ) -> Dict[str, Any]:
+        """Write a structured fact to both Mnemos and MSEA and trigger R13 governance."""
+        if trust_level == "UNTRUSTED_DATA":
+            confidence = min(confidence, 0.20)
+        mn_rec = self.mnemos.write_memory(
+            content,
+            memory_type="semantic",
+            importance=max(0.1, min(1.0, confidence)),
+            trust_level=trust_level,
+            auto_invalidate_conflicts=False,
+        )
+        ms_atom = self.msea.ingest_atom(
+            content,
+            kind="semantic",
+            fact_key=fact_key,
+            confidence=confidence,
+            parent_ids=parent_msea_ids,
+            source=f"triad://{trust_level.lower()}",
+        )
+        gov = self.msea.govern(confidence_threshold=0.25)
+        return {"mnemos_record": mn_rec, "msea_atom": ms_atom, "governance": gov}
+
+    def get_tool_schemas(self) -> List[Dict[str, Any]]:
+        return [
+            {
+                "name": "core_memory_append",
+                "description": "Append concise text to a pinned RAM CoreMemoryBlock.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "label": {"type": "string"},
+                        "content": {"type": "string"},
+                    },
+                    "required": ["label", "content"],
+                },
+            },
+            {
+                "name": "core_memory_replace",
+                "description": "Surgically replace an exact substring inside a CoreMemoryBlock.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "label": {"type": "string"},
+                        "old_substring": {"type": "string"},
+                        "new_substring": {"type": "string"},
+                    },
+                    "required": ["label", "old_substring", "new_substring"],
+                },
+            },
+            {
+                "name": "triad_recall",
+                "description": "Recall bi-temporal Mnemos + utility-weighted MSEA memories.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "limit": {"type": "integer", "default": 4},
+                    },
+                    "required": ["query"],
+                },
+            },
+            {
+                "name": "triad_record_outcome",
+                "description": "Reinforce or penalize MSEA memory atoms based on empirical test outcome.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "memory_ids": {"type": "array", "items": {"type": "string"}},
+                        "passed": {"type": "boolean"},
+                    },
+                    "required": ["memory_ids", "passed"],
+                },
+            },
+        ]
+
+    def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs: Any) -> str:
+        if tool_name == "core_memory_append":
+            blk = self.core_blocks.append(str(args["label"]), str(args["content"]))
+            return json.dumps({"ok": True, "label": blk.label, "revision": blk.revision})
+        if tool_name == "core_memory_replace":
+            blk = self.core_blocks.replace(
+                str(args["label"]),
+                str(args["old_substring"]),
+                str(args["new_substring"]),
+            )
+            return json.dumps({"ok": True, "label": blk.label, "revision": blk.revision})
+        if tool_name == "triad_recall":
+            res = self.recall_triad(str(args["query"]), limit=int(args.get("limit", 4)))
+            return json.dumps({"ok": True, **res}, default=str)
+        if tool_name == "triad_record_outcome":
+            out = self.msea.learn_outcome(
+                list(args.get("memory_ids", [])),
+                bool(args["passed"]),
+            )
+            return json.dumps({"ok": True, "outcome": out}, default=str)
+        return json.dumps({"ok": False, "error": f"Unsupported Triad tool: {tool_name}"})
+
+    def on_memory_write(self, action: str, target: str, content: str) -> None:
+        block_label = "USER_PREFS" if target == "user" else "ACTIVE_MISSION"
+        if action == "add" and content.strip():
+            self.mnemos.write_memory(content, memory_type="semantic", source_origin=f"builtin:{target}")
+            if len(self.core_blocks.get(block_label).value) + len(content) + 2 <= self.core_blocks.get(block_label).limit:
+                self.core_blocks.append(block_label, content, source_origin=f"mirror:{target}")
+
+    def shutdown(self) -> None:
+        self._prefetched_cache.clear()

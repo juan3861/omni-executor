@@ -1,0 +1,26 @@
+{
+  "schema_version": "aethermind_vendor_provenance/v1",
+  "sources": {
+    "hermes_agent": {
+      "copied_file_count": 1308,
+      "license": "MIT",
+      "origin_path": "F:\\AetherMind_External_Tools\\hermes-agent-main\\hermes-agent-main",
+      "origin_tree_digest": "6014211fc920d471ce988c57affaf4d6e529c3b69bfec9c229814b72f34f3d04",
+      "win32_patched_files_sha256": {
+        "gateway/session_context.py": "029bcfefe5fb8ac42f77a6224c5da7120e6c25f4c3e1b571c097278d7e857666",
+        "tools/code_execution_tool.py": "bf9cece349735a5d63880998657e0bdaac4b7c98650eb80a240fc717b1a093dc",
+        "tools/environments/local.py": "6191ae0ada29623e09b77d550de4ab09f27cf008d530e28ff90afc9a9543a1d4",
+        "tools/registry.py": "e9bd9665a99b7f2d434c963c77f20da89ecfaae9c9d04a74c7dcad778cf9a858",
+        "tools/win32_compat.py": "cde8c3518645a15ec546a04ddce6b53ffaa4658708765e9fa22c3fa249de8aa9"
+      }
+    },
+    "oh_my_hermes": {
+      "copied_file_count": 2218,
+      "license": "MIT",
+      "origin_path": "F:\\AetherMind_Temp\\oh-my-hermes_audit",
+      "origin_tree_digest": "e0d0684e108b2189d02f5fc980b1e7271100224fd86ae7f90c4347eeebdf3804",
+      "version": "4.0.4"
+    }
+  },
+  "synced_at": "2026-11-02T07:19:15.146416+00:00"
+}

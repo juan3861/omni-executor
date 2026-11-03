@@ -1,0 +1,11 @@
+# Runtime state (regenerated; tracked via compass receipts instead)
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.jsonl
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+# Local scratch / eval sandboxes
+.am_eval_runs/

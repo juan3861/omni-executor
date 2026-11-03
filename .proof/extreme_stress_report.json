@@ -1,0 +1,280 @@
+{
+  "schema": "aethermind_ua_extreme_stress_report/v1",
+  "timestamp_utc": "2026-11-02T08:19:18Z",
+  "all_passed": true,
+  "isolated_passed_count": 18,
+  "isolated_total_count": 18,
+  "whole_passed_count": 3,
+  "whole_total_count": 3,
+  "total_duration_ms": 135841.45,
+  "isolated_chambers": [
+    {
+      "chamber": "I01_ConstitutionSealGuard",
+      "passed": true,
+      "duration_ms": 2080.78,
+      "metrics": {
+        "concurrent_sha256_seal_checks": 400,
+        "adversarial_writes_blocked": 210,
+        "adversarial_commands_blocked": 90
+      }
+    },
+    {
+      "chamber": "I02_HomeostasisGovernor_R09",
+      "passed": true,
+      "duration_ms": 203.26,
+      "metrics": {
+        "concurrent_volume_samples": 240,
+        "r09_unproductive_stoploss_tripped": true,
+        "r09_token_budget_stoploss_tripped": true
+      }
+    },
+    {
+      "chamber": "I03_ProblemFramingGate_R01",
+      "passed": true,
+      "duration_ms": 31.08,
+      "metrics": {
+        "contracts_evaluated": 600,
+        "contradictions_halted_with_counterproposal": 300,
+        "valid_approved": 300
+      }
+    },
+    {
+      "chamber": "I04_CalibrationLedger_R06",
+      "passed": true,
+      "duration_ms": 7576.4,
+      "metrics": {
+        "concurrent_sqlite_wal_writes": 800,
+        "good_tier": "FULL_AUTONOMY",
+        "overconfident_tier": "REQUIRE_DOUBLE_CHECK",
+        "shrunk_confidence_from_0_95": 0.19
+      }
+    },
+    {
+      "chamber": "I05_DPAPI_ReplayVault",
+      "passed": true,
+      "duration_ms": 8539.28,
+      "metrics": {
+        "dpapi_hmac_envelopes_verified": 640,
+        "replay_attacks_blocked": 640,
+        "tampered_signatures_blocked": 128
+      }
+    },
+    {
+      "chamber": "I06_FairDispatchScheduler",
+      "passed": true,
+      "duration_ms": 15.48,
+      "metrics": {
+        "total_queued_candidates": 2500,
+        "aged_priority0_promoted_first": 50,
+        "zero_starvation_proven": true
+      }
+    },
+    {
+      "chamber": "I07_FencedEffectWriter_Race",
+      "passed": true,
+      "duration_ms": 6569.79,
+      "metrics": {
+        "concurrent_same_key_acquisitions": 640,
+        "unique_monotonic_epochs": 640,
+        "superseded_zombies_fenced": 639
+      }
+    },
+    {
+      "chamber": "I08_DurableEngine_R08_Sieve",
+      "passed": true,
+      "duration_ms": 3152.78,
+      "metrics": {
+        "concurrent_missions": 24,
+        "wal_step_checkpoints_verified": 120,
+        "cfg_sieve_exploit_blocked": true
+      }
+    },
+    {
+      "chamber": "I09_Hermes_Win32_PTC_JobObjects",
+      "passed": true,
+      "duration_ms": 4965.03,
+      "metrics": {
+        "concurrent_ptc_tcp_hmac_sessions": 6,
+        "total_rpc_tool_calls_over_loopback": 36,
+        "win32_jobobject_tree_kill_verified": true
+      }
+    },
+    {
+      "chamber": "I10_OMH_Maestro_Enhancers",
+      "passed": true,
+      "duration_ms": 1917.5,
+      "metrics": {
+        "concurrent_omh_identities": 24,
+        "pwsh_persistent_commands": 25,
+        "spilled_bytes_verified": 2129967,
+        "condensed_turns_200_to": 9,
+        "r10_overruled_50_votes": true,
+        "synapse_brackets_verified": 4,
+        "symbolic_bypass_result": 66560
+      }
+    },
+    {
+      "chamber": "I11_TriadMemory_Concurrency",
+      "passed": true,
+      "duration_ms": 9097.45,
+      "metrics": {
+        "core_memory_concurrent_edits": 320,
+        "mnemos_bitemporal_atoms": 25,
+        "msea_frankenstein_atoms_zero_loss": 18,
+        "r13_conflicts_preserved": 2
+      }
+    },
+    {
+      "chamber": "I12_SiliconRadar_PolyglotRepoMap",
+      "passed": true,
+      "duration_ms": 587.5,
+      "metrics": {
+        "aetherscan_binary_invoked": true,
+        "ucip_files_scanned": 37,
+        "ucip_token_reduction_pct": 90.9,
+        "pagerank_ranked_files": 37,
+        "topology_violations": 0
+      }
+    },
+    {
+      "chamber": "I13_CodexMuscle_SafeEdit_Worktree",
+      "passed": true,
+      "duration_ms": 25657.94,
+      "metrics": {
+        "codex_stdio_and_sandbox_ok": true,
+        "clean_atomic_edits": 12,
+        "sast_secret_poisons_auto_rolled_back": 8,
+        "parallel_git_worktrees_verified_and_cleaned": 4
+      }
+    },
+    {
+      "chamber": "I14_UniversalCognitiveRouter",
+      "passed": true,
+      "duration_ms": 31.6,
+      "metrics": {
+        "concurrent_distinct_judge_routes": 500,
+        "rtk_saved_chars": 68,
+        "wire_translation_verified": true
+      }
+    },
+    {
+      "chamber": "I15_Browser_OSINT_DocumentOrgan",
+      "passed": true,
+      "duration_ms": 512.05,
+      "metrics": {
+        "concurrent_isolated_browser_leases_cleaned": 16,
+        "multimodal_docx_xlsx_ingested": 40,
+        "prompt_injections_caught": 20,
+        "olho_de_deus_script_ready": true
+      }
+    },
+    {
+      "chamber": "I16_URE_NeuroSymbolic_Stress",
+      "passed": true,
+      "duration_ms": 955.63,
+      "metrics": {
+        "cfg_sieve_valid_accepted": 200,
+        "cfg_sieve_attacks_rejected": 200,
+        "z3_unsat_cores_extracted": 12,
+        "pearl_counterfactual_verified": true
+      }
+    },
+    {
+      "chamber": "I17_ConstitutionalEvolver_AutoHarness",
+      "passed": true,
+      "duration_ms": 2949.89,
+      "metrics": {
+        "asi_evolve_generations": 80,
+        "pareto_elites_admitted": 16,
+        "regressions_and_dominated_rejected": 64,
+        "autoharness_verified": 12,
+        "autoharness_ast_escapes_blocked": 3
+      }
+    },
+    {
+      "chamber": "I18_Telemetry_AutonomousTriggers",
+      "passed": true,
+      "duration_ms": 2265.06,
+      "metrics": {
+        "concurrent_otel_spans_lossless": 1120,
+        "trigger_ticks_executed": 40,
+        "handler_counts": {
+          "alpha": 80,
+          "beta": 20
+        }
+      }
+    }
+  ],
+  "whole_organism_campaigns": [
+    {
+      "campaign": "W01_InProcess_Sovereign_Swarm",
+      "passed": true,
+      "duration_ms": 13863.21,
+      "metrics": {
+        "concurrent_kernel_missions_verified": 16,
+        "fast_path_missions": 8,
+        "full_maestro_dag_missions": 8,
+        "split_brain_mutation_blocked": true
+      }
+    },
+    {
+      "campaign": "W02_Live_CLI_Parallel_Mission_Barrage",
+      "passed": true,
+      "duration_ms": 36465.76,
+      "metrics": {
+        "parallel_cli_subprocesses_launched": 8,
+        "sequential_cli_missions_launched": 2,
+        "total_live_cli_missions_verified": 10,
+        "sample_missions": [
+          {
+            "mission_id": "cli-1793607516965-c145d425",
+            "status": "VERIFIED",
+            "steps_completed": 4,
+            "actor_route": "omniroute",
+            "judge_route": "mesh_gateway",
+            "brier_score": 0.0225,
+            "elapsed_ms": 6208.92
+          },
+          {
+            "mission_id": "cli-1793607518064-775c523a",
+            "status": "VERIFIED",
+            "steps_completed": 5,
+            "actor_route": "omniroute",
+            "judge_route": "mesh_gateway",
+            "brier_score": 0.0225,
+            "elapsed_ms": 6528.91
+          },
+          {
+            "mission_id": "cli-1793607524326-775aa4d8",
+            "status": "VERIFIED",
+            "steps_completed": 4,
+            "actor_route": "omniroute",
+            "judge_route": "mesh_gateway",
+            "brier_score": 0.0225,
+            "elapsed_ms": 7519.43
+          },
+          {
+            "mission_id": "cli-1793607544208-dedd343c",
+            "status": "VERIFIED",
+            "steps_completed": 4,
+            "actor_route": "omniroute",
+            "judge_route": "mesh_gateway",
+            "brier_score": 0.0225,
+            "elapsed_ms": 5156.81
+          }
+        ]
+      }
+    },
+    {
+      "campaign": "W03_PostStress_Doctor_Handoff_SealAudit",
+      "passed": true,
+      "duration_ms": 7855.82,
+      "metrics": {
+        "post_stress_doctor_all_true": true,
+        "f_drive_free_gb": 23.43,
+        "handoff_files_exported": 5,
+        "constitutional_seal_intact": true
+      }
+    }
+  ]
+}

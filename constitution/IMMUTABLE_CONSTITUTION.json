@@ -1,0 +1,37 @@
+{
+  "schema_version": "aethermind_immutable_constitution/v1",
+  "owner": "Mestre Ruan",
+  "license_policy": {
+    "allowed_core_licenses": ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "PSF-2.0"],
+    "quarantined_licenses": ["AGPL-3.0", "GPL-3.0-only", "SSPL-1.0"],
+    "quarantined_repositories": ["skyvern-main", "claude-mem-main", "ecosystems-repos"]
+  },
+  "untouchable_external_paths": [
+    "F:\\rotor-llm",
+    "C:\\Users\\juanp\\WorkBuddy AI\\2026-09-22-20-59-03\\rotor-seed",
+    "D:\\AetherRE_Megazord",
+    "F:\\Modular Self-Evolving Agent (MSEA)",
+    "F:\\MSEA_WORKTREES\\mcp-runtime-v2",
+    "E:\\Tools\\maps\\aetherscan"
+  ],
+  "self_modification_forbidden_prefixes": [
+    "constitution/",
+    "eval/",
+    "src/am_ua/governance/seal_guard.py"
+  ],
+  "hardware_safety_locks": {
+    "gpu_model": "AMD Radeon RX 580",
+    "forbidden_cli_flags": ["-ngl 99", "--n-gpu-layers 99", "--gpu-layers 99"],
+    "safe_temp_root": "F:\\AetherMind_Temp",
+    "cargo_target_root": "F:\\AetherMind_Cargo_Target",
+    "min_free_bytes_f_drive": 1073741824,
+    "min_free_bytes_c_drive": 524288000
+  },
+  "operational_laws": {
+    "allow_remote_git_push": false,
+    "allow_blind_rpa": false,
+    "require_isolated_browser_window": true,
+    "require_outcome_unknown_reconciliation_on_timeout": true,
+    "actor_cannot_be_own_judge": true
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "AetherMind UA: Doctor (100% Health Check)",
+      "type": "shell",
+      "command": "${workspaceFolder}\\aether-ua.cmd",
+      "args": ["doctor"],
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "AetherMind UA: Compass Resume-Brief (27/27 Anti-Lost)",
+      "type": "shell",
+      "command": "${workspaceFolder}\\aether-compass.cmd",
+      "args": ["resume-brief"],
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "AetherMind UA: Execute Mission",
+      "type": "shell",
+      "command": "${workspaceFolder}\\aether-ua.cmd",
+      "args": [
+        "mission",
+        "Auditar arquitetura, mapear simbolos criticos via PageRank e validar invariantes constitucionais",
+        "--scan-dir",
+        "${workspaceFolder}\\src\\am_ua",
+        "--repomap-dir",
+        "${workspaceFolder}\\src\\am_ua"
+      ],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "AetherMind UA: Extreme Stress Suite (Isolated + Whole)",
+      "type": "shell",
+      "command": "C:\\Users\\juanp\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+      "args": ["${workspaceFolder}\\eval\\extreme_stress_suite.py"],
+      "options": {
+        "env": {
+          "TMP": "F:\\AetherMind_Temp",
+          "TEMP": "F:\\AetherMind_Temp",
+          "PYTHONPATH": "${workspaceFolder}\\src;${workspaceFolder}\\vendor\\hermes_agent;${workspaceFolder}\\vendor\\oh_my_hermes\\src"
+        }
+      },
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "schema": "alpha_c13_stateful_selection_proof/v1",
+  "protocol": "MASTER PROMPT ALPHA-C13 — STATEFUL-SELECTION",
+  "timestamp_utc": "2026-11-02T21:10:00Z",
+  "engine_path": "F:\\AetherMind_Universal_Agent\\src\\am_ua\\governance\\alpha_c13.py",
+  "test_path": "F:\\AetherMind_Universal_Agent\\eval\\test_alpha_c13_stateful_selection.py",
+  "auditor_verdict": "APROVADO",
+  "exit_code": 0,
+  "chambers": [
+    {
+      "name": "AcceptanceContract_Gate_Immutability",
+      "status": "PASS",
+      "required_gate_refuses_na": true,
+      "required_gate_refuses_unknown": true
+    },
+    {
+      "name": "StatefulSelectionLedger",
+      "status": "PASS",
+      "atomic_pre_consumption": true,
+      "crash_slot_not_refunded": true,
+      "nan_inf_rejected": true,
+      "string_boolean_rejected": true,
+      "budget_exhaustion_enforced": true,
+      "holm_bonferroni_computed": true
+    },
+    {
+      "name": "Discovery100_Lineage_Dedup",
+      "status": "PASS",
+      "mirror_fork_rejected": true,
+      "pareto_elevation_required": true,
+      "false_negative_rate_sampling": true
+    },
+    {
+      "name": "ClusterAware_Rollouts",
+      "status": "PASS",
+      "independent_cluster_aggregation": true,
+      "anti_pseudoreplication_verified": true
+    },
+    {
+      "name": "AntiGoodhart_Promoter",
+      "status": "PASS",
+      "safety_regression_blocked": true,
+      "insufficient_gain_rejected": true,
+      "tradeoff_review_routed": true,
+      "epsilon_q_cost_reduction_admitted": true
+    },
+    {
+      "name": "BenchmarkSanity_Oracle",
+      "status": "PASS",
+      "known_good_passed": true,
+      "mutants_rejected": true,
+      "blind_benchmark_refuted": true
+    },
+    {
+      "name": "AGI_ASI_Divergence_Engine",
+      "status": "PASS",
+      "empirical_experiment_generated": true,
+      "rollback_trigger_specified": true
+    }
+  ]
+}
