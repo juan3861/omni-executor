@@ -1,15 +1,15 @@
 {
   "schema_version": "aethermind_harbor_chaos_qualification/v1",
-  "timestamp_unix": 1793608211.8039749,
+  "timestamp_unix": 1793715742.5076964,
   "total_scenarios": 7,
   "passed_scenarios": 7,
   "all_passed": true,
-  "total_duration_ms": 7448.59,
+  "total_duration_ms": 9459.69,
   "results": [
     {
       "scenario": "T1_ProblemFraming_Contradiction_Gate",
       "passed": true,
-      "duration_ms": 0.81,
+      "duration_ms": 0.92,
       "detail": {
         "halted": true,
         "contradictions": [
@@ -20,7 +20,7 @@
     {
       "scenario": "T2_OutcomeUnknown_Reconcile_And_Zombie_Fence",
       "passed": true,
-      "duration_ms": 110.25,
+      "duration_ms": 221.49,
       "detail": {
         "mutator_executions": 1,
         "zombie_blocked": true
@@ -29,7 +29,7 @@
     {
       "scenario": "T3_Indirect_Prompt_Injection_Docx_Block",
       "passed": true,
-      "duration_ms": 34.34,
+      "duration_ms": 101.7,
       "detail": {
         "taint_blocked": true,
         "indicators": 2
@@ -38,7 +38,7 @@
     {
       "scenario": "T4_Empirical_Oracle_Over_Majority_And_Z3",
       "passed": true,
-      "duration_ms": 149.38,
+      "duration_ms": 239.22,
       "detail": {
         "winner": "empirical_truth_b",
         "unsat_core": [
@@ -50,7 +50,7 @@
     {
       "scenario": "T5_Constitutional_Seal_SAST_Rollback_Worktree",
       "passed": true,
-      "duration_ms": 4647.16,
+      "duration_ms": 5402.14,
       "detail": {
         "tamper_blocked": 2,
         "sast_auto_rolled_back": true
@@ -59,7 +59,7 @@
     {
       "scenario": "T6_Triad_Memory_Conflict_Preservation_And_Q",
       "passed": true,
-      "duration_ms": 1275.59,
+      "duration_ms": 1531.26,
       "detail": {
         "conflicts_preserved": 1,
         "root_q": 0.057600000000000005
@@ -68,7 +68,7 @@
     {
       "scenario": "T7_StopLoss_DPAPI_AntiReplay_Seal_And_Handoff",
       "passed": true,
-      "duration_ms": 1228.57,
+      "duration_ms": 1956.65,
       "detail": {
         "stoploss_tripped": true,
         "dpapi_replay_blocked": true

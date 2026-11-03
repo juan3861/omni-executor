@@ -1,5 +1,12 @@
-"""Durable Execution, Fair Dispatch, Fenced Writers, Codex Sandbox & SafeEditPlan."""
+"""Durable Execution, Fair Dispatch, Fenced Writers, Codex Sandbox, SafeEditPlan & AgentLoop."""
 
+from .agent_loop import (
+    AgentLoop,
+    AgentRunResult,
+    WorkspaceTools,
+    RepeatToolLoopBreaker,
+    RepeatToolLoopError,
+)
 from .durable_engine import (
     DurableExecutionEngine,
     EffectClass,
@@ -15,6 +22,11 @@ from .durable_engine import (
 )
 
 __all__ = [
+    "AgentLoop",
+    "AgentRunResult",
+    "WorkspaceTools",
+    "RepeatToolLoopBreaker",
+    "RepeatToolLoopError",
     "DurableExecutionEngine",
     "EffectClass",
     "FairDispatchScheduler",

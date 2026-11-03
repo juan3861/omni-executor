@@ -1,17 +1,17 @@
 {
   "schema": "aethermind_ua_extreme_stress_report/v1",
-  "timestamp_utc": "2026-11-02T08:19:18Z",
+  "timestamp_utc": "2026-11-03T13:58:38Z",
   "all_passed": true,
   "isolated_passed_count": 18,
   "isolated_total_count": 18,
   "whole_passed_count": 3,
   "whole_total_count": 3,
-  "total_duration_ms": 135841.45,
+  "total_duration_ms": 144944.97,
   "isolated_chambers": [
     {
       "chamber": "I01_ConstitutionSealGuard",
       "passed": true,
-      "duration_ms": 2080.78,
+      "duration_ms": 2636.64,
       "metrics": {
         "concurrent_sha256_seal_checks": 400,
         "adversarial_writes_blocked": 210,
@@ -21,7 +21,7 @@
     {
       "chamber": "I02_HomeostasisGovernor_R09",
       "passed": true,
-      "duration_ms": 203.26,
+      "duration_ms": 207.63,
       "metrics": {
         "concurrent_volume_samples": 240,
         "r09_unproductive_stoploss_tripped": true,
@@ -31,7 +31,7 @@
     {
       "chamber": "I03_ProblemFramingGate_R01",
       "passed": true,
-      "duration_ms": 31.08,
+      "duration_ms": 73.65,
       "metrics": {
         "contracts_evaluated": 600,
         "contradictions_halted_with_counterproposal": 300,
@@ -41,7 +41,7 @@
     {
       "chamber": "I04_CalibrationLedger_R06",
       "passed": true,
-      "duration_ms": 7576.4,
+      "duration_ms": 8208.92,
       "metrics": {
         "concurrent_sqlite_wal_writes": 800,
         "good_tier": "FULL_AUTONOMY",
@@ -52,7 +52,7 @@
     {
       "chamber": "I05_DPAPI_ReplayVault",
       "passed": true,
-      "duration_ms": 8539.28,
+      "duration_ms": 8036.76,
       "metrics": {
         "dpapi_hmac_envelopes_verified": 640,
         "replay_attacks_blocked": 640,
@@ -62,7 +62,7 @@
     {
       "chamber": "I06_FairDispatchScheduler",
       "passed": true,
-      "duration_ms": 15.48,
+      "duration_ms": 20.5,
       "metrics": {
         "total_queued_candidates": 2500,
         "aged_priority0_promoted_first": 50,
@@ -72,7 +72,7 @@
     {
       "chamber": "I07_FencedEffectWriter_Race",
       "passed": true,
-      "duration_ms": 6569.79,
+      "duration_ms": 5857.31,
       "metrics": {
         "concurrent_same_key_acquisitions": 640,
         "unique_monotonic_epochs": 640,
@@ -82,7 +82,7 @@
     {
       "chamber": "I08_DurableEngine_R08_Sieve",
       "passed": true,
-      "duration_ms": 3152.78,
+      "duration_ms": 2733.59,
       "metrics": {
         "concurrent_missions": 24,
         "wal_step_checkpoints_verified": 120,
@@ -92,7 +92,7 @@
     {
       "chamber": "I09_Hermes_Win32_PTC_JobObjects",
       "passed": true,
-      "duration_ms": 4965.03,
+      "duration_ms": 5095.99,
       "metrics": {
         "concurrent_ptc_tcp_hmac_sessions": 6,
         "total_rpc_tool_calls_over_loopback": 36,
@@ -102,7 +102,7 @@
     {
       "chamber": "I10_OMH_Maestro_Enhancers",
       "passed": true,
-      "duration_ms": 1917.5,
+      "duration_ms": 2277.42,
       "metrics": {
         "concurrent_omh_identities": 24,
         "pwsh_persistent_commands": 25,
@@ -116,7 +116,7 @@
     {
       "chamber": "I11_TriadMemory_Concurrency",
       "passed": true,
-      "duration_ms": 9097.45,
+      "duration_ms": 8157.96,
       "metrics": {
         "core_memory_concurrent_edits": 320,
         "mnemos_bitemporal_atoms": 25,
@@ -127,19 +127,19 @@
     {
       "chamber": "I12_SiliconRadar_PolyglotRepoMap",
       "passed": true,
-      "duration_ms": 587.5,
+      "duration_ms": 820.72,
       "metrics": {
         "aetherscan_binary_invoked": true,
-        "ucip_files_scanned": 37,
-        "ucip_token_reduction_pct": 90.9,
-        "pagerank_ranked_files": 37,
+        "ucip_files_scanned": 40,
+        "ucip_token_reduction_pct": 91.58,
+        "pagerank_ranked_files": 40,
         "topology_violations": 0
       }
     },
     {
       "chamber": "I13_CodexMuscle_SafeEdit_Worktree",
       "passed": true,
-      "duration_ms": 25657.94,
+      "duration_ms": 32724.89,
       "metrics": {
         "codex_stdio_and_sandbox_ok": true,
         "clean_atomic_edits": 12,
@@ -150,7 +150,7 @@
     {
       "chamber": "I14_UniversalCognitiveRouter",
       "passed": true,
-      "duration_ms": 31.6,
+      "duration_ms": 31.58,
       "metrics": {
         "concurrent_distinct_judge_routes": 500,
         "rtk_saved_chars": 68,
@@ -160,7 +160,7 @@
     {
       "chamber": "I15_Browser_OSINT_DocumentOrgan",
       "passed": true,
-      "duration_ms": 512.05,
+      "duration_ms": 958.45,
       "metrics": {
         "concurrent_isolated_browser_leases_cleaned": 16,
         "multimodal_docx_xlsx_ingested": 40,
@@ -171,7 +171,7 @@
     {
       "chamber": "I16_URE_NeuroSymbolic_Stress",
       "passed": true,
-      "duration_ms": 955.63,
+      "duration_ms": 853.71,
       "metrics": {
         "cfg_sieve_valid_accepted": 200,
         "cfg_sieve_attacks_rejected": 200,
@@ -182,7 +182,7 @@
     {
       "chamber": "I17_ConstitutionalEvolver_AutoHarness",
       "passed": true,
-      "duration_ms": 2949.89,
+      "duration_ms": 2769.69,
       "metrics": {
         "asi_evolve_generations": 80,
         "pareto_elites_admitted": 16,
@@ -194,7 +194,7 @@
     {
       "chamber": "I18_Telemetry_AutonomousTriggers",
       "passed": true,
-      "duration_ms": 2265.06,
+      "duration_ms": 1570.87,
       "metrics": {
         "concurrent_otel_spans_lossless": 1120,
         "trigger_ticks_executed": 40,
@@ -209,7 +209,7 @@
     {
       "campaign": "W01_InProcess_Sovereign_Swarm",
       "passed": true,
-      "duration_ms": 13863.21,
+      "duration_ms": 13904.81,
       "metrics": {
         "concurrent_kernel_missions_verified": 16,
         "fast_path_missions": 8,
@@ -220,47 +220,47 @@
     {
       "campaign": "W02_Live_CLI_Parallel_Mission_Barrage",
       "passed": true,
-      "duration_ms": 36465.76,
+      "duration_ms": 39632.35,
       "metrics": {
         "parallel_cli_subprocesses_launched": 8,
         "sequential_cli_missions_launched": 2,
         "total_live_cli_missions_verified": 10,
         "sample_missions": [
           {
-            "mission_id": "cli-1793607516965-c145d425",
+            "mission_id": "cli-1793714273863-29c13b86",
             "status": "VERIFIED",
             "steps_completed": 4,
             "actor_route": "omniroute",
             "judge_route": "mesh_gateway",
-            "brier_score": 0.0225,
-            "elapsed_ms": 6208.92
+            "brier_score": null,
+            "elapsed_ms": 7266.63
           },
           {
-            "mission_id": "cli-1793607518064-775c523a",
+            "mission_id": "cli-1793714274586-2f291e4c",
             "status": "VERIFIED",
             "steps_completed": 5,
             "actor_route": "omniroute",
             "judge_route": "mesh_gateway",
-            "brier_score": 0.0225,
-            "elapsed_ms": 6528.91
+            "brier_score": null,
+            "elapsed_ms": 8095.23
           },
           {
-            "mission_id": "cli-1793607524326-775aa4d8",
+            "mission_id": "cli-1793714280420-abac2e56",
             "status": "VERIFIED",
             "steps_completed": 4,
             "actor_route": "omniroute",
             "judge_route": "mesh_gateway",
-            "brier_score": 0.0225,
-            "elapsed_ms": 7519.43
+            "brier_score": null,
+            "elapsed_ms": 6027.46
           },
           {
-            "mission_id": "cli-1793607544208-dedd343c",
+            "mission_id": "cli-1793714300404-bd17e475",
             "status": "VERIFIED",
             "steps_completed": 4,
             "actor_route": "omniroute",
             "judge_route": "mesh_gateway",
-            "brier_score": 0.0225,
-            "elapsed_ms": 5156.81
+            "brier_score": null,
+            "elapsed_ms": 5910.05
           }
         ]
       }
@@ -268,10 +268,10 @@
     {
       "campaign": "W03_PostStress_Doctor_Handoff_SealAudit",
       "passed": true,
-      "duration_ms": 7855.82,
+      "duration_ms": 8270.97,
       "metrics": {
         "post_stress_doctor_all_true": true,
-        "f_drive_free_gb": 23.43,
+        "f_drive_free_gb": 24.99,
         "handoff_files_exported": 5,
         "constitutional_seal_intact": true
       }

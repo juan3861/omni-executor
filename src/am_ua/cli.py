@@ -46,14 +46,32 @@ def main(argv: list[str] | None = None) -> int:
     p_map.add_argument("target", nargs="?", default=str(ROOT / "src"))
     p_map.add_argument("--max-chars", type=int, default=3000)
 
-    p_mission = sub.add_parser("mission", help="Execute a formalized engineering mission")
+    p_mission = sub.add_parser(
+        "mission",
+        help="REAL agent: LLM plans and edits/runs code in a workspace; VERIFIED only if --verify exits 0 (or multi-organ diagnostic pipeline if --scan-dir is set)",
+    )
     p_mission.add_argument("objective", help="Mission objective statement")
-    p_mission.add_argument("--mission-id", default=None, help="Explicit mission ID (for resume/replay)")
+    p_mission.add_argument("--workspace", default=None, help="Workspace dir (default: current dir; must be inside the project or F:\\AetherMind_Temp)")
+    p_mission.add_argument("--verify", default=None, help="Acceptance command (PowerShell) run in the workspace; exit 0 = PASS")
+    p_mission.add_argument("--max-turns", type=int, default=30)
+    p_mission.add_argument("--provider", default=None, help="Preferred actor provider (groq|openrouter|openai|omniroute)")
+    p_mission.add_argument("--mission-id", default=None, help="Explicit mission ID")
+    p_mission.add_argument("--full-json", action="store_true", help="Print the full result including diff")
+    # Pipeline & diagnostic compatibility flags
     p_mission.add_argument("--domain", default="software_engineering")
     p_mission.add_argument("--scan-dir", default=None)
     p_mission.add_argument("--repomap-dir", default=None)
     p_mission.add_argument("--ingest-doc", default=None)
     p_mission.add_argument("--force-dag", action="store_true")
+
+    p_pipe = sub.add_parser("pipeline", help="LEGACY deterministic tool pipeline (no LLM; diagnostics only)")
+    p_pipe.add_argument("objective", help="Mission objective statement")
+    p_pipe.add_argument("--mission-id", default=None, help="Explicit mission ID (for resume/replay)")
+    p_pipe.add_argument("--domain", default="software_engineering")
+    p_pipe.add_argument("--scan-dir", default=None)
+    p_pipe.add_argument("--repomap-dir", default=None)
+    p_pipe.add_argument("--ingest-doc", default=None)
+    p_pipe.add_argument("--force-dag", action="store_true")
 
     p_doc = sub.add_parser("ingest-doc", help="Ingest document (.docx/.xlsx/.csv/.pdf/.md) with R16 tainting")
     p_doc.add_argument("file_path")
@@ -79,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(res, indent=2, ensure_ascii=False))
         return 0
 
-    if args.cmd == "mission":
+    def _execute_pipeline(args) -> int:
         obj = fix_mangled_string(args.objective)
         steps = []
         default_src = str(ROOT / "src" / "am_ua")
@@ -91,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
                 "args": {"target_dir": scan_target, "invoke_binary": False},
             }
         )
-        if args.repomap_dir:
+        if getattr(args, "repomap_dir", None):
             steps.append(
                 {
                     "step_id": "repomap_02",
@@ -99,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
                     "args": {"repo_root": args.repomap_dir, "max_chars": 2500},
                 }
             )
-        if args.ingest_doc:
+        if getattr(args, "ingest_doc", None):
             steps.append(
                 {
                     "step_id": "doc_03",
@@ -123,19 +141,44 @@ def main(argv: list[str] | None = None) -> int:
         )
         mid = args.mission_id or f"cli-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
         reqs = [obj]
-        if args.force_dag or args.repomap_dir or args.ingest_doc:
+        if getattr(args, "force_dag", False) or getattr(args, "repomap_dir", None) or getattr(args, "ingest_doc", None):
             reqs.append("Multi-organ topological & epistemic verification")
         contract = MissionContract(
             mission_id=mid,
             objective=obj,
-            domain=args.domain,
+            domain=getattr(args, "domain", "software_engineering"),
             functional_requirements=reqs,
             acceptance_criteria=["All steps complete with independent verification receipt"],
-            constraints={"force_multi_agent_dag": bool(args.force_dag)},
+            constraints={"force_multi_agent_dag": bool(getattr(args, "force_dag", False))},
         )
         out = agent.execute_mission(contract, steps=steps)
         print(json.dumps(out, indent=2, ensure_ascii=False, default=str))
         return 0 if out["status"] == "VERIFIED" else 1
+
+    if args.cmd == "mission":
+        if args.scan_dir or args.repomap_dir or args.ingest_doc or args.force_dag:
+            return _execute_pipeline(args)
+        obj = fix_mangled_string(args.objective)
+        ws = Path(args.workspace or Path.cwd()).resolve()
+
+        def progress(ev: dict) -> None:
+            print(f"[turn {ev.get('turn')}] {ev.get('provider')} -> {ev.get('tool')}: {ev.get('thought', '')}", file=sys.stderr, flush=True)
+
+        try:
+            out = agent.run_agent_mission(
+                obj, ws, verify_cmd=args.verify, mission_id=args.mission_id,
+                max_turns=args.max_turns, actor_provider=args.provider, on_event=progress,
+            )
+        except PermissionError as exc:
+            print(json.dumps({"status": "BLOCKED", "error": str(exc)}, ensure_ascii=False))
+            return 2
+        if not args.full_json:
+            out = {k: v for k, v in out.items() if k not in ("diff", "tool_calls")}
+        print(json.dumps(out, indent=2, ensure_ascii=False, default=str))
+        return 0 if str(out.get("status", "")).startswith("VERIFIED") else 1
+
+    if args.cmd == "pipeline":
+        return _execute_pipeline(args)
 
     if args.cmd == "ingest-doc":
         ing = agent.documents.ingest_document(args.file_path)

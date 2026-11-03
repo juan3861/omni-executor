@@ -551,25 +551,23 @@ class AetherMindUniversalAgent:
                     )
                     state = dict(cp["state"])
                     executed_steps.append(cp)
-                    step_span["tokens_used"] = 120
+                    # No LLM is invoked in the deterministic pipeline: report 0 model tokens (was hardcoded 120).
+                    step_span["tokens_used"] = 0
                     self.homeostasis.record_turn_cost(
-                        tokens=120, tool_calls=1, made_verified_progress=True
+                        tokens=0, tool_calls=1, made_verified_progress=True
                     )
 
-            # 4. Independent Judge Receipt (`actor_cannot_be_own_judge`) + Calibration (R06)
+            # 4. Pipeline receipt. HONESTY FIX (2026-11-03): this path never invokes the actor or the judge
+            # model; it only proves the scripted tool steps completed. It no longer writes a synthetic
+            # confidence into the R06 calibration ledger (that produced a constant fake Brier of 0.0225).
             passed_all = all(s["status"] == "COMPLETED" for s in executed_steps)
-            brier = self.calibration.record(
-                domain=mission.domain,
-                task_id=mission.mission_id,
-                predicted_conf=predicted_confidence,
-                actual_pass=passed_all,
-            )
+            brier = None
             cal_info = self.calibration.calibrated_confidence(mission.domain, predicted_confidence)
 
             receipt = VerificationReceipt(
                 receipt_id=f"rcpt-{uuid.uuid4().hex[:12]}",
                 mission_id=mission.mission_id,
-                judge_id=f"independent_verifier@{judge_route['endpoint']}",
+                judge_id=f"route_selected_not_invoked@{judge_route['endpoint']}",
                 passed=passed_all,
                 exit_code=0 if passed_all else 1,
                 epistemic_tag=EpistemicTag.PROVADO if passed_all else EpistemicTag.BLOQUEADO,
@@ -585,19 +583,67 @@ class AetherMindUniversalAgent:
                 f"Completed mission {mission.mission_id} (passed={passed_all}, fast_path={fast_path})",
                 session_id=mission.mission_id,
             )
-            root_span["tokens_used"] = 120 * max(1, len(executed_steps))
+            root_span["tokens_used"] = 0
             return {
                 "mission_id": mission.mission_id,
                 "status": "VERIFIED" if passed_all else "FAILED",
+                "verification_scope": "scripted_tool_steps_completed_only",
+                "llm_invoked": False,
                 "fast_path_used": fast_path,
                 "actor_route": actor_route["endpoint"],
                 "judge_route": judge_route["endpoint"],
                 "steps": executed_steps,
-                "brier_score": round(brier, 5),
+                "brier_score": brier,
                 "calibration": cal_info,
                 "verification_receipt": asdict(receipt),
                 "trace_id": trace_id,
             }
+
+    @property
+    def agent_loop(self) -> "AgentLoop":
+        """Lazily build the real LLM-driven agent loop (keeps doctor/pipeline paths free of network I/O)."""
+        if getattr(self, "_agent_loop", None) is None:
+            from am_ua.execution.agent_loop import AgentLoop
+
+            self._agent_loop = AgentLoop(
+                engine=self.durable_engine,
+                seal_guard=self.seal_guard,
+                calibration=self.calibration,
+                trace_dir=self.data_dir / "agent_traces",
+            )
+        return self._agent_loop
+
+    def run_agent_mission(
+        self,
+        objective: str,
+        workspace: Path | str,
+        *,
+        verify_cmd: Optional[str] = None,
+        mission_id: Optional[str] = None,
+        max_turns: int = 30,
+        actor_provider: Optional[str] = None,
+        on_event: Any = None,
+    ) -> Dict[str, Any]:
+        """REAL agent mission: LLM plans and acts via tools; VERIFIED only if `verify_cmd` exits 0."""
+        mc = MissionContract(
+            mission_id=mission_id or f"agent-{uuid.uuid4().hex[:10]}",
+            objective=objective,
+            domain="software_engineering",
+            functional_requirements=[objective[:200]],
+            acceptance_criteria=[verify_cmd] if verify_cmd else [],
+        )
+        verdict = self.framing_gate.evaluate(mc)
+        if not verdict.approved_for_execution:
+            return {"mission_id": mc.mission_id, "status": "HALTED_AT_FRAMING", "framing_verdict": asdict(verdict)}
+        loop = self.agent_loop
+        loop.on_event = on_event
+        with self.telemetry.start_span("kernel.run_agent_mission", attributes={"mission_id": mc.mission_id}) as sp:
+            res = loop.run(objective, workspace, verify_cmd=verify_cmd, mission_id=mc.mission_id,
+                           max_turns=max_turns, actor_provider=actor_provider)
+            sp["tokens_used"] = res.tokens["prompt"] + res.tokens["completion"]
+            sp["attributes"]["status"] = res.status
+        self.memory.sync_turn(objective, f"[{res.status}] {res.final_summary[:500]}", session_id=mc.mission_id)
+        return asdict(res)
 
     def create_safe_editor(self, workspace_root: Path | str) -> SafeEditTransactionalJournal:
         return SafeEditTransactionalJournal(

@@ -9,3 +9,5 @@ __pycache__/
 node_modules/
 # Local scratch / eval sandboxes
 .am_eval_runs/
+
+data/agent_traces/

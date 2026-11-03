@@ -1,6 +1,6 @@
 {
   "schema_version": "am_ua_core_memory_blocks/v1",
-  "saved_at": 1793711625.9641685,
+  "saved_at": 1793715740.9674695,
   "blocks": {
     "PERSONA": {
       "label": "PERSONA",
@@ -22,12 +22,12 @@
     },
     "ACTIVE_MISSION": {
       "label": "ACTIVE_MISSION",
-      "value": "[cli-1793607548940-587de3c2] Campanha Sequencial Pós-Rajada #2: Síntese completa do ecossistema (fast_path=False)",
+      "value": "[cli-1793714306052-094f7d8e] Campanha Sequencial Pós-Rajada #2: Síntese completa do ecossistema (fast_path=False)",
       "limit": 3000,
       "read_only": false,
-      "revision": 23,
+      "revision": 33,
       "source_origin": "agent_kernel",
-      "updated_at": 1793607548.9435034
+      "updated_at": 1793714306.0541296
     },
     "FALSIFIABLE_HYPOTHESES": {
       "label": "FALSIFIABLE_HYPOTHESES",
