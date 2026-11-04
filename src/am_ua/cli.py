@@ -88,6 +88,20 @@ def main(argv: list[str] | None = None) -> int:
     p_wheel.add_argument("mission_id", nargs="?", default=None, help="Target mission ID for resume/abort")
     p_wheel.add_argument("--note", default="Operator intervention acknowledged", help="Message or instructions for the agent upon resumption/abort")
 
+    p_pc = sub.add_parser("pc", help="Complete PC Desktop/OS Automation (SoM Grounding, Robocorp Locators, Window/Process/Clipboard)")
+    p_pc.add_argument("action", choices=["probe", "windows", "observe", "find", "clipboard", "processes", "port"], help="PC automation sub-action")
+    p_pc.add_argument("--locator", default=None, help="Robocorp locator query (e.g. 'name:\"Edit\" and type:EditControl')")
+    p_pc.add_argument("--filter", default=None, help="Text filter for windows or processes")
+    p_pc.add_argument("--text", default=None, help="Text to write to clipboard")
+    p_pc.add_argument("--port", type=int, default=None, help="Port number to inspect")
+    p_pc.add_argument("--no-ocr", action="store_true", help="Disable OCR fallback during observe")
+
+    p_skills = sub.add_parser("skills", help="Adaptive Skill Forge (Voyager/Open-Interpreter self-extending Python skills)")
+    p_skills.add_argument("action", choices=["list", "search", "run"], help="Skills action")
+    p_skills.add_argument("--query", default="", help="Search query for skills")
+    p_skills.add_argument("--name", default=None, help="Skill name to run")
+    p_skills.add_argument("--kwargs", default="{}", help="JSON kwargs for skill execution")
+
     args = parser.parse_args(argv)
     agent = AetherMindUniversalAgent()
 
@@ -221,6 +235,78 @@ def main(argv: list[str] | None = None) -> int:
         res = exporter.export(args.out)
         print(json.dumps({"ok": True, "output_dir": res["output_dir"], "files": res["files"]}, indent=2))
         return 0
+
+    if args.cmd == "pc":
+        pc = agent.pc_automation
+        if args.action == "probe":
+            res = pc.probe_capabilities()
+            print(json.dumps(res, indent=2, ensure_ascii=False))
+            return 0
+        if args.action == "windows":
+            wins = pc.window_organ.list_windows(title_filter=args.filter or "")
+            print(json.dumps({"ok": True, "count": len(wins), "windows": wins[:50]}, indent=2, ensure_ascii=False))
+            return 0
+        if args.action == "observe":
+            res = pc.observe_desktop(include_ocr=not args.no_ocr)
+            if args.locator:
+                loc = fix_mangled_string(args.locator)
+                res["matched_elements"] = pc.find_elements(loc, refresh=False)
+            print(json.dumps(res, indent=2, ensure_ascii=False))
+            return 0 if res.get("ok") else 1
+        if args.action == "find":
+            if not args.locator:
+                print(json.dumps({"ok": False, "error": "--locator is required for 'pc find'"}, ensure_ascii=False))
+                return 1
+            loc = fix_mangled_string(args.locator)
+            wins = pc.window_organ.find_windows_by_locator(loc)
+            els = pc.find_elements(loc, refresh=True)
+            print(json.dumps({
+                "ok": True,
+                "locator": loc,
+                "matching_windows": wins,
+                "matching_elements": els,
+                "som_screenshot_path": pc.last_observation.get("som_screenshot_path") if pc.last_observation else None,
+            }, indent=2, ensure_ascii=False))
+            return 0
+        if args.action == "clipboard":
+            if args.text is not None:
+                txt = fix_mangled_string(args.text)
+                ok = pc.clipboard.set_text(txt)
+                print(json.dumps({"ok": ok, "action": "set", "length": len(txt)}, indent=2, ensure_ascii=False))
+                return 0 if ok else 1
+            val = pc.clipboard.get_text()
+            print(json.dumps({"ok": True, "action": "get", "text": val}, indent=2, ensure_ascii=False))
+            return 0
+        if args.action == "processes":
+            procs = pc.window_organ.list_processes(name_filter=args.filter)
+            print(json.dumps({"ok": True, "count": len(procs), "processes": procs}, indent=2, ensure_ascii=False))
+            return 0
+        if args.action == "port":
+            if not args.port:
+                print(json.dumps({"ok": False, "error": "--port is required for 'pc port'"}, ensure_ascii=False))
+                return 1
+            res = pc.window_organ.find_port_owner(args.port)
+            print(json.dumps(res, indent=2, ensure_ascii=False))
+            return 0
+
+    if args.cmd == "skills":
+        forge = agent.skill_forge
+        if args.action == "list":
+            skills = forge.list_skills()
+            print(json.dumps({"ok": True, "count": len(skills), "skills": skills}, indent=2, ensure_ascii=False))
+            return 0
+        if args.action == "search":
+            skills = forge.search_skills(fix_mangled_string(args.query))
+            print(json.dumps({"ok": True, "query": args.query, "matches": skills}, indent=2, ensure_ascii=False))
+            return 0
+        if args.action == "run":
+            if not args.name:
+                print(json.dumps({"ok": False, "error": "--name is required for 'skills run'"}, ensure_ascii=False))
+                return 1
+            kw = json.loads(args.kwargs or "{}")
+            res = forge.run_skill(args.name, kwargs=kw)
+            print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
+            return 0 if res.get("ok") else 1
 
     return 1
 

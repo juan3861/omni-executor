@@ -46,6 +46,7 @@ from am_ua.contracts.contracts import (
     VerificationReceipt,
 )
 from am_ua.evolution import AutoHarnessSynthesizer, ConstitutionalEvolver
+from am_ua.execution.adaptive_skills import AdaptiveSkillForge
 from am_ua.execution.codex_muscle import (
     CodexSandboxMuscle,
     SafeEditTransactionalJournal,
@@ -58,6 +59,7 @@ from am_ua.execution.durable_engine import (
     FairDispatchScheduler,
     ToolContract,
 )
+from am_ua.execution.pc_automation import PCAutomationEngine
 from am_ua.governance.homeostasis import HomeostasisGovernor
 from am_ua.governance.seal_guard import ConstitutionSealGuard, compute_content_sha256
 from am_ua.gui import DocumentMultimodalOrgan, OlhoDeDeusOSINT, VerifiedBrowserAdapter
@@ -342,6 +344,12 @@ class AetherMindUniversalAgent:
             self.data_dir / "autonomous_triggers.db", homeostasis=self.homeostasis
         )
 
+        # 6. Complete PC Automation & Adaptive Skill Forge (OSWorld/Robocorp/OmniParser/Voyager)
+        self.pc_automation = PCAutomationEngine(
+            artifact_dir=self.data_dir / "pc_automation",
+        )
+        self.skill_forge = AdaptiveSkillForge(self.data_dir / "adaptive_skills")
+
         self._register_builtin_kernel_tools()
 
     def _register_builtin_kernel_tools(self) -> None:
@@ -456,6 +464,8 @@ class AetherMindUniversalAgent:
                 "codex_exe_available": codex_inv["codex_exe"]["available"],
                 "omh_browser_seam_unlocked": omh_browser_ok,
                 "olho_de_deus_available": self.osint.status()["script_available"],
+                "pc_automation_ready": True,
+                "adaptive_skills_count": len(self.skill_forge.list_skills()),
             }
             sp["attributes"]["healthy"] = all(
                 [
@@ -610,6 +620,8 @@ class AetherMindUniversalAgent:
                 seal_guard=self.seal_guard,
                 calibration=self.calibration,
                 trace_dir=self.data_dir / "agent_traces",
+                pc_engine=self.pc_automation,
+                skill_forge=self.skill_forge,
             )
         return self._agent_loop
 

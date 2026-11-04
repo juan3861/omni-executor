@@ -1,5 +1,11 @@
 """Durable Execution, Fair Dispatch, Fenced Writers, Codex Sandbox, SafeEditPlan, AgentLoop & HumanWheel."""
 
+from .adaptive_skills import (
+    AdaptiveSkillForge,
+    AdaptiveSkillRecord,
+    SkillSecurityViolationError,
+    audit_skill_ast,
+)
 from .agent_loop import (
     AgentLoop,
     AgentRunResult,
@@ -21,8 +27,24 @@ from .durable_engine import (
     ToolContract,
 )
 from .human_wheel import HumanWheelGate, WheelOutcome
+from .pc_automation import (
+    DesktopProcessWindowOrgan,
+    GroundedUIElement,
+    LocatorClause,
+    PCAutomationEngine,
+    RobocorpLocatorParser,
+    SetOfMarkGrounder,
+    TransactionalClipboard,
+    compare_visual_signatures,
+    compute_bbox_iou,
+    compute_visual_dhash_2048,
+)
 
 __all__ = [
+    "AdaptiveSkillForge",
+    "AdaptiveSkillRecord",
+    "SkillSecurityViolationError",
+    "audit_skill_ast",
     "AgentLoop",
     "AgentRunResult",
     "WorkspaceTools",
@@ -41,4 +63,14 @@ __all__ = [
     "ToolContract",
     "HumanWheelGate",
     "WheelOutcome",
+    "PCAutomationEngine",
+    "SetOfMarkGrounder",
+    "RobocorpLocatorParser",
+    "LocatorClause",
+    "GroundedUIElement",
+    "TransactionalClipboard",
+    "DesktopProcessWindowOrgan",
+    "compute_bbox_iou",
+    "compute_visual_dhash_2048",
+    "compare_visual_signatures",
 ]

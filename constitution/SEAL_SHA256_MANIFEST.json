@@ -1,6 +1,6 @@
 {
-  "aggregate_sha256": "8b6637dbfd299c6a30def944c10536ea82bdaf97107b4d4b273a39f30012ee18",
-  "file_count": 13,
+  "aggregate_sha256": "7f1eba8283f04799f83ce0a5daba099536e54ad79cfbb30de2374decfe9029ad",
+  "file_count": 14,
   "files": {
     "constitution/IMMUTABLE_CONSTITUTION.json": "b1fe67d4d453c60d8fbb2c2f5859549dcc5f2d04fd0513f7a58acc05c8adee76",
     "constitution/personas/general_engineer.md": "314f5a832c6cf276a950582728738a3bf8e556f47a33332c8830e63f1e64ab1f",
@@ -12,6 +12,7 @@
     "eval/extreme_stress_suite.py": "505e768332f9a9926220ee7f0760cd0fa594af8d9ff150a446d55423731742ba",
     "eval/test_alpha_c13_stateful_selection.py": "efdf70cc7eac839e05341ea3de334dff17229bb6d27fa19add2de5c4d3823f91",
     "eval/test_empirical_agui_wheel.py": "2edb04cec9f35626bd812c88cfa4e2ef0a407696a328c830c04c101a35d76c29",
+    "eval/test_empirical_pc_automation_ceiling.py": "f5e1536bd023d5e244a075b5995d424c22d5252fd9501c640267d09c1b8a5b9e",
     "eval/test_empirical_sparc_and_personas.py": "60db456651037f38aed7e0bc411ccecd30994968ef6ca0e5330c2ea2dcbf4a4a",
     "eval/test_real_agent_mission.py": "586721e2ac79637d295b45a0bef3f00e1e8e8126aa458aee19b96d15b46da110",
     "src/am_ua/governance/seal_guard.py": "f45075ed7d251bd8fe8c55feb9db3ba8351faa7b84ad464f57b5b0508069c620"
