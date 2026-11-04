@@ -102,12 +102,13 @@ class SiliconProjectRadar:
                 "--out",
                 str(run_dir),
             ],
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             env=env,
-            timeout=30,
+            timeout=60,
             check=False,
         )
         elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)

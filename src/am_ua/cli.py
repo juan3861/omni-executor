@@ -58,6 +58,8 @@ def main(argv: list[str] | None = None) -> int:
     p_mission.add_argument("--mission-id", default=None, help="Explicit mission ID")
     p_mission.add_argument("--full-json", action="store_true", help="Print the full result including diff")
     # Pipeline & diagnostic compatibility flags
+    p_mission.add_argument("--role", default="general_engineer", help="Specialized persona contract (general_engineer|systems_architect|strict_auditor|security_reverse_engineer|performance_sre)")
+    p_mission.add_argument("--workflow", default="react", choices=["react", "sparc"], help="Execution workflow methodology (react|sparc)")
     p_mission.add_argument("--domain", default="software_engineering")
     p_mission.add_argument("--scan-dir", default=None)
     p_mission.add_argument("--repomap-dir", default=None)
@@ -168,6 +170,8 @@ def main(argv: list[str] | None = None) -> int:
             out = agent.run_agent_mission(
                 obj, ws, verify_cmd=args.verify, mission_id=args.mission_id,
                 max_turns=args.max_turns, actor_provider=args.provider, on_event=progress,
+                role=getattr(args, "role", "general_engineer"),
+                workflow=getattr(args, "workflow", "react"),
             )
         except PermissionError as exc:
             print(json.dumps({"status": "BLOCKED", "error": str(exc)}, ensure_ascii=False))

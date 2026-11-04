@@ -357,7 +357,7 @@ class MCPStdioClient:
         *,
         cwd: Optional[Path | str] = None,
         env: Optional[Dict[str, str]] = None,
-        startup_timeout_s: float = 15.0,
+        startup_timeout_s: float = 30.0,
     ) -> None:
         self.command = list(command)
         self.cwd = str(cwd) if cwd else None
@@ -409,7 +409,10 @@ class MCPStdioClient:
 
     def _read_loop(self) -> None:
         assert self._proc is not None and self._proc.stdout is not None
-        for raw_line in self._proc.stdout:
+        while True:
+            raw_line = self._proc.stdout.readline()
+            if not raw_line:
+                break
             line = raw_line.strip()
             if not line or not line.startswith("{"):
                 continue
@@ -436,7 +439,7 @@ class MCPStdioClient:
         method: str,
         params: Optional[Dict[str, Any]] = None,
         *,
-        timeout_s: float = 15.0,
+        timeout_s: float = 30.0,
     ) -> Dict[str, Any]:
         if self._proc is None or self._proc.stdin is None:
             raise RuntimeError("MCP process not running")

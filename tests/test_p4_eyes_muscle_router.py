@@ -102,7 +102,7 @@ def test_p4_3_codex_mcp_safe_edit_sast_rollback_and_worktree(tmp_path: Path) -> 
     inv = muscle.inventory()
     assert inv["codex_exe"]["available"] is True
     assert inv["code_mode_host_exe"]["available"] is True
-    mcp_probe = muscle.probe_mcp_server(timeout_s=15.0)
+    mcp_probe = muscle.probe_mcp_server(timeout_s=30.0)
     assert mcp_probe["ok"] is True
     assert mcp_probe["platform_os"] == "windows"
 

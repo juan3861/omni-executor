@@ -623,6 +623,8 @@ class AetherMindUniversalAgent:
         max_turns: int = 30,
         actor_provider: Optional[str] = None,
         on_event: Any = None,
+        role: str = "general_engineer",
+        workflow: str = "react",
     ) -> Dict[str, Any]:
         """REAL agent mission: LLM plans and acts via tools; VERIFIED only if `verify_cmd` exits 0."""
         mc = MissionContract(
@@ -637,9 +639,9 @@ class AetherMindUniversalAgent:
             return {"mission_id": mc.mission_id, "status": "HALTED_AT_FRAMING", "framing_verdict": asdict(verdict)}
         loop = self.agent_loop
         loop.on_event = on_event
-        with self.telemetry.start_span("kernel.run_agent_mission", attributes={"mission_id": mc.mission_id}) as sp:
+        with self.telemetry.start_span("kernel.run_agent_mission", attributes={"mission_id": mc.mission_id, "role": role, "workflow": workflow}) as sp:
             res = loop.run(objective, workspace, verify_cmd=verify_cmd, mission_id=mc.mission_id,
-                           max_turns=max_turns, actor_provider=actor_provider)
+                           max_turns=max_turns, actor_provider=actor_provider, role=role, workflow=workflow)
             sp["tokens_used"] = res.tokens["prompt"] + res.tokens["completion"]
             sp["attributes"]["status"] = res.status
         self.memory.sync_turn(objective, f"[{res.status}] {res.final_summary[:500]}", session_id=mc.mission_id)

@@ -429,12 +429,12 @@ class CodexSandboxMuscle:
             for name, p in bins.items()
         }
 
-    def probe_mcp_server(self, *, timeout_s: float = 15.0) -> Dict[str, Any]:
+    def probe_mcp_server(self, *, timeout_s: float = 30.0) -> Dict[str, Any]:
         """Perform live JSON-RPC 2.0 `initialize` handshake against `codex.exe app-server --stdio`."""
         if not self.codex_exe.is_file():
             return {"ok": False, "reason": f"Missing codex.exe at {self.codex_exe}"}
         client = MCPStdioClient(
-            [str(self.codex_exe), "app-server", "--stdio"],
+            [str(self.codex_exe), "app-server", "--listen", "stdio://"],
             startup_timeout_s=timeout_s,
         )
         try:

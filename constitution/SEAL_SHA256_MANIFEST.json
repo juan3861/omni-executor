@@ -1,11 +1,17 @@
 {
-  "aggregate_sha256": "588ff6f82619766a36bd9ba20674f9e3c8687fbcc481cc4f3134f5f5948b2827",
-  "file_count": 6,
+  "aggregate_sha256": "5b904129640797166f75b02f0de0e4805175e80fe93e7e8ef9eb482d8c93f355",
+  "file_count": 12,
   "files": {
     "constitution/IMMUTABLE_CONSTITUTION.json": "b1fe67d4d453c60d8fbb2c2f5859549dcc5f2d04fd0513f7a58acc05c8adee76",
+    "constitution/personas/general_engineer.md": "314f5a832c6cf276a950582728738a3bf8e556f47a33332c8830e63f1e64ab1f",
+    "constitution/personas/performance_sre.md": "c447556321ab20142e8da52f4194b2fefce45a459d83cc13b6d316600f6605fb",
+    "constitution/personas/security_reverse_engineer.md": "3f6786e87c8b3d9277e813043bbc3476e8ed62ea65b5f91e8c2060a2cf8375fb",
+    "constitution/personas/strict_auditor.md": "cd3db0f60bc5ac2febf4bfa5982912c02c0785bcdc1617b126b506a65a7cb7d0",
+    "constitution/personas/systems_architect.md": "d968a9879d0773301fc1a6decdd0c52d9ff58c410aafd415154db5ded1423ffc",
     "eval/chaos_qualification_suite.py": "47e6f433aeed98598b0e860cf946c69f64b0f59a3fc00fa6a2300f9e8e18f443",
     "eval/extreme_stress_suite.py": "505e768332f9a9926220ee7f0760cd0fa594af8d9ff150a446d55423731742ba",
     "eval/test_alpha_c13_stateful_selection.py": "efdf70cc7eac839e05341ea3de334dff17229bb6d27fa19add2de5c4d3823f91",
+    "eval/test_empirical_sparc_and_personas.py": "60db456651037f38aed7e0bc411ccecd30994968ef6ca0e5330c2ea2dcbf4a4a",
     "eval/test_real_agent_mission.py": "586721e2ac79637d295b45a0bef3f00e1e8e8126aa458aee19b96d15b46da110",
     "src/am_ua/governance/seal_guard.py": "f45075ed7d251bd8fe8c55feb9db3ba8351faa7b84ad464f57b5b0508069c620"
   },

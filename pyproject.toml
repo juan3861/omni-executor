@@ -24,4 +24,4 @@ norecursedirs = [
     "__pycache__",
     "HANDOFF_PACK",
 ]
-addopts = "-ra --strict-markers"
+addopts = "-ra --strict-markers --basetemp=F:/AetherMind_Temp/pytest_basetemp"
