@@ -123,6 +123,12 @@ class HomeostasisGovernor:
         self._stagnant_turns = 0
         self.enforce_safe_temp()
 
+    def credit_paused_time(self, seconds: float) -> None:
+        """Exclude human-intervention pause time from the R09 wall-clock budget."""
+        if not math.isfinite(seconds) or seconds < 0:
+            raise ValueError("paused seconds must be finite and >= 0")
+        self._started_at += seconds
+
     def enforce_safe_temp(self) -> str:
         """Redirect TMP/TEMP away from C:\\ and 80 MB E:\\rotor_tmp onto F:\\AetherMind_Temp."""
         target = Path(self.safe_temp_dir)

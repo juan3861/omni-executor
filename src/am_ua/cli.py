@@ -60,6 +60,8 @@ def main(argv: list[str] | None = None) -> int:
     # Pipeline & diagnostic compatibility flags
     p_mission.add_argument("--role", default="general_engineer", help="Specialized persona contract (general_engineer|systems_architect|strict_auditor|security_reverse_engineer|performance_sre)")
     p_mission.add_argument("--workflow", default="react", choices=["react", "sparc"], help="Execution workflow methodology (react|sparc)")
+    p_mission.add_argument("--wheel-timeout", type=float, default=0.0, help="Human intervention timeout in seconds (0 = disabled/autonomous)")
+    p_mission.add_argument("--agui-port", type=int, default=None, help="Local loopback port to serve live AG-UI SSE stream (127.0.0.1)")
     p_mission.add_argument("--domain", default="software_engineering")
     p_mission.add_argument("--scan-dir", default=None)
     p_mission.add_argument("--repomap-dir", default=None)
@@ -80,6 +82,11 @@ def main(argv: list[str] | None = None) -> int:
 
     p_handoff = sub.add_parser("handoff", help="Export Cold-Team R18 HANDOFF_PACK")
     p_handoff.add_argument("--out", default=str(ROOT / "HANDOFF_PACK"))
+
+    p_wheel = sub.add_parser("wheel", help="Take the Wheel: inspect or control human-in-the-loop intervention")
+    p_wheel.add_argument("action", choices=["status", "resume", "abort"], help="Wheel action")
+    p_wheel.add_argument("mission_id", nargs="?", default=None, help="Target mission ID for resume/abort")
+    p_wheel.add_argument("--note", default="Operator intervention acknowledged", help="Message or instructions for the agent upon resumption/abort")
 
     args = parser.parse_args(argv)
     agent = AetherMindUniversalAgent()
@@ -172,6 +179,8 @@ def main(argv: list[str] | None = None) -> int:
                 max_turns=args.max_turns, actor_provider=args.provider, on_event=progress,
                 role=getattr(args, "role", "general_engineer"),
                 workflow=getattr(args, "workflow", "react"),
+                wheel_timeout_s=getattr(args, "wheel_timeout", 0.0),
+                agui_port=getattr(args, "agui_port", None),
             )
         except PermissionError as exc:
             print(json.dumps({"status": "BLOCKED", "error": str(exc)}, ensure_ascii=False))
@@ -180,6 +189,24 @@ def main(argv: list[str] | None = None) -> int:
             out = {k: v for k, v in out.items() if k not in ("diff", "tool_calls")}
         print(json.dumps(out, indent=2, ensure_ascii=False, default=str))
         return 0 if str(out.get("status", "")).startswith("VERIFIED") else 1
+
+    if args.cmd == "wheel":
+        from am_ua.execution.human_wheel import HumanWheelGate
+        if args.action == "status":
+            active = HumanWheelGate.list_active_requests()
+            print(json.dumps({"active_requests": active, "count": len(active)}, indent=2, ensure_ascii=False))
+            return 0
+        if not args.mission_id:
+            print(json.dumps({"ok": False, "error": "mission_id is required for resume/abort"}, ensure_ascii=False))
+            return 1
+        if args.action == "resume":
+            res = HumanWheelGate.resume(args.mission_id, note=args.note)
+            print(json.dumps(res, indent=2, ensure_ascii=False))
+            return 0 if res.get("ok") else 1
+        if args.action == "abort":
+            res = HumanWheelGate.abort(args.mission_id, note=args.note)
+            print(json.dumps(res, indent=2, ensure_ascii=False))
+            return 0 if res.get("ok") else 1
 
     if args.cmd == "pipeline":
         return _execute_pipeline(args)

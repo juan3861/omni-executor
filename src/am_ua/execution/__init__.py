@@ -1,11 +1,11 @@
-"""Durable Execution, Fair Dispatch, Fenced Writers, Codex Sandbox, SafeEditPlan & AgentLoop."""
+"""Durable Execution, Fair Dispatch, Fenced Writers, Codex Sandbox, SafeEditPlan, AgentLoop & HumanWheel."""
 
 from .agent_loop import (
     AgentLoop,
     AgentRunResult,
-    WorkspaceTools,
     RepeatToolLoopBreaker,
     RepeatToolLoopError,
+    WorkspaceTools,
 )
 from .durable_engine import (
     DurableExecutionEngine,
@@ -20,6 +20,7 @@ from .durable_engine import (
     StepStatus,
     ToolContract,
 )
+from .human_wheel import HumanWheelGate, WheelOutcome
 
 __all__ = [
     "AgentLoop",
@@ -38,4 +39,6 @@ __all__ = [
     "StaleLeaseFenceError",
     "StepStatus",
     "ToolContract",
+    "HumanWheelGate",
+    "WheelOutcome",
 ]

@@ -7,7 +7,7 @@
 | `P0.1` | `P0` | Workspace Blindado contra WpSystem e Farois de Entrada Multi-Agente | ✅ VERIFIED | `afc1b4f81f08` |
 | `P0.2` | `P0` | Motor Anti-Amnesia / Anti-Drift (Project Compass + SQLite WAL + Narrative State) | ✅ VERIFIED | `07ed5314ab47` |
 | `P0.3` | `P0` | Constituicao Imutavel e Seal Guard SHA-256 de Conteudo Real (R17) | ✅ VERIFIED | `835cddde40cc` |
-| `P0.4` | `P0` | Governador de Homeostase Fisica, Poco de Casimir e Stop-Loss Economico (R09) | ✅ VERIFIED | `879ca409e880` |
+| `P0.4` | `P0` | Governador de Homeostase Fisica, Poco de Casimir e Stop-Loss Economico (R09) | ✅ VERIFIED | `a50d0e2ecde3` |
 | `P1.1` | `P1` | CognitiveEnvelope v1, 6 Contratos Factory, ProblemFramingGate (R01), Taint (R16) e Hipotese Falsificavel (R04) | ✅ VERIFIED | `3ab22a629348` |
 | `P1.2` | `P1` | CalibrationLedger com Brier Score por Dominio e Ajuste Dinamico de Autonomia (R06) | ✅ VERIFIED | `6007fb512343` |
 | `P1.3` | `P1` | Envelope Criptografico Windows DPAPI e Protecao Anti-Replay Persistente | ✅ VERIFIED | `0a342343806e` |
@@ -27,7 +27,7 @@
 | `P5.1` | `P5` | VerifiedBrowserAdapter (Contrato OMH + Stagehand + PAF + RPA Janela Isolada + Exa OSINT + DocumentMultimodalOrgan Taint R16) | ✅ VERIFIED | `5cd2c0ad4570` |
 | `P5.2` | `P5` | Ponte Neuro-Simbolica URE Alpha-C10 (CFGGrammarSieve, PearlCausalEngine, Z3 UnsatCore, TimeTravelEngine) | ✅ VERIFIED | `3b49106fb549` |
 | `P5.3` | `P5` | Motor Constitucional ASI-Evolve (UCB1 / MAP-Elites) + AutoHarness com Gate Pareto Selado | ✅ VERIFIED | `123504309507` |
-| `P6.1` | `P6` | Fachada Universal AgentKernel (SingleStateOwner + OTel TelemetrySpanLedger + FastPathBaseline + AutonomousTriggerScheduler) e CLI aether-ua.cmd | ✅ VERIFIED | `78a33741c680` |
+| `P6.1` | `P6` | Fachada Universal AgentKernel (SingleStateOwner + OTel TelemetrySpanLedger + FastPathBaseline + AutonomousTriggerScheduler) e CLI aether-ua.cmd | ✅ VERIFIED | `2079bae70673` |
 | `P6.2` | `P6` | Exportador de Transferencia a Frio HandoffPackExporter (Astra R18) | ✅ VERIFIED | `833b73b60bd1` |
 | `P6.3` | `P6` | Bateria Adversarial de Qualificacao Caotica de 7 Cenarios (Harbor-Style) e Selagem Final | ✅ VERIFIED | `0d14dc0513b0` |
-| `P6.4` | `P6` | Homologacao Final no AetherMind_Strict_Auditor.py e Geracao do Handoff Pack Oficial | ✅ VERIFIED | `346c3b754a01` |
+| `P6.4` | `P6` | Homologacao Final no AetherMind_Strict_Auditor.py e Geracao do Handoff Pack Oficial | ✅ VERIFIED | `575a4ffb641f` |

@@ -625,6 +625,8 @@ class AetherMindUniversalAgent:
         on_event: Any = None,
         role: str = "general_engineer",
         workflow: str = "react",
+        wheel_timeout_s: float = 0.0,
+        agui_port: Optional[int] = None,
     ) -> Dict[str, Any]:
         """REAL agent mission: LLM plans and acts via tools; VERIFIED only if `verify_cmd` exits 0."""
         mc = MissionContract(
@@ -639,13 +641,35 @@ class AetherMindUniversalAgent:
             return {"mission_id": mc.mission_id, "status": "HALTED_AT_FRAMING", "framing_verdict": asdict(verdict)}
         loop = self.agent_loop
         loop.on_event = on_event
-        with self.telemetry.start_span("kernel.run_agent_mission", attributes={"mission_id": mc.mission_id, "role": role, "workflow": workflow}) as sp:
-            res = loop.run(objective, workspace, verify_cmd=verify_cmd, mission_id=mc.mission_id,
-                           max_turns=max_turns, actor_provider=actor_provider, role=role, workflow=workflow)
-            sp["tokens_used"] = res.tokens["prompt"] + res.tokens["completion"]
-            sp["attributes"]["status"] = res.status
-        self.memory.sync_turn(objective, f"[{res.status}] {res.final_summary[:500]}", session_id=mc.mission_id)
-        return asdict(res)
+
+        sse_server = None
+        event_bus = None
+        if agui_port:
+            from am_ua.cognition.agui_protocol import AGUIEventBus, JsonlFileSink, LoopbackSSEServer, CallbackSink
+            ledger_file = loop.agui_ledger_dir / f"{mc.mission_id}.jsonl"
+            sse_server = LoopbackSSEServer(port=agui_port)
+            event_bus = AGUIEventBus(
+                thread_id="default",
+                run_id=mc.mission_id,
+                sinks=[JsonlFileSink(ledger_file), sse_server],
+            )
+            if on_event:
+                event_bus.add_sink(CallbackSink(on_event))
+
+        try:
+            with self.telemetry.start_span("kernel.run_agent_mission", attributes={"mission_id": mc.mission_id, "role": role, "workflow": workflow}) as sp:
+                res = loop.run(
+                    objective, workspace, verify_cmd=verify_cmd, mission_id=mc.mission_id,
+                    max_turns=max_turns, actor_provider=actor_provider, role=role, workflow=workflow,
+                    wheel_timeout_s=wheel_timeout_s, event_bus=event_bus,
+                )
+                sp["tokens_used"] = res.tokens["prompt"] + res.tokens["completion"]
+                sp["attributes"]["status"] = res.status
+            self.memory.sync_turn(objective, f"[{res.status}] {res.final_summary[:500]}", session_id=mc.mission_id)
+            return asdict(res)
+        finally:
+            if sse_server:
+                sse_server.close()
 
     def create_safe_editor(self, workspace_root: Path | str) -> SafeEditTransactionalJournal:
         return SafeEditTransactionalJournal(

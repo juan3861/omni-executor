@@ -1,5 +1,15 @@
-"""Cognition & LLM Client Organ (P5.2 + Real Cognitive Layer)."""
+"""Cognition & LLM Client Organ (P5.2 + Real Cognitive Layer + AG-UI Protocol)."""
 
+from .agui_protocol import (
+    AGUIEvent,
+    AGUIEventBus,
+    AGUIEventType,
+    BaseAGUISink,
+    CallbackSink,
+    JsonlFileSink,
+    LoopbackSSEServer,
+    StderrPrettySink,
+)
 from .llm_client import (
     LLMClient,
     LLMResponse,
@@ -23,4 +33,12 @@ __all__ = [
     "PersonaContract",
     "PersonaManager",
     "ReasoningBank",
+    "AGUIEventType",
+    "AGUIEvent",
+    "AGUIEventBus",
+    "BaseAGUISink",
+    "JsonlFileSink",
+    "StderrPrettySink",
+    "CallbackSink",
+    "LoopbackSSEServer",
 ]

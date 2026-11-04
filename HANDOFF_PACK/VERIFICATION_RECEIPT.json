@@ -1,11 +1,11 @@
 {
   "artifacts_sha256": {
     "constitution/IMMUTABLE_CONSTITUTION.json": "b1fe67d4d453c60d8fbb2c2f5859549dcc5f2d04fd0513f7a58acc05c8adee76",
-    "constitution/SEAL_SHA256_MANIFEST.json": "2a729f9b26952ed1f8ed1b6d1794226f6a3a6c98a3a0a0dc4ff09d943548eb00",
+    "constitution/SEAL_SHA256_MANIFEST.json": "240fcfafea84d10f062b305f12559be817cbf15b66e4bb6378e3cd994448d5ec",
     "eval/chaos_qualification_suite.py": "47e6f433aeed98598b0e860cf946c69f64b0f59a3fc00fa6a2300f9e8e18f443",
     "project/MASTER_PHASES.json": "900c7c7777e4e1e5a850035685c4ab291328ff66c1025e287e1208e9d73f85be",
     "pyproject.toml": "058e526a09728a24dded50b37ebd38aa999ff207ec84ffe1cccfee6498046011",
-    "src/am_ua/agent_kernel.py": "ee6fb56be841250f5c94cd428ad083ad9f8fefa55273e99a9e1f74c78aae9468",
+    "src/am_ua/agent_kernel.py": "af2630a659937914f27e1db97ed04de46cea11efb77dff6352bb12bf252c2918",
     "src/am_ua/cognition/ure_bridge.py": "d82d148d47378c642656d5d6d469c7eeda820705459df4c953332010218e63ea",
     "src/am_ua/evolution/constitutional_evolver.py": "b965d54b15a008cf8732145ce0307fbbafd488b9a1195b682cbbf74206a1f21f",
     "src/am_ua/execution/codex_muscle.py": "7a5776cc78f386238f73dcddaa6506b9ec752663750b360e9cf8c8372cd409b2",
@@ -13,7 +13,7 @@
     "src/am_ua/gui/verified_browser_adapter.py": "a7a8be6e359cc33dfc17ffcaa2c5b3858f5f7f50bde5e896b1c67659fbff6eeb",
     "src/am_ua/memory/triad_provider.py": "94a1b959819e89eee983a93183c0127a970cf24070af8bbb6b2c261379591bc4"
   },
-  "exported_at_unix": 1793777728.2022688,
+  "exported_at_unix": 1793780077.6229591,
   "extra_evidence": {},
   "homeostasis_healthy": true,
   "project_root": "F:\\AetherMind_Universal_Agent",
@@ -22,7 +22,7 @@
   "seal_errors": [],
   "seal_valid": true,
   "topology_v2": {
-    "checked_edges": 19,
+    "checked_edges": 20,
     "ok": true,
     "protocol": "OMNI_TOPOLOGY_V2",
     "violations": []

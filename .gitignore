@@ -11,3 +11,4 @@ node_modules/
 .am_eval_runs/
 
 data/agent_traces/
+data/agui_events/
