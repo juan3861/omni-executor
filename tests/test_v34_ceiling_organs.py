@@ -329,3 +329,46 @@ def test_v34_topology_compliance() -> None:
     gate = InterRepoTopologyGate()
     res = gate.audit_package_imports("F:/AetherMind_Universal_Agent/src/am_ua")
     assert res["ok"] is True, f"Topology violations: {res}"
+
+
+def test_agent_loop_prompt_test_protection_empty_tool_and_fast_path(tmp_path: Path) -> None:
+    from am_ua.execution.agent_loop import AgentLoop, SYSTEM_PROMPT, SPARC_SYSTEM_PROMPT
+    from am_ua.execution.durable_engine import DurableExecutionEngine
+    from am_ua.governance.seal_guard import ConstitutionSealGuard
+
+    assert "tests_visible/*" in SYSTEM_PROMPT
+    assert "tests_visible/*" in SPARC_SYSTEM_PROMPT
+
+    class EmptyThenFinishLLM:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.total_prompt_tokens = 0
+            self.total_completion_tokens = 0
+
+        def chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+            self.calls += 1
+            self.total_prompt_tokens += 5
+            self.total_completion_tokens += 5
+
+            class R:
+                provider = "mock"
+                model = "mock-1"
+                prompt_tokens = 5
+                completion_tokens = 5
+                total_tokens = 10
+                text = (
+                    '{"thought": "oops", "tool": "", "args": {}}'
+                    if self.calls == 1
+                    else '{"thought": "done", "tool": "finish", "args": {"summary": "ok", "confidence": 0.9}}'
+                )
+
+            return R()
+
+    llm = EmptyThenFinishLLM()
+    engine = DurableExecutionEngine(tmp_path / "durable.db")
+    seal_guard = ConstitutionSealGuard(r"F:\AetherMind_Universal_Agent")
+    loop = AgentLoop(engine=engine, seal_guard=seal_guard, llm=llm)  # type: ignore[arg-type]
+    res = loop.run("Fix bug in app.py", workspace=tmp_path, max_turns=4, workflow="hierarchical", use_judge=False)
+    assert res.stop_reason == "finish"
+    assert llm.calls == 2
+    assert res.tool_calls == []
