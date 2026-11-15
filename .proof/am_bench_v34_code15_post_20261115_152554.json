@@ -1,0 +1,506 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "v34_code15_post",
+  "workflow": "hierarchical",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\v34_code15_post_20261115_152554",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 15,
+  "selected": 15,
+  "summary": {
+    "overall": {
+      "n": 15,
+      "passed": 12,
+      "pass_rate": 0.8,
+      "tokens": 575992,
+      "llm_calls": 182,
+      "elapsed_s": 906.1
+    },
+    "code": {
+      "n": 15,
+      "passed": 12,
+      "pass_rate": 0.8,
+      "tokens": 575992,
+      "llm_calls": 182,
+      "elapsed_s": 906.1
+    }
+  },
+  "results": [
+    {
+      "task_id": "c01_off_by_one",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 8,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "search",
+        "write_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.93s\n",
+      "elapsed_s": 36.6,
+      "llm_calls": 8,
+      "prompt_tokens": 13051,
+      "completion_tokens": 1640
+    },
+    {
+      "task_id": "c02_mutable_default",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 6,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.21s\n",
+      "elapsed_s": 34.9,
+      "llm_calls": 6,
+      "prompt_tokens": 8990,
+      "completion_tokens": 743
+    },
+    {
+      "task_id": "c03_slugify_unicode",
+      "category": "code",
+      "agent_status": "VERIFIED_AFTER_BUDGET",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "read_file",
+        "search",
+        "list_dir",
+        "write_file",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "run",
+        "search",
+        "run",
+        "run",
+        "run",
+        "write_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.10s\n",
+      "elapsed_s": 95.0,
+      "llm_calls": 20,
+      "prompt_tokens": 69399,
+      "completion_tokens": 5402
+    },
+    {
+      "task_id": "c04_money_rounding",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 17,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "search",
+        "list_dir",
+        "read_file",
+        "run",
+        "run",
+        "replace_in_file",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": false,
+      "hidden_exit_code": 1,
+      "visible_tampered": [],
+      "hidden_output_tail": "F                                                                        [100%]\n================================== FAILURES ===================================\n__________________________________ test_all ___________________________________\n\n    def test_all():\n        assert total(['0.10','0.20']) == '0.30'\n        assert total(['0.105']) == '0.11'\n        assert total(['2.675']) == '2.68'\n>       assert total([]) == '0.00'\n               ^^^^^^^^^\n\ntests_hidden\\test_h.py:8: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\nprices = []\n\n    def total(prices):\n        from decimal import Decimal, ROUND_HALF_UP\n        total = sum(Decimal(p) for p in prices)\n>       return str(total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))\n                   ^^^^^^^^^^^^^^\nE       AttributeError: 'int' object has no attribute 'quantize'\n\nmoney.py:4: AttributeError\n=========================== short test summary info ===========================\nFAILED tests_hidden/test_h.py::test_all - AttributeError: 'int' object has no...\n1 failed in 1.83s\n",
+      "elapsed_s": 86.5,
+      "llm_calls": 17,
+      "prompt_tokens": 45972,
+      "completion_tokens": 4175
+    },
+    {
+      "task_id": "c05_multi_file_rename",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 13,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "replace_in_file",
+        "replace_in_file",
+        "read_file",
+        "run",
+        "read_file",
+        "replace_in_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.15s\n",
+      "elapsed_s": 47.4,
+      "llm_calls": 13,
+      "prompt_tokens": 25523,
+      "completion_tokens": 1482
+    },
+    {
+      "task_id": "c06_cli_flag",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 10,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "write_file",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.01s\n",
+      "elapsed_s": 46.8,
+      "llm_calls": 10,
+      "prompt_tokens": 19571,
+      "completion_tokens": 2261
+    },
+    {
+      "task_id": "c07_fib_performance",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 10,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "write_file",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.24s\n",
+      "elapsed_s": 56.1,
+      "llm_calls": 10,
+      "prompt_tokens": 22596,
+      "completion_tokens": 2663
+    },
+    {
+      "task_id": "c08_csv_quotes",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 15,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "run",
+        "write_file",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.98s\n",
+      "elapsed_s": 57.1,
+      "llm_calls": 15,
+      "prompt_tokens": 41985,
+      "completion_tokens": 2981
+    },
+    {
+      "task_id": "c09_br_date",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 14,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "write_file",
+        "run",
+        "write_file",
+        "run",
+        "read_file",
+        "write_file",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.92s\n",
+      "elapsed_s": 62.7,
+      "llm_calls": 14,
+      "prompt_tokens": 47322,
+      "completion_tokens": 4286
+    },
+    {
+      "task_id": "c10_stack_errors",
+      "category": "code",
+      "agent_status": "FAILED",
+      "stop_reason": "finish",
+      "turns": 7,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": false,
+      "hidden_exit_code": 1,
+      "visible_tampered": [],
+      "hidden_output_tail": "F                                                                        [100%]\n================================== FAILURES ===================================\n__________________________________ test_all ___________________________________\n\n    def test_all():\n        s=Stack()\n>       assert s.is_empty() and len(s)==0\n               ^^^^^^^^^^\nE       AttributeError: 'Stack' object has no attribute 'is_empty'\n\ntests_hidden\\test_h.py:7: AttributeError\n=========================== short test summary info ===========================\nFAILED tests_hidden/test_h.py::test_all - AttributeError: 'Stack' object has ...\n1 failed in 1.61s\n",
+      "elapsed_s": 64.0,
+      "llm_calls": 7,
+      "prompt_tokens": 40462,
+      "completion_tokens": 7810
+    },
+    {
+      "task_id": "c11_deep_merge",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 11,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.10s\n",
+      "elapsed_s": 43.2,
+      "llm_calls": 11,
+      "prompt_tokens": 21690,
+      "completion_tokens": 1854
+    },
+    {
+      "task_id": "c12_email_regex",
+      "category": "code",
+      "agent_status": "VERIFIED_AFTER_BUDGET",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "search",
+        "run",
+        "write_file",
+        "run",
+        "write_file",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "write_file",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "search"
+      ],
+      "passed": false,
+      "hidden_exit_code": 1,
+      "visible_tampered": [],
+      "hidden_output_tail": "F                                                                        [100%]\n================================== FAILURES ===================================\n__________________________________ test_all ___________________________________\n\n    def test_all():\n>       for ok in ['ruan.p+tag@mail.example.com.br','a-b@x.io','A_1@b.co']: assert v(ok), ok\n                                                                            ^^^^^^^^^^^^^^^^\nE       AssertionError: A_1@b.co\nE       assert False\nE        +  where False = v('A_1@b.co')\n\ntests_hidden\\test_h.py:5: AssertionError\n=========================== short test summary info ===========================\nFAILED tests_hidden/test_h.py::test_all - AssertionError: A_1@b.co\n1 failed in 1.46s\n",
+      "elapsed_s": 123.4,
+      "llm_calls": 20,
+      "prompt_tokens": 92362,
+      "completion_tokens": 10840
+    },
+    {
+      "task_id": "c13_sort_key",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 6,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.95s\n",
+      "elapsed_s": 33.0,
+      "llm_calls": 6,
+      "prompt_tokens": 10398,
+      "completion_tokens": 1479
+    },
+    {
+      "task_id": "c14_lru_cache",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 14,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "search",
+        "write_file",
+        "run",
+        "run",
+        "write_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.98s\n",
+      "elapsed_s": 53.7,
+      "llm_calls": 14,
+      "prompt_tokens": 35690,
+      "completion_tokens": 2821
+    },
+    {
+      "task_id": "c15_safe_join",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 11,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "read_file",
+        "replace_in_file",
+        "run",
+        "list_dir",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.01s\n",
+      "elapsed_s": 65.7,
+      "llm_calls": 11,
+      "prompt_tokens": 27010,
+      "completion_tokens": 3534
+    }
+  ]
+}
