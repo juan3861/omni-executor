@@ -113,6 +113,7 @@ class WorkspaceTools:
         llm_client: Optional[LLMClient] = None,
         subagent_bus: Optional[SubAgentSessionBus] = None,
         mcp_hub: Optional[MCPFederationHub] = None,
+        browser_factory: Optional[Callable[[bool], Any]] = None,
     ) -> None:
         self.ws = workspace.resolve()
         self.seal_guard = seal_guard
@@ -122,6 +123,8 @@ class WorkspaceTools:
         self._llm = llm_client
         self._subagent_bus = subagent_bus
         self._mcp_hub = mcp_hub
+        self._browser_factory = browser_factory
+        self._browser: Any = None
         # Workspace itself must be a constitutionally writable location (project root or safe temp root).
         self.seal_guard.assert_write_allowed(self.ws / ".am_probe", actor="agent_loop")
 
@@ -382,6 +385,47 @@ class WorkspaceTools:
             args.get("arguments") or {},
         )
 
+    def _get_browser(self, *, headless: bool = True) -> Any:
+        if self._browser is None:
+            if self._browser_factory is None:
+                raise RuntimeError("browser_factory is not configured")
+            self._browser = self._browser_factory(headless)
+        return self._browser
+
+    def browser_observe(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        headless = bool(args.get("headless", True))
+        url = args.get("url")
+        wait_ms = int(args.get("wait_ms", 200))
+        return self._get_browser(headless=headless).observe(
+            url=str(url) if url else None,
+            wait_ms=wait_ms,
+        )
+
+    def browser_act(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        action = str(args.get("action", "")).strip()
+        if not action:
+            return {"ok": False, "error": "missing required 'action'"}
+        idx = args.get("idx")
+        return self._get_browser(headless=bool(args.get("headless", True))).act(
+            action,
+            idx=int(idx) if idx is not None else None,
+            target=str(args["target"]) if args.get("target") else None,
+            text=str(args["text"]) if args.get("text") is not None else None,
+            url=str(args["url"]) if args.get("url") else None,
+        )
+
+    def browser_extract(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        selector = str(args.get("selector", "body"))
+        return self._get_browser(headless=bool(args.get("headless", True))).extract(selector=selector)
+
+    def close(self) -> None:
+        if self._browser is not None:
+            try:
+                self._browser.close()
+            except Exception:
+                pass
+            self._browser = None
+
     # ---- snapshot for evidence diffs
     def snapshot(self) -> Dict[str, Tuple[str, Optional[str]]]:
         snap: Dict[str, Tuple[str, Optional[str]]] = {}
@@ -427,6 +471,9 @@ Tools:
 - send_agent {"recipient_id": "sub-...", "content": "..."}
 - await_agents {"session_ids": ["sub-..."], "timeout_s": 30}
 - mcp_call {"action": "call|list", "server": "local", "tool": "am_pc_probe", "arguments": {...}}
+- browser_observe {"url": "https://...|file:///...", "headless": true}   (CDP/Playwright observe + indexed DOM [idx] + F12/Visual proof)
+- browser_act {"action": "click|fill|goto", "idx": 1, "target": "Submit", "text": "...", "url": "..."}
+- browser_extract {"selector": "body"}
 - request_human {"reason": "<why human intervention is required>", "instructions": "<what the human must do>"}
 - finish {"summary": "<what you did and the evidence>", "confidence": <0..1 probability the acceptance check passes>}
 
@@ -472,6 +519,9 @@ Tools:
 - send_agent {"recipient_id": "sub-...", "content": "..."}
 - await_agents {"session_ids": ["sub-..."], "timeout_s": 30}
 - mcp_call {"action": "call|list", "server": "local", "tool": "am_pc_probe", "arguments": {...}}
+- browser_observe {"url": "https://...|file:///...", "headless": true}   (CDP/Playwright observe + indexed DOM [idx] + F12/Visual proof)
+- browser_act {"action": "click|fill|goto", "idx": 1, "target": "Submit", "text": "...", "url": "..."}
+- browser_extract {"selector": "body"}
 - request_human {"reason": "<why human intervention is required>", "instructions": "<what the human must do>"}
 - finish {"summary": "<what you did and the evidence>", "confidence": <0..1 probability the acceptance check passes>}
 
@@ -540,6 +590,9 @@ class AgentLoop:
         "send_agent": EffectClass.IDEMPOTENT_WRITE,
         "await_agents": EffectClass.PURE_READ,
         "mcp_call": EffectClass.COMPENSATABLE_MUTATION,
+        "browser_observe": EffectClass.PURE_READ,
+        "browser_act": EffectClass.COMPENSATABLE_MUTATION,
+        "browser_extract": EffectClass.PURE_READ,
     }
 
     def __init__(
@@ -563,6 +616,7 @@ class AgentLoop:
         modality_router: Optional[HybridModalityRouter] = None,
         subagent_bus: Optional[SubAgentSessionBus] = None,
         mcp_hub: Optional[MCPFederationHub] = None,
+        browser_factory: Optional[Callable[[bool], Any]] = None,
     ) -> None:
         self.engine = engine
         self.seal_guard = seal_guard
@@ -580,6 +634,7 @@ class AgentLoop:
         self.skill_forge = skill_forge or AdaptiveSkillForge()
         self.hierarchical_planner = hierarchical_planner or ProactiveHierarchicalPlanner(llm=self.llm)
         self.modality_router = modality_router or HybridModalityRouter(skill_forge=self.skill_forge)
+        self.browser_factory = browser_factory
         self.subagent_bus = subagent_bus or SubAgentSessionBus()
         self.mcp_hub = mcp_hub or MCPFederationHub()
         self._active: Optional[WorkspaceTools] = None
@@ -680,6 +735,7 @@ class AgentLoop:
             llm_client=self.llm,
             subagent_bus=self.subagent_bus,
             mcp_hub=self.mcp_hub,
+            browser_factory=self.browser_factory,
         )
         self._active = ws
         effective_wheel_timeout = self.wheel_timeout_s if wheel_timeout_s is None else max(0.0, float(wheel_timeout_s))
@@ -1024,6 +1080,7 @@ class AgentLoop:
             self.reasoning_bank.record_run(asdict(result))
         if created_local_bus:
             bus.close()
+        ws.close()
         self._active = None
         return result
 

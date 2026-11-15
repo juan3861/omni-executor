@@ -426,3 +426,78 @@ def test_finish_verification_gate_rejects_premature_finish(tmp_path: Path) -> No
     assert res.status == "VERIFIED"
     assert res.stop_reason == "finish"
     assert llm.calls == 3
+
+
+def test_agent_loop_browser_cdp_tools_end_to_end(tmp_path: Path) -> None:
+    from am_ua.execution.agent_loop import AgentLoop
+    from am_ua.execution.durable_engine import DurableExecutionEngine
+    from am_ua.governance.seal_guard import ConstitutionSealGuard
+
+    html_file = tmp_path / "form.html"
+    html_file.write_text(
+        """<!DOCTYPE html>
+<html><body>
+  <h2 id="out">IDLE</h2>
+  <input id="code_box" type="text" />
+  <button id="go_btn" onclick="document.getElementById('out').innerText='OK:'+document.getElementById('code_box').value">Go</button>
+</body></html>""",
+        encoding="utf-8",
+    )
+    url = html_file.as_uri()
+
+    class BrowserFlowLLM:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.total_prompt_tokens = 0
+            self.total_completion_tokens = 0
+
+        def chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+            self.calls += 1
+            self.total_prompt_tokens += 5
+            self.total_completion_tokens += 5
+
+            class R:
+                provider = "mock"
+                model = "mock-1"
+                prompt_tokens = 5
+                completion_tokens = 5
+                total_tokens = 10
+
+            r = R()
+            if self.calls == 1:
+                r.text = json.dumps({"thought": "observe page", "tool": "browser_observe", "args": {"url": url, "headless": True}})
+            elif self.calls == 2:
+                r.text = json.dumps({"thought": "fill input", "tool": "browser_act", "args": {"action": "fill", "target": "#code_box", "text": "CDP_99"}})
+            elif self.calls == 3:
+                r.text = json.dumps({"thought": "click Go", "tool": "browser_act", "args": {"action": "click", "target": "#go_btn"}})
+            elif self.calls == 4:
+                r.text = json.dumps({"thought": "extract result", "tool": "browser_extract", "args": {"selector": "#out"}})
+            else:
+                assert any("OK:CDP_99" in m.get("content", "") for m in messages)
+                r.text = json.dumps({"thought": "done", "tool": "finish", "args": {"summary": "OK:CDP_99", "confidence": 1.0}})
+            return r
+
+    llm = BrowserFlowLLM()
+    engine = DurableExecutionEngine(tmp_path / "durable.db")
+    seal_guard = ConstitutionSealGuard(r"F:\AetherMind_Universal_Agent")
+    loop = AgentLoop(
+        engine=engine,
+        seal_guard=seal_guard,
+        llm=llm,  # type: ignore[arg-type]
+        browser_factory=lambda headless=True: CDPIndexedBrowser(artifact_dir=tmp_path / "b_art", headless=headless),
+    )
+    res = loop.run(
+        f"Open {url} in browser, enter CDP_99, click Go, and extract #out",
+        workspace=tmp_path,
+        max_turns=8,
+        workflow="react",
+        use_judge=False,
+    )
+    assert res.stop_reason == "finish"
+    assert [tc["tool"] for tc in res.tool_calls] == [
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_extract",
+    ]
+    assert all(tc["ok"] for tc in res.tool_calls)

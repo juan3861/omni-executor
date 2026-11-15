@@ -646,6 +646,10 @@ class AetherMindUniversalAgent:
         """Lazily build the real LLM-driven agent loop (keeps doctor/pipeline paths free of network I/O)."""
         if getattr(self, "_agent_loop", None) is None:
             from am_ua.execution.agent_loop import AgentLoop
+            from am_ua.gui.cdp_browser import CDPIndexedBrowser
+
+            def _make_browser(headless: bool = True) -> CDPIndexedBrowser:
+                return CDPIndexedBrowser(artifact_dir=self.data_dir / "browser_art", headless=headless)
 
             self._agent_loop = AgentLoop(
                 engine=self.durable_engine,
@@ -658,6 +662,7 @@ class AetherMindUniversalAgent:
                 modality_router=self.modality_router,
                 subagent_bus=self.subagent_bus,
                 mcp_hub=self.mcp_hub,
+                browser_factory=_make_browser,
             )
         return self._agent_loop
 
