@@ -772,6 +772,7 @@ class AgentLoop:
         summary, confidence, stop_reason = "", None, "max_turns"
         parse_failures, turn = 0, 0
         human_requests_count = 0
+        pre_verification: Optional[Dict[str, Any]] = None
         for turn in range(1, max_turns + 1):
             messages = self._condense(messages)
             try:
@@ -809,6 +810,29 @@ class AgentLoop:
             self._emit({"turn": turn, "tool": tool, "provider": resp.provider, "thought": thought_text[:200]})
 
             if tool == "finish":
+                if verify_cmd and turn < max_turns:
+                    v_pre = ws.run({"command": verify_cmd, "timeout_s": 600})
+                    if v_pre["exit_code"] != 0:
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                f"FINISH REJECTED: acceptance command '{verify_cmd}' failed "
+                                f"(exit_code={v_pre['exit_code']}). Fix the failure before calling finish:\n"
+                                f"{v_pre['output'][-2000:]}"
+                            ),
+                        })
+                        try:
+                            homeo.record_turn_cost(tokens=resp.total_tokens, tool_calls=1, made_verified_progress=False)
+                        except ResourceExhaustedError as exc:
+                            stop_reason = f"budget: {exc}"
+                            break
+                        continue
+                    pre_verification = {
+                        "command": verify_cmd,
+                        "exit_code": v_pre["exit_code"],
+                        "passed": True,
+                        "output_tail": v_pre["output"][-2500:],
+                    }
                 summary = str(args.get("summary", ""))
                 try:
                     c = float(args.get("confidence"))
@@ -929,10 +953,11 @@ class AgentLoop:
                 break
 
         # ---------------- verification (executable oracle first, judge second)
-        verification = None
+        verification = pre_verification
         if verify_cmd:
-            v = ws.run({"command": verify_cmd, "timeout_s": 600})
-            verification = {"command": verify_cmd, "exit_code": v["exit_code"], "passed": v["exit_code"] == 0, "output_tail": v["output"][-2500:]}
+            if verification is None:
+                v = ws.run({"command": verify_cmd, "timeout_s": 600})
+                verification = {"command": verify_cmd, "exit_code": v["exit_code"], "passed": v["exit_code"] == 0, "output_tail": v["output"][-2500:]}
             bus.emit(
                 AGUIEventType.CUSTOM,
                 name="VERIFICATION",

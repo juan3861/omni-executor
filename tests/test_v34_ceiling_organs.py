@@ -372,3 +372,55 @@ def test_agent_loop_prompt_test_protection_empty_tool_and_fast_path(tmp_path: Pa
     assert res.stop_reason == "finish"
     assert llm.calls == 2
     assert res.tool_calls == []
+
+
+def test_finish_verification_gate_rejects_premature_finish(tmp_path: Path) -> None:
+    from am_ua.execution.agent_loop import AgentLoop
+    from am_ua.execution.durable_engine import DurableExecutionEngine
+    from am_ua.governance.seal_guard import ConstitutionSealGuard
+
+    (tmp_path / "val.py").write_text("X = 0\n", encoding="utf-8")
+
+    class PrematureFinishLLM:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.total_prompt_tokens = 0
+            self.total_completion_tokens = 0
+
+        def chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+            self.calls += 1
+            self.total_prompt_tokens += 5
+            self.total_completion_tokens += 5
+
+            class R:
+                provider = "mock"
+                model = "mock-1"
+                prompt_tokens = 5
+                completion_tokens = 5
+                total_tokens = 10
+
+            r = R()
+            if self.calls == 1:
+                r.text = '{"thought": "premature", "tool": "finish", "args": {"summary": "done", "confidence": 0.9}}'
+            elif self.calls == 2:
+                assert any("FINISH REJECTED" in m.get("content", "") for m in messages)
+                r.text = '{"thought": "fix X", "tool": "write_file", "args": {"path": "val.py", "content": "X = 1\\n"}}'
+            else:
+                r.text = '{"thought": "now ok", "tool": "finish", "args": {"summary": "fixed", "confidence": 1.0}}'
+            return r
+
+    llm = PrematureFinishLLM()
+    engine = DurableExecutionEngine(tmp_path / "durable.db")
+    seal_guard = ConstitutionSealGuard(r"F:\AetherMind_Universal_Agent")
+    loop = AgentLoop(engine=engine, seal_guard=seal_guard, llm=llm)  # type: ignore[arg-type]
+    res = loop.run(
+        "Set X = 1 in val.py",
+        workspace=tmp_path,
+        verify_cmd=f'"{sys.executable}" -c "import val; assert val.X == 1"',
+        max_turns=5,
+        workflow="hierarchical",
+        use_judge=False,
+    )
+    assert res.status == "VERIFIED"
+    assert res.stop_reason == "finish"
+    assert llm.calls == 3
