@@ -673,17 +673,20 @@ class SetOfMarkGrounder:
         """Fuse UIA + OCR boxes, deduplicate via IoU, and draw numbered Set-of-Mark tags."""
         fused: List[GroundedUIElement] = []
 
-        # 1. Prioritize interactive leaf UIA controls (exclude giant window/pane containers if smaller elements exist)
+        # 1. Prioritize interactive leaf UIA controls, reserving at least 45% capacity for OCR when OCR elements exist
         img_area = max(1, image.size[0] * image.size[1])
+        uia_cap = max(1, int(max_total * 0.55)) if ocr_elements else max_total
+        overflow_uia: List[GroundedUIElement] = []
         for el in uia_elements:
             el_area = el.width * el.height
             if el_area > 0.75 * img_area and el.role in ("window", "pane", "document"):
                 continue
             if any(compute_bbox_iou(el.bbox, existing.bbox) > iou_threshold for existing in fused):
                 continue
-            fused.append(el)
-            if len(fused) >= max_total:
-                break
+            if len(fused) < uia_cap:
+                fused.append(el)
+            else:
+                overflow_uia.append(el)
 
         # 2. Supplement with OCR text boxes that don't heavily overlap existing UIA elements
         for ocr_el in ocr_elements:
@@ -692,6 +695,14 @@ class SetOfMarkGrounder:
             if any(compute_bbox_iou(ocr_el.bbox, existing.bbox) > iou_threshold for existing in fused):
                 continue
             fused.append(ocr_el)
+
+        # 2b. Fill any remaining capacity with overflow UIA elements
+        for extra_el in overflow_uia:
+            if len(fused) >= max_total:
+                break
+            if any(compute_bbox_iou(extra_el.bbox, existing.bbox) > iou_threshold for existing in fused):
+                continue
+            fused.append(extra_el)
 
         # Re-number sequentially 1..N (top-to-bottom, left-to-right reading order)
         fused.sort(key=lambda e: (e.bbox[1] // 24, e.bbox[0]))
@@ -1103,14 +1114,41 @@ class PCAutomationEngine:
         self,
         *,
         hwnd: Optional[int] = None,
+        window_title: Optional[str] = None,
         include_ocr: bool = True,
-        max_elements: int = 75,
+        max_elements: int = 80,
     ) -> Dict[str, Any]:
-        """Capture screen, extract UIA + OCR elements, render Set-of-Mark (SoM) image, and compute visual hash."""
-        img, raw_path = self.grounder.capture_screen()
+        """Capture screen (or target window), extract UIA + OCR elements, render Set-of-Mark (SoM) image, and compute visual hash."""
+        target_hwnd = int(hwnd) if hwnd else None
+        region: Optional[Tuple[int, int, int, int]] = None
+        scr_w, scr_h = get_screen_resolution()
+
+        if window_title and not target_hwnd:
+            wins = self.window_organ.find_windows_by_locator(window_title) or self.window_organ.list_windows(title_filter=window_title)
+            if wins:
+                target_hwnd = int(wins[0]["hwnd"])
+                self.window_organ.control_window(wins[0]["title"], action="focus")
+
+        if target_hwnd:
+            try:
+                import win32gui
+                l, t, r, b = win32gui.GetWindowRect(target_hwnd)
+                l, t = max(0, int(l)), max(0, int(t))
+                r, b = min(scr_w, int(r)), min(scr_h, int(b))
+                if r - l >= 30 and b - t >= 30:
+                    region = (l, t, r, b)
+            except Exception:
+                region = None
+
+        img, raw_path = self.grounder.capture_screen(region=region)
         vis_hash, _ = compute_visual_dhash_2048(img)
-        uia_els = self.grounder.extract_uia_elements(hwnd_root=hwnd, max_elements=max_elements)
+        uia_els = self.grounder.extract_uia_elements(hwnd_root=target_hwnd, max_elements=max_elements)
         ocr_els = self.grounder.extract_ocr_elements(img, max_elements=max_elements) if include_ocr else []
+        if region is not None:
+            off_x, off_y = region[0], region[1]
+            for oel in ocr_els:
+                l, t, r, b = oel.bbox
+                oel.bbox = (l + off_x, t + off_y, r + off_x, b + off_y)
         fused, som_path = self.grounder.fuse_and_render_som(
             img, uia_els, ocr_els, max_total=max_elements
         )
@@ -1120,6 +1158,8 @@ class PCAutomationEngine:
             "ok": True,
             "timestamp": time.time(),
             "active_window": self.window_organ.get_active_window(),
+            "target_hwnd": target_hwnd,
+            "capture_region": list(region) if region else None,
             "visual_dhash_2048": vis_hash,
             "raw_screenshot_path": str(raw_path),
             "som_screenshot_path": str(som_path),
@@ -1130,6 +1170,96 @@ class PCAutomationEngine:
         }
         self.last_observation = obs
         return obs
+
+    def ground_with_vlm(
+        self,
+        target_description: str,
+        llm: Any,
+        *,
+        hwnd: Optional[int] = None,
+        window_title: Optional[str] = None,
+        refresh: bool = True,
+    ) -> Dict[str, Any]:
+        """Multimodal Set-of-Mark VLM Grounding (F6): sends annotated SoM screenshot + element table to VLM."""
+        if refresh or not self.last_observation:
+            self.observe_desktop(hwnd=hwnd, window_title=window_title, include_ocr=True)
+        obs = self.last_observation or {}
+        som_path = obs.get("som_screenshot_path", "")
+        elements = obs.get("elements", [])
+        table_lines = [
+            f"[{e['tag_id']}] ({e['source']}:{e['role']}) name={e['name']!r} center={e['center']}"
+            for e in elements[:80]
+        ]
+        table_text = "\n".join(table_lines)
+
+        prompt = (
+            f"Locate the UI element matching: {target_description!r}.\n"
+            f"Inspect the numbered Set-of-Mark tags [1]..[N] on the image and the element table below.\n"
+            f"Reply with ONLY a JSON object: "
+            f'{{"tag_id": <integer tag or null>, "norm_x": <0..1000 or null>, "norm_y": <0..1000 or null>, "rationale": "<short reason>"}}'
+        )
+        try:
+            from am_ua.cognition.llm_client import extract_json_object
+            resp = llm.chat_multimodal(
+                prompt,
+                som_path,
+                fallback_text_context=table_text,
+                max_tokens=300,
+                temperature=0.0,
+                json_mode=True,
+            )
+            parsed = extract_json_object(resp.text)
+            tag_id = parsed.get("tag_id")
+            if tag_id is not None and int(tag_id) in self.last_elements:
+                el = self.last_elements[int(tag_id)]
+                cx, cy = el.center
+                safe, reason = self.verify_point_safety(cx, cy)
+                return {
+                    "ok": safe,
+                    "method": "VLM_SOM_TAG",
+                    "tag_id": int(tag_id),
+                    "center": [cx, cy],
+                    "element": el.to_dict(),
+                    "safety_verdict": reason,
+                    "provider": resp.provider,
+                    "rationale": parsed.get("rationale", ""),
+                }
+            if parsed.get("norm_x") is not None and parsed.get("norm_y") is not None:
+                px, py = self.grounder.scale_normalized_1000(
+                    float(parsed["norm_x"]), float(parsed["norm_y"])
+                )
+                safe, reason = self.verify_point_safety(px, py)
+                return {
+                    "ok": safe,
+                    "method": "VLM_NORM_1000",
+                    "tag_id": None,
+                    "center": [px, py],
+                    "element": None,
+                    "safety_verdict": reason,
+                    "provider": resp.provider,
+                    "rationale": parsed.get("rationale", ""),
+                }
+        except Exception as exc:
+            vlm_err = str(exc)
+        else:
+            vlm_err = "VLM returned no valid tag_id or norm_x/norm_y"
+
+        # Deterministic fallback to find_elements
+        matches = self.find_elements(target_description, refresh=False)
+        if matches:
+            best = matches[0]
+            cx, cy = int(best["center"][0]), int(best["center"][1])
+            safe, reason = self.verify_point_safety(cx, cy)
+            return {
+                "ok": safe,
+                "method": "FALLBACK_UIA_OCR",
+                "tag_id": best["tag_id"],
+                "center": [cx, cy],
+                "element": best,
+                "safety_verdict": reason,
+                "vlm_fallback_reason": vlm_err,
+            }
+        return {"ok": False, "error": f"Could not ground {target_description!r}: {vlm_err}"}
 
     def find_elements(self, locator_or_query: str, *, refresh: bool = True) -> List[Dict[str, Any]]:
         """Find grounded UI elements matching either a Robocorp AST locator or fuzzy text query."""

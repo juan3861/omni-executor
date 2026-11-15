@@ -59,7 +59,8 @@ def main(argv: list[str] | None = None) -> int:
     p_mission.add_argument("--full-json", action="store_true", help="Print the full result including diff")
     # Pipeline & diagnostic compatibility flags
     p_mission.add_argument("--role", default="general_engineer", help="Specialized persona contract (general_engineer|systems_architect|strict_auditor|security_reverse_engineer|performance_sre)")
-    p_mission.add_argument("--workflow", default="react", choices=["react", "sparc"], help="Execution workflow methodology (react|sparc)")
+    p_mission.add_argument("--workflow", default="react", choices=["react", "sparc", "hierarchical"], help="Execution workflow methodology (react|sparc|hierarchical)")
+    p_mission.add_argument("--best-of-n", type=int, default=1, help="Behavior Best-of-N parallel candidate rollouts (Agent-S3 bBoN)")
     p_mission.add_argument("--wheel-timeout", type=float, default=0.0, help="Human intervention timeout in seconds (0 = disabled/autonomous)")
     p_mission.add_argument("--agui-port", type=int, default=None, help="Local loopback port to serve live AG-UI SSE stream (127.0.0.1)")
     p_mission.add_argument("--domain", default="software_engineering")
@@ -102,7 +103,31 @@ def main(argv: list[str] | None = None) -> int:
     p_skills.add_argument("--name", default=None, help="Skill name to run")
     p_skills.add_argument("--kwargs", default="{}", help="JSON kwargs for skill execution")
 
+    sub.add_parser("mcp-serve", help="Start AetherMind Sovereign MCP Server over stdio (JSON-RPC 2.0)")
+
+    p_bench = sub.add_parser("bench", help="Real-LLM Benchmark (AM-Bench) runner & comparison")
+    p_bench.add_argument("action", choices=["run", "report"], help="Benchmark action")
+    p_bench.add_argument("--suite", default="quick", choices=["code", "desktop", "all", "quick"], help="Benchmark suite")
+    p_bench.add_argument("--label", default="v3.4", help="Label for benchmark report")
+    p_bench.add_argument("--workflow", default="react", choices=["react", "sparc", "hierarchical"])
+    p_bench.add_argument("--max-turns", type=int, default=12)
+
+    p_browser = sub.add_parser("browser", help="CDP Interactive DOM-Indexed Browser (browser-use / Stagehand observe/act/extract)")
+    p_browser.add_argument("action", choices=["observe", "act", "extract"], help="Browser action")
+    p_browser.add_argument("--url", required=True, help="Target URL to open in isolated browser context")
+    p_browser.add_argument("--index", type=int, default=None, help="DOM index [1..N] for 'act'")
+    p_browser.add_argument("--selector", default=None, help="CSS selector for 'act' or 'extract'")
+    p_browser.add_argument("--act-type", default="click", choices=["click", "fill", "press"], help="Interaction type for 'act'")
+    p_browser.add_argument("--value", default="", help="Text or key value for 'act'")
+
     args = parser.parse_args(argv)
+    if args.cmd == "mcp-serve":
+        from am_ua.execution.mcp_federation import AetherMindMCPServer
+        agent = AetherMindUniversalAgent()
+        srv = AetherMindMCPServer(pc_engine=agent.pc_automation, skill_forge=agent.skill_forge)
+        srv.serve_stdio()
+        return 0
+
     agent = AetherMindUniversalAgent()
 
     if args.cmd == "doctor":
@@ -195,6 +220,7 @@ def main(argv: list[str] | None = None) -> int:
                 workflow=getattr(args, "workflow", "react"),
                 wheel_timeout_s=getattr(args, "wheel_timeout", 0.0),
                 agui_port=getattr(args, "agui_port", None),
+                best_of_n=getattr(args, "best_of_n", 1),
             )
         except PermissionError as exc:
             print(json.dumps({"status": "BLOCKED", "error": str(exc)}, ensure_ascii=False))
@@ -307,6 +333,41 @@ def main(argv: list[str] | None = None) -> int:
             res = forge.run_skill(args.name, kwargs=kw)
             print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
             return 0 if res.get("ok") else 1
+
+    if args.cmd == "bench":
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from eval.am_bench.runner import run_benchmark
+        if args.action == "report":
+            proof_dir = ROOT / ".proof"
+            reports = sorted(proof_dir.glob("am_bench_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if not reports:
+                print(json.dumps({"ok": False, "error": "No AM-Bench reports found in .proof/"}))
+                return 1
+            data = json.loads(reports[0].read_text(encoding="utf-8"))
+            print(json.dumps({"latest_report": str(reports[0]), "summary": {k: v for k, v in data.items() if k != "results"}}, indent=2))
+            return 0
+        rep = run_benchmark(suite=args.suite, label=args.label, workflow=args.workflow, max_turns=args.max_turns)
+        print(json.dumps({k: v for k, v in rep.items() if k != "results"}, indent=2))
+        return 0
+
+    if args.cmd == "browser":
+        br = agent.cdp_browser
+        try:
+            obs = br.observe(url=args.url)
+            if args.action == "observe":
+                print(json.dumps(obs, indent=2, ensure_ascii=False))
+                return 0 if obs.get("ok") else 1
+            if args.action == "act":
+                res = br.act(args.act_type, idx=args.index, target=args.selector, text=args.value)
+                print(json.dumps(res, indent=2, ensure_ascii=False))
+                return 0 if res.get("ok") else 1
+            if args.action == "extract":
+                res = br.extract(selector=args.selector or "body")
+                print(json.dumps(res, indent=2, ensure_ascii=False))
+                return 0 if res.get("ok") else 1
+        finally:
+            br.close()
 
     return 1
 

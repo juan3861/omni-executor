@@ -10,6 +10,11 @@ from .agui_protocol import (
     LoopbackSSEServer,
     StderrPrettySink,
 )
+from .hierarchical_planner import (
+    HierarchicalPlan,
+    ProactiveHierarchicalPlanner,
+    Subgoal,
+)
 from .llm_client import (
     LLMClient,
     LLMResponse,
@@ -41,4 +46,7 @@ __all__ = [
     "StderrPrettySink",
     "CallbackSink",
     "LoopbackSSEServer",
+    "Subgoal",
+    "HierarchicalPlan",
+    "ProactiveHierarchicalPlanner",
 ]

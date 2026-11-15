@@ -32,6 +32,7 @@ from am_ua.cognition.agui_protocol import (
     JsonlFileSink,
     StderrPrettySink,
 )
+from am_ua.cognition.hierarchical_planner import ProactiveHierarchicalPlanner
 from am_ua.cognition.llm_client import LLMClient, LLMUnavailableError, extract_json_object
 from am_ua.cognition.personas import PersonaManager
 from am_ua.cognition.reasoning_bank import ReasoningBank
@@ -39,7 +40,10 @@ from am_ua.contracts.contracts import CognitiveEnvelope, EpistemicTag, TrustLeve
 from am_ua.execution.adaptive_skills import AdaptiveSkillForge
 from am_ua.execution.durable_engine import DurableExecutionEngine, EffectClass, ToolContract
 from am_ua.execution.human_wheel import HumanWheelGate, WheelOutcome
+from am_ua.execution.mcp_federation import MCPFederationHub
+from am_ua.execution.modality_router import HybridModalityRouter
 from am_ua.execution.pc_automation import PCAutomationEngine
+from am_ua.execution.subagent_bus import SubAgentSessionBus
 from am_ua.governance.homeostasis import HomeostasisGovernor, ResourceExhaustedError
 from am_ua.governance.seal_guard import ConstitutionSealGuard, ConstitutionalViolationError
 
@@ -106,12 +110,18 @@ class WorkspaceTools:
         cmd_timeout_s: float = 120.0,
         pc_engine: Optional[PCAutomationEngine] = None,
         skill_forge: Optional[AdaptiveSkillForge] = None,
+        llm_client: Optional[LLMClient] = None,
+        subagent_bus: Optional[SubAgentSessionBus] = None,
+        mcp_hub: Optional[MCPFederationHub] = None,
     ) -> None:
         self.ws = workspace.resolve()
         self.seal_guard = seal_guard
         self.cmd_timeout_s = cmd_timeout_s
         self._pc_engine = pc_engine or PCAutomationEngine()
         self._skill_forge = skill_forge or AdaptiveSkillForge()
+        self._llm = llm_client
+        self._subagent_bus = subagent_bus
+        self._mcp_hub = mcp_hub
         # Workspace itself must be a constitutionally writable location (project root or safe temp root).
         self.seal_guard.assert_write_allowed(self.ws / ".am_probe", actor="agent_loop")
 
@@ -220,12 +230,26 @@ class WorkspaceTools:
     # ---- PC Automation & Adaptive Skill Tools
     def pc_observe(self, args: Dict[str, Any]) -> Dict[str, Any]:
         hwnd = args.get("hwnd")
+        window_title = args.get("window_title") or args.get("title")
         include_ocr = bool(args.get("include_ocr", True))
         max_elements = min(int(args.get("max_elements", 60)), 120)
         return self._pc_engine.observe_desktop(
             hwnd=int(hwnd) if hwnd is not None else None,
+            window_title=str(window_title) if window_title else None,
             include_ocr=include_ocr,
             max_elements=max_elements,
+        )
+
+    def pc_ground_vlm(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        target_desc = str(args.get("target") or args.get("description") or "")
+        if not target_desc:
+            return {"ok": False, "error": "target description is required"}
+        window_title = args.get("window_title") or args.get("title")
+        return self._pc_engine.ground_with_vlm(
+            target_desc,
+            self._llm,
+            refresh=bool(args.get("refresh", True)),
+            window_title=str(window_title) if window_title else None,
         )
 
     def pc_act(self, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -304,6 +328,60 @@ class WorkspaceTools:
             return {"ok": True, "skills": self._skill_forge.search_skills(str(args.get("query", "")))}
         return self._skill_forge.run_skill(str(args["name"]), args.get("kwargs"))
 
+    def spawn_agent(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        if self._subagent_bus is None:
+            return {"ok": False, "error": "SubAgentSessionBus is not configured"}
+        obj = str(args.get("objective", "")).strip()
+        if not obj:
+            return {"ok": False, "error": "objective is required"}
+        role = str(args.get("role", "general_engineer"))
+        parent_id = str(args.get("parent_id", "root"))
+        current_depth = int(args.get("current_depth", 0))
+        ws = str(self.ws)
+
+        def _worker(sid: str, objective_txt: str, ws_path: Path) -> Dict[str, Any]:
+            return {"ok": True, "session_id": sid, "objective": objective_txt, "role": role, "workspace": str(ws_path)}
+
+        return self._subagent_bus.spawn_session(
+            obj,
+            _worker,
+            parent_id=parent_id,
+            current_depth=current_depth,
+            role=role,
+            workspace=ws,
+            run_async=not bool(args.get("wait", False)),
+        )
+
+    def send_agent(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        if self._subagent_bus is None:
+            return {"ok": False, "error": "SubAgentSessionBus is not configured"}
+        return self._subagent_bus.send_message(
+            sender_id=str(args.get("sender_id", "primary")),
+            recipient_id=str(args["recipient_id"]),
+            content=str(args.get("content", "")),
+        )
+
+    def await_agents(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        if self._subagent_bus is None:
+            return {"ok": False, "error": "SubAgentSessionBus is not configured"}
+        sids = args.get("session_ids") or []
+        if isinstance(sids, str):
+            sids = [sids]
+        return self._subagent_bus.await_sessions([str(x) for x in sids], timeout_s=float(args.get("timeout_s", 30.0)))
+
+    def mcp_call(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        if self._mcp_hub is None:
+            return {"ok": False, "error": "MCPFederationHub is not configured"}
+        action = str(args.get("action", "call")).lower().strip()
+        srv_name = str(args.get("server", "local"))
+        if action == "list":
+            return self._mcp_hub.list_server_tools(srv_name)
+        return self._mcp_hub.call_server_tool(
+            srv_name,
+            str(args["tool"]),
+            args.get("arguments") or {},
+        )
+
     # ---- snapshot for evidence diffs
     def snapshot(self) -> Dict[str, Tuple[str, Optional[str]]]:
         snap: Dict[str, Tuple[str, Optional[str]]] = {}
@@ -337,13 +415,18 @@ Tools:
 - write_file {"file": "rel/path", "content": "<full file content>"}
 - replace_in_file {"file": "rel/path", "old": "<exact unique snippet>", "new": "<replacement>"}
 - run {"command": "<powershell command>", "timeout_s": 120}   (cwd = workspace; use `python` for Python)
-- pc_observe {"include_ocr": true, "max_elements": 60}   (captures Set-of-Mark screenshot + UIA/OCR elements)
+- pc_observe {"include_ocr": true, "max_elements": 60, "window_title": "..."}   (captures Set-of-Mark screenshot + UIA/OCR elements)
+- pc_ground_vlm {"target": "<UI element description>", "window_title": "..."}   (multimodal VLM Set-of-Mark visual grounding)
 - pc_act {"action_type": "click|double_click|right_click|type|hotkey|press|scroll|move", "tag_id": 1, "target": "name:OK", "text": "...", "keys": ["ctrl", "s"]}
 - pc_window {"action": "list|active|find|focus|minimize|maximize|restore|move_resize|launch|close|cleanup", "locator": "..."}
 - pc_clipboard {"action": "get|set", "text": "..."}
 - pc_process {"action": "list|port_owner", "filter": "...", "port": 8080}
 - skill_forge {"name": "snake_case_name", "description": "...", "code": "def snake_case_name(...): ..."}
 - skill_run {"action": "run|list|search", "name": "snake_case_name", "kwargs": {...}}
+- spawn_agent {"objective": "...", "role": "general_engineer", "wait": false}
+- send_agent {"recipient_id": "sub-...", "content": "..."}
+- await_agents {"session_ids": ["sub-..."], "timeout_s": 30}
+- mcp_call {"action": "call|list", "server": "local", "tool": "am_pc_probe", "arguments": {...}}
 - request_human {"reason": "<why human intervention is required>", "instructions": "<what the human must do>"}
 - finish {"summary": "<what you did and the evidence>", "confidence": <0..1 probability the acceptance check passes>}
 
@@ -375,13 +458,18 @@ Tools:
 - write_file {"file": "rel/path", "content": "<full file content>"}
 - replace_in_file {"file": "rel/path", "old": "<exact unique snippet>", "new": "<replacement>"}
 - run {"command": "<powershell command>", "timeout_s": 120}   (cwd = workspace; use `python` for Python)
-- pc_observe {"include_ocr": true, "max_elements": 60}   (captures Set-of-Mark screenshot + UIA/OCR elements)
+- pc_observe {"include_ocr": true, "max_elements": 60, "window_title": "..."}   (captures Set-of-Mark screenshot + UIA/OCR elements)
+- pc_ground_vlm {"target": "<UI element description>", "window_title": "..."}   (multimodal VLM Set-of-Mark visual grounding)
 - pc_act {"action_type": "click|double_click|right_click|type|hotkey|press|scroll|move", "tag_id": 1, "target": "name:OK", "text": "...", "keys": ["ctrl", "s"]}
 - pc_window {"action": "list|active|find|focus|minimize|maximize|restore|move_resize|launch|close|cleanup", "locator": "..."}
 - pc_clipboard {"action": "get|set", "text": "..."}
 - pc_process {"action": "list|port_owner", "filter": "...", "port": 8080}
 - skill_forge {"name": "snake_case_name", "description": "...", "code": "def snake_case_name(...): ..."}
 - skill_run {"action": "run|list|search", "name": "snake_case_name", "kwargs": {...}}
+- spawn_agent {"objective": "...", "role": "general_engineer", "wait": false}
+- send_agent {"recipient_id": "sub-...", "content": "..."}
+- await_agents {"session_ids": ["sub-..."], "timeout_s": 30}
+- mcp_call {"action": "call|list", "server": "local", "tool": "am_pc_probe", "arguments": {...}}
 - request_human {"reason": "<why human intervention is required>", "instructions": "<what the human must do>"}
 - finish {"summary": "<what you did and the evidence>", "confidence": <0..1 probability the acceptance check passes>}
 
@@ -437,12 +525,17 @@ class AgentLoop:
         "replace_in_file": EffectClass.COMPENSATABLE_MUTATION,
         "run": EffectClass.COMPENSATABLE_MUTATION,
         "pc_observe": EffectClass.PURE_READ,
+        "pc_ground_vlm": EffectClass.PURE_READ,
         "pc_act": EffectClass.COMPENSATABLE_MUTATION,
         "pc_window": EffectClass.COMPENSATABLE_MUTATION,
         "pc_clipboard": EffectClass.IDEMPOTENT_WRITE,
         "pc_process": EffectClass.PURE_READ,
         "skill_forge": EffectClass.IDEMPOTENT_WRITE,
         "skill_run": EffectClass.COMPENSATABLE_MUTATION,
+        "spawn_agent": EffectClass.COMPENSATABLE_MUTATION,
+        "send_agent": EffectClass.IDEMPOTENT_WRITE,
+        "await_agents": EffectClass.PURE_READ,
+        "mcp_call": EffectClass.COMPENSATABLE_MUTATION,
     }
 
     def __init__(
@@ -462,6 +555,10 @@ class AgentLoop:
         agui_ledger_dir: Optional[Path] = None,
         pc_engine: Optional[PCAutomationEngine] = None,
         skill_forge: Optional[AdaptiveSkillForge] = None,
+        hierarchical_planner: Optional[ProactiveHierarchicalPlanner] = None,
+        modality_router: Optional[HybridModalityRouter] = None,
+        subagent_bus: Optional[SubAgentSessionBus] = None,
+        mcp_hub: Optional[MCPFederationHub] = None,
     ) -> None:
         self.engine = engine
         self.seal_guard = seal_guard
@@ -477,6 +574,10 @@ class AgentLoop:
         self.agui_ledger_dir = Path(agui_ledger_dir or "F:/AetherMind_Universal_Agent/data/agui_events").resolve()
         self.pc_engine = pc_engine or PCAutomationEngine()
         self.skill_forge = skill_forge or AdaptiveSkillForge()
+        self.hierarchical_planner = hierarchical_planner or ProactiveHierarchicalPlanner(llm=self.llm)
+        self.modality_router = modality_router or HybridModalityRouter(skill_forge=self.skill_forge)
+        self.subagent_bus = subagent_bus or SubAgentSessionBus()
+        self.mcp_hub = mcp_hub or MCPFederationHub()
         self._active: Optional[WorkspaceTools] = None
         self._register_tools()
 
@@ -572,6 +673,9 @@ class AgentLoop:
             self.seal_guard,
             pc_engine=self.pc_engine,
             skill_forge=self.skill_forge,
+            llm_client=self.llm,
+            subagent_bus=self.subagent_bus,
+            mcp_hub=self.mcp_hub,
         )
         self._active = ws
         effective_wheel_timeout = self.wheel_timeout_s if wheel_timeout_s is None else max(0.0, float(wheel_timeout_s))
@@ -621,6 +725,21 @@ class AgentLoop:
             exemplar = self.reasoning_bank.format_trajectory_exemplar(objective)
             if exemplar:
                 task += f"{exemplar}\n"
+
+        if (workflow or "").lower() == "hierarchical":
+            h_plan = self.hierarchical_planner.decompose(objective, mission_id=mission_id, verify_cmd=verify_cmd)
+            dag_lines = ["PROACTIVE HIERARCHICAL PLAN (Agent-S S2 Manager DAG):"]
+            for sg in h_plan.subgoals:
+                dec = self.modality_router.select_modality(sg.description, suggested_modality=sg.suggested_modality)
+                dag_lines.append(
+                    f"  - [{sg.subgoal_id}] {sg.title} (deps={sg.depends_on}, modality={dec.primary_modality}, tools={dec.recommended_tools[:3]}): {sg.description}"
+                )
+            task += "\n".join(dag_lines) + "\n\n"
+            bus.emit(
+                AGUIEventType.CUSTOM,
+                name="HIERARCHICAL_PLAN_CREATED",
+                subgoals=[asdict(sg) for sg in h_plan.subgoals],
+            )
 
         task += f"OBJECTIVE:\n{objective}\n\nWORKSPACE: {ws.ws}\n"
         task += f"ACCEPTANCE COMMAND (must exit 0): {verify_cmd}\n" if verify_cmd else "No acceptance command was provided; verify your work yourself.\n"

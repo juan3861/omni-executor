@@ -13,6 +13,10 @@ from .agent_loop import (
     RepeatToolLoopError,
     WorkspaceTools,
 )
+from .best_of_n import (
+    BehaviorBestOfNEngine,
+    RolloutCandidate,
+)
 from .durable_engine import (
     DurableExecutionEngine,
     EffectClass,
@@ -27,6 +31,15 @@ from .durable_engine import (
     ToolContract,
 )
 from .human_wheel import HumanWheelGate, WheelOutcome
+from .mcp_federation import (
+    AetherMindMCPServer,
+    MCPFederationHub,
+)
+from .modality_router import (
+    HybridModalityRouter,
+    ModalityDecision,
+    ModalityType,
+)
 from .pc_automation import (
     DesktopProcessWindowOrgan,
     GroundedUIElement,
@@ -39,6 +52,12 @@ from .pc_automation import (
     compute_bbox_iou,
     compute_visual_dhash_2048,
 )
+from .subagent_bus import (
+    SubAgentDepthExceededError,
+    SubAgentSessionBus,
+    SubAgentSessionRecord,
+    acquire_gui_exclusive_lock,
+)
 
 __all__ = [
     "AdaptiveSkillForge",
@@ -50,6 +69,8 @@ __all__ = [
     "WorkspaceTools",
     "RepeatToolLoopBreaker",
     "RepeatToolLoopError",
+    "BehaviorBestOfNEngine",
+    "RolloutCandidate",
     "DurableExecutionEngine",
     "EffectClass",
     "FairDispatchScheduler",
@@ -63,6 +84,11 @@ __all__ = [
     "ToolContract",
     "HumanWheelGate",
     "WheelOutcome",
+    "AetherMindMCPServer",
+    "MCPFederationHub",
+    "HybridModalityRouter",
+    "ModalityDecision",
+    "ModalityType",
     "PCAutomationEngine",
     "SetOfMarkGrounder",
     "RobocorpLocatorParser",
@@ -73,4 +99,8 @@ __all__ = [
     "compute_bbox_iou",
     "compute_visual_dhash_2048",
     "compare_visual_signatures",
+    "SubAgentSessionBus",
+    "SubAgentSessionRecord",
+    "SubAgentDepthExceededError",
+    "acquire_gui_exclusive_lock",
 ]

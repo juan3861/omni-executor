@@ -8,6 +8,10 @@ from am_ua.execution.pc_automation import (
     SetOfMarkGrounder,
     TransactionalClipboard,
 )
+from .cdp_browser import (
+    CDPIndexedBrowser,
+    IndexedDOMElement,
+)
 from .verified_browser_adapter import (
     DocumentMultimodalOrgan,
     OlhoDeDeusOSINT,
@@ -16,6 +20,8 @@ from .verified_browser_adapter import (
 
 __all__ = [
     "VerifiedBrowserAdapter",
+    "CDPIndexedBrowser",
+    "IndexedDOMElement",
     "OlhoDeDeusOSINT",
     "DocumentMultimodalOrgan",
     "PCAutomationEngine",

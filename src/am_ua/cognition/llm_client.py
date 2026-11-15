@@ -14,8 +14,10 @@ Provider order / models are configurable via env:
 
 from __future__ import annotations
 
+import base64
 import json
 import os
+from pathlib import Path
 import socket
 import threading
 import time
@@ -63,7 +65,13 @@ class LLMResponse:
 
 _DEFAULTS: Dict[str, Dict[str, Any]] = {
     "omniroute": {"base_url": "http://127.0.0.1:20128/v1", "key_env": None, "model": "auto", "local": True},
-    "groq": {"base_url": "https://api.groq.com/openai/v1", "key_env": "GROQ_API_KEY", "model": "llama-3.3-70b-versatile"},
+    # 2026-11-04: `llama-3.3-70b-versatile` returns 404 model_not_found on Groq; gpt-oss-120b verified live.
+    "groq": {
+        "base_url": "https://api.groq.com/openai/v1",
+        "key_env": "GROQ_API_KEY",
+        "model": "openai/gpt-oss-120b",
+        "fallback_models": ("qwen/qwen3.8-27b", "openai/gpt-oss-20b"),
+    },
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
         "key_env": "OPENROUTER_API_KEY",
@@ -216,6 +224,60 @@ class LLMClient:
                             self._failures[spec.name] = self._failures.get(spec.name, 0) + 1
                         break
         raise LLMUnavailableError(f"All LLM providers failed: {attempts}")
+
+    def chat_multimodal(
+        self,
+        prompt: str,
+        image_path: Path | str,
+        *,
+        system_prompt: Optional[str] = None,
+        fallback_text_context: str = "",
+        max_tokens: int = 800,
+        temperature: float = 0.1,
+        json_mode: bool = True,
+    ) -> LLMResponse:
+        """Send a Set-of-Mark screenshot + text prompt to vision-capable models, with text fallback."""
+        img_file = Path(image_path).resolve()
+        if not img_file.is_file():
+            raise FileNotFoundError(f"Multimodal image not found: {img_file}")
+        b64_data = base64.b64encode(img_file.read_bytes()).decode("ascii")
+        mime = "image/png" if img_file.suffix.lower() == ".png" else "image/jpeg"
+
+        mm_messages: List[Dict[str, Any]] = []
+        if system_prompt:
+            mm_messages.append({"role": "system", "content": system_prompt})
+        mm_messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime};base64,{b64_data}"},
+                    },
+                ],
+            }
+        )
+        try:
+            return self.chat(
+                mm_messages,  # type: ignore[arg-type]
+                max_tokens=max_tokens,
+                temperature=temperature,
+                json_mode=json_mode,
+            )
+        except Exception:
+            # Automatic fallback when current provider/model is text-only: inject structured SoM table
+            txt_messages: List[Dict[str, str]] = []
+            if system_prompt:
+                txt_messages.append({"role": "system", "content": system_prompt})
+            combined = f"{prompt}\n\n[STRUCTURED SET-OF-MARK & OCR TABLE FALLBACK]:\n{fallback_text_context}"
+            txt_messages.append({"role": "user", "content": combined})
+            return self.chat(
+                txt_messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                json_mode=json_mode,
+            )
 
 
 def extract_json_object(text: str) -> Dict[str, Any]:

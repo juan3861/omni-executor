@@ -1,0 +1,194 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "v33_baseline",
+  "workflow": "react",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\v33_baseline_20261104_221737",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 5,
+  "selected": 5,
+  "summary": {
+    "overall": {
+      "n": 5,
+      "passed": 2,
+      "pass_rate": 0.4,
+      "tokens": 306766,
+      "llm_calls": 50,
+      "elapsed_s": 666.4
+    },
+    "code": {
+      "n": 4,
+      "passed": 2,
+      "pass_rate": 0.5,
+      "tokens": 204213,
+      "llm_calls": 36,
+      "elapsed_s": 376.1
+    },
+    "desktop": {
+      "n": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "tokens": 102553,
+      "llm_calls": 14,
+      "elapsed_s": 290.3
+    }
+  },
+  "results": [
+    {
+      "task_id": "c01_off_by_one",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 7,
+      "providers": [
+        "groq",
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.61s\n",
+      "elapsed_s": 27.3,
+      "llm_calls": 7,
+      "prompt_tokens": 10662,
+      "completion_tokens": 859
+    },
+    {
+      "task_id": "c02_mutable_default",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 6,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "write_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.57s\n",
+      "elapsed_s": 22.8,
+      "llm_calls": 6,
+      "prompt_tokens": 7698,
+      "completion_tokens": 699
+    },
+    {
+      "task_id": "c03_slugify_unicode",
+      "category": "code",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "budget: R09 Economic Stop-Loss triggered: 6 consecutive turns without verified progress",
+      "turns": 8,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "list_dir",
+        "list_dir",
+        "list_dir",
+        "list_dir",
+        "list_dir",
+        "list_dir",
+        "list_dir"
+      ],
+      "passed": false,
+      "hidden_exit_code": 1,
+      "visible_tampered": [],
+      "hidden_output_tail": "F                                                                        [100%]\n================================== FAILURES ===================================\n__________________________________ test_all ___________________________________\n\n    def test_all():\n>       assert slugify('A��o R�pida!') == 'acao-rapida'\n               ^^^^^^^^^^^^^^^^^^^^^^^\n\ntests_hidden\\test_h.py:5: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\ntext = 'A��o R�pida!'\n\n    def slugify(text):\n>       raise NotImplementedError\nE       NotImplementedError\n\ntext_utils.py:2: NotImplementedError\n=========================== short test summary info ===========================\nFAILED tests_hidden/test_h.py::test_all - NotImplementedError\n1 failed in 0.92s\n",
+      "elapsed_s": 224.7,
+      "llm_calls": 8,
+      "prompt_tokens": 101328,
+      "completion_tokens": 32448
+    },
+    {
+      "task_id": "c04_money_rounding",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 15,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "run",
+        "search",
+        "run",
+        "read_file",
+        "write_file",
+        "run",
+        "run",
+        "run",
+        "list_dir",
+        "run"
+      ],
+      "passed": false,
+      "hidden_exit_code": 1,
+      "visible_tampered": [],
+      "hidden_output_tail": "F                                                                        [100%]\n================================== FAILURES ===================================\n__________________________________ test_all ___________________________________\n\n    def test_all():\n        assert total(['0.10','0.20']) == '0.30'\n        assert total(['0.105']) == '0.11'\n        assert total(['2.675']) == '2.68'\n>       assert total([]) == '0.00'\n               ^^^^^^^^^\n\ntests_hidden\\test_h.py:8: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\nprices = []\n\n    def total(prices):\n        total = sum(Decimal(p) for p in prices)\n>       return str(total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))\n                   ^^^^^^^^^^^^^^\nE       AttributeError: 'int' object has no attribute 'quantize'\n\nmoney.py:5: AttributeError\n=========================== short test summary info ===========================\nFAILED tests_hidden/test_h.py::test_all - AttributeError: 'int' object has no...\n1 failed in 0.92s\n",
+      "elapsed_s": 101.3,
+      "llm_calls": 15,
+      "prompt_tokens": 44181,
+      "completion_tokens": 6338
+    },
+    {
+      "task_id": "d01_read_secret",
+      "category": "desktop",
+      "agent_status": "ABORTED",
+      "stop_reason": "llm_unavailable: All LLM providers failed: [{'provider': 'groq', 'skipped': 'circuit_open'}, {'provider': 'openrouter', 'model': 'cohere/north-mini-code:free', 'error': 'TimeoutError: The read operation timed out'}, {'provider': 'openrouter', 'model': 'nvidia/nemotron-3.5-lightning:free', 'error': 'URLError: <urlope",
+      "turns": 13,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "pc_window",
+        "pc_window",
+        "pc_observe",
+        "pc_window",
+        "pc_window",
+        "pc_act",
+        "pc_act",
+        "pc_act",
+        "pc_window",
+        "pc_window",
+        "pc_window"
+      ],
+      "passed": false,
+      "expected": "TR5HNK7W",
+      "got": null,
+      "elapsed_s": 290.3,
+      "llm_calls": 14,
+      "prompt_tokens": 87821,
+      "completion_tokens": 14732
+    }
+  ]
+}

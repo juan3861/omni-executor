@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
 from am_ua import PROJECT_ROOT
-from am_ua.cognition import URENeuroSymbolicBridge
+from am_ua.cognition import ProactiveHierarchicalPlanner, URENeuroSymbolicBridge
 from am_ua.contracts.calibration import CalibrationLedger
 from am_ua.contracts.contracts import (
     CognitiveEnvelope,
@@ -47,6 +47,7 @@ from am_ua.contracts.contracts import (
 )
 from am_ua.evolution import AutoHarnessSynthesizer, ConstitutionalEvolver
 from am_ua.execution.adaptive_skills import AdaptiveSkillForge
+from am_ua.execution.best_of_n import BehaviorBestOfNEngine
 from am_ua.execution.codex_muscle import (
     CodexSandboxMuscle,
     SafeEditTransactionalJournal,
@@ -59,10 +60,18 @@ from am_ua.execution.durable_engine import (
     FairDispatchScheduler,
     ToolContract,
 )
+from am_ua.execution.mcp_federation import AetherMindMCPServer, MCPFederationHub
+from am_ua.execution.modality_router import HybridModalityRouter
 from am_ua.execution.pc_automation import PCAutomationEngine
+from am_ua.execution.subagent_bus import SubAgentSessionBus
 from am_ua.governance.homeostasis import HomeostasisGovernor
 from am_ua.governance.seal_guard import ConstitutionSealGuard, compute_content_sha256
-from am_ua.gui import DocumentMultimodalOrgan, OlhoDeDeusOSINT, VerifiedBrowserAdapter
+from am_ua.gui import (
+    CDPIndexedBrowser,
+    DocumentMultimodalOrgan,
+    OlhoDeDeusOSINT,
+    VerifiedBrowserAdapter,
+)
 from am_ua.memory import TriadMemoryProvider
 from am_ua.perception import (
     InterRepoTopologyGate,
@@ -350,6 +359,27 @@ class AetherMindUniversalAgent:
         )
         self.skill_forge = AdaptiveSkillForge(self.data_dir / "adaptive_skills")
 
+        # 7. Super-Union v3.4 Engineering Ceiling Organs (Agent-S S2/S3, bBoN, OpenClaw Bus, MCP Federation, CDP Browser)
+        self.hierarchical_planner = ProactiveHierarchicalPlanner(
+            storage_dir=self.data_dir / "hierarchical_plans"
+        )
+        self.modality_router = HybridModalityRouter(
+            skill_forge=self.skill_forge,
+            telemetry_path=self.data_dir / "modality_telemetry.json",
+        )
+        self.bbon_engine = BehaviorBestOfNEngine(
+            scratch_root=self.data_dir / "bbon_sandboxes"
+        )
+        self.subagent_bus = SubAgentSessionBus(self.data_dir / "subagent_sessions.db")
+        self.mcp_hub = MCPFederationHub()
+        self.mcp_server = AetherMindMCPServer(
+            pc_engine=self.pc_automation,
+            skill_forge=self.skill_forge,
+        )
+        self.cdp_browser = CDPIndexedBrowser(
+            artifact_dir=self.data_dir / "browser_indexed",
+        )
+
         self._register_builtin_kernel_tools()
 
     def _register_builtin_kernel_tools(self) -> None:
@@ -466,6 +496,8 @@ class AetherMindUniversalAgent:
                 "olho_de_deus_available": self.osint.status()["script_available"],
                 "pc_automation_ready": True,
                 "adaptive_skills_count": len(self.skill_forge.list_skills()),
+                "v34_ceiling_organs_ready": True,
+                "mcp_tools_count": len(self.mcp_server._tools),
             }
             sp["attributes"]["healthy"] = all(
                 [
@@ -622,6 +654,10 @@ class AetherMindUniversalAgent:
                 trace_dir=self.data_dir / "agent_traces",
                 pc_engine=self.pc_automation,
                 skill_forge=self.skill_forge,
+                hierarchical_planner=self.hierarchical_planner,
+                modality_router=self.modality_router,
+                subagent_bus=self.subagent_bus,
+                mcp_hub=self.mcp_hub,
             )
         return self._agent_loop
 
@@ -639,6 +675,7 @@ class AetherMindUniversalAgent:
         workflow: str = "react",
         wheel_timeout_s: float = 0.0,
         agui_port: Optional[int] = None,
+        best_of_n: int = 1,
     ) -> Dict[str, Any]:
         """REAL agent mission: LLM plans and acts via tools; VERIFIED only if `verify_cmd` exits 0."""
         mc = MissionContract(
@@ -653,6 +690,41 @@ class AetherMindUniversalAgent:
             return {"mission_id": mc.mission_id, "status": "HALTED_AT_FRAMING", "framing_verdict": asdict(verdict)}
         loop = self.agent_loop
         loop.on_event = on_event
+
+        if int(best_of_n) > 1:
+            raw_runs: Dict[str, Dict[str, Any]] = {}
+
+            def _runner_fn(cand_ws: Path, cand_idx: int) -> Dict[str, Any]:
+                r = loop.run(
+                    objective,
+                    cand_ws,
+                    verify_cmd=verify_cmd,
+                    mission_id=f"{mc.mission_id}-bbon{cand_idx}",
+                    max_turns=max_turns,
+                    actor_provider=actor_provider,
+                    role=role,
+                    workflow=workflow,
+                    wheel_timeout_s=wheel_timeout_s,
+                )
+                d = asdict(r)
+                raw_runs[f"cand_{cand_idx}"] = d
+                return d
+
+            bbon_res = self.bbon_engine.run_code_best_of_n(
+                objective=objective,
+                workspace=Path(workspace),
+                runner_fn=_runner_fn,
+                n=int(best_of_n),
+            )
+            win_id = bbon_res["winner_candidate_id"]
+            winner_out = dict(raw_runs.get(win_id) or next(iter(raw_runs.values())))
+            winner_out["bbon"] = {
+                "n_requested": bbon_res["n_requested"],
+                "winner_candidate_id": win_id,
+                "winner_score": bbon_res["winner_score"],
+                "synced_files": bbon_res["synced_files"],
+            }
+            return winner_out
 
         sse_server = None
         event_bus = None
