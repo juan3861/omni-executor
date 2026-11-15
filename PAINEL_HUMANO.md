@@ -27,7 +27,7 @@
 | `P5.1` | `P5` | VerifiedBrowserAdapter (Contrato OMH + Stagehand + PAF + RPA Janela Isolada + Exa OSINT + DocumentMultimodalOrgan Taint R16) | ✅ VERIFIED | `5cd2c0ad4570` |
 | `P5.2` | `P5` | Ponte Neuro-Simbolica URE Alpha-C10 (CFGGrammarSieve, PearlCausalEngine, Z3 UnsatCore, TimeTravelEngine) | ✅ VERIFIED | `3b49106fb549` |
 | `P5.3` | `P5` | Motor Constitucional ASI-Evolve (UCB1 / MAP-Elites) + AutoHarness com Gate Pareto Selado | ✅ VERIFIED | `123504309507` |
-| `P6.1` | `P6` | Fachada Universal AgentKernel (SingleStateOwner + OTel TelemetrySpanLedger + FastPathBaseline + AutonomousTriggerScheduler) e CLI aether-ua.cmd | ✅ VERIFIED | `372817184e1d` |
+| `P6.1` | `P6` | Fachada Universal AgentKernel (SingleStateOwner + OTel TelemetrySpanLedger + FastPathBaseline + AutonomousTriggerScheduler) e CLI aether-ua.cmd | ✅ VERIFIED | `def097570ee2` |
 | `P6.2` | `P6` | Exportador de Transferencia a Frio HandoffPackExporter (Astra R18) | ✅ VERIFIED | `833b73b60bd1` |
 | `P6.3` | `P6` | Bateria Adversarial de Qualificacao Caotica de 7 Cenarios (Harbor-Style) e Selagem Final | ✅ VERIFIED | `0d14dc0513b0` |
-| `P6.4` | `P6` | Homologacao Final no AetherMind_Strict_Auditor.py e Geracao do Handoff Pack Oficial | ✅ VERIFIED | `95e58b4ed412` |
+| `P6.4` | `P6` | Homologacao Final no AetherMind_Strict_Auditor.py e Geracao do Handoff Pack Oficial | ✅ VERIFIED | `b87639baf4d3` |
