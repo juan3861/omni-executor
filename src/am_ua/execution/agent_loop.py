@@ -439,6 +439,7 @@ Rules:
 6. CRITICAL: For write_file and replace_in_file, output RAW source code ONLY. NEVER wrap code in markdown triple backtick fences.
 7. Use request_human ONLY when blocked by external hurdles (CAPTCHA, 2FA, credentials, hardware/network block) or when explicit human approval is needed. Never use it to offload routine engineering work.
 8. NEVER modify or overwrite existing test files (e.g. tests_visible/* or pre-existing tests/*) unless the objective explicitly asks you to edit tests; run extra edge-case checks via python -c or a temporary command.
+9. Before calling finish on code tasks, test edge cases beyond visible tests (empty inputs, whitespace, boundary/zero/negative values, error paths) via python -c.
 """
 
 SPARC_SYSTEM_PROMPT = """You are the execution core of AetherMind Universal Agent, operating under the rigorous SPARC engineering methodology.
@@ -483,6 +484,7 @@ Rules:
 6. CRITICAL: For write_file and replace_in_file, output RAW source code ONLY. NEVER wrap code in markdown triple backtick fences.
 7. Use request_human ONLY when blocked by external hurdles (CAPTCHA, 2FA, credentials, hardware/network block) or when explicit human approval is needed. Never use it to offload routine engineering work.
 8. NEVER modify or overwrite existing test files (e.g. tests_visible/* or pre-existing tests/*) unless the objective explicitly asks you to edit tests; run extra edge-case checks via python -c or a temporary command.
+9. Before calling finish on code tasks, test edge cases beyond visible tests (empty inputs, whitespace, boundary/zero/negative values, error paths) via python -c.
 """
 
 JUDGE_PROMPT = """You are an independent code reviewer. You did NOT write this change.
@@ -1027,7 +1029,7 @@ class AgentLoop:
 
     # ------------------------------------------------------------------ helpers
     @staticmethod
-    def _condense(messages: List[Dict[str, str]], max_chars: int = 90_000) -> List[Dict[str, str]]:
+    def _condense(messages: List[Dict[str, str]], max_chars: int = 45_000) -> List[Dict[str, str]]:
         total = sum(len(m["content"]) for m in messages)
         if total <= max_chars:
             return messages

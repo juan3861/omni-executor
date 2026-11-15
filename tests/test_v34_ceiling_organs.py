@@ -338,6 +338,8 @@ def test_agent_loop_prompt_test_protection_empty_tool_and_fast_path(tmp_path: Pa
 
     assert "tests_visible/*" in SYSTEM_PROMPT
     assert "tests_visible/*" in SPARC_SYSTEM_PROMPT
+    assert "edge cases beyond visible tests" in SYSTEM_PROMPT
+    assert "edge cases beyond visible tests" in SPARC_SYSTEM_PROMPT
 
     class EmptyThenFinishLLM:
         def __init__(self) -> None:
