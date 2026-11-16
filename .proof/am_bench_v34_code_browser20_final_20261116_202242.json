@@ -1,0 +1,696 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "v34_code_browser20_final",
+  "workflow": "hierarchical",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\v34_code_browser20_final_20261116_202242",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 20,
+  "selected": 20,
+  "summary": {
+    "overall": {
+      "n": 20,
+      "passed": 14,
+      "pass_rate": 0.7,
+      "tokens": 1091289,
+      "llm_calls": 285,
+      "elapsed_s": 1311.9
+    },
+    "browser": {
+      "n": 5,
+      "passed": 2,
+      "pass_rate": 0.4,
+      "tokens": 325643,
+      "llm_calls": 79,
+      "elapsed_s": 288.2
+    },
+    "code": {
+      "n": 15,
+      "passed": 12,
+      "pass_rate": 0.8,
+      "tokens": 765646,
+      "llm_calls": 206,
+      "elapsed_s": 1023.7
+    }
+  },
+  "results": [
+    {
+      "task_id": "c01_off_by_one",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 7,
+      "providers": [
+        "groq",
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.26s\n",
+      "elapsed_s": 39.0,
+      "llm_calls": 7,
+      "prompt_tokens": 12786,
+      "completion_tokens": 663
+    },
+    {
+      "task_id": "c02_mutable_default",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 8,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "search",
+        "replace_in_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.37s\n",
+      "elapsed_s": 34.3,
+      "llm_calls": 8,
+      "prompt_tokens": 13658,
+      "completion_tokens": 687
+    },
+    {
+      "task_id": "c03_slugify_unicode",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 9,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "replace_in_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.33s\n",
+      "elapsed_s": 45.0,
+      "llm_calls": 9,
+      "prompt_tokens": 19206,
+      "completion_tokens": 2038
+    },
+    {
+      "task_id": "c04_money_rounding",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 10,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "run",
+        "list_dir",
+        "write_file",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": false,
+      "hidden_exit_code": 1,
+      "visible_tampered": [],
+      "hidden_output_tail": "F                                                                        [100%]\n================================== FAILURES ===================================\n__________________________________ test_all ___________________________________\n\n    def test_all():\n        assert total(['0.10','0.20']) == '0.30'\n        assert total(['0.105']) == '0.11'\n        assert total(['2.675']) == '2.68'\n>       assert total([]) == '0.00'\n               ^^^^^^^^^\n\ntests_hidden\\test_h.py:8: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\nprices = []\n\n    def total(prices):\n        # Sum Decimal values and round half up to two decimal places\n        total_decimal = sum(Decimal(p) for p in prices)\n        # Quantize to two decimal places with HALF_UP rounding\n>       rounded = total_decimal.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)\n                  ^^^^^^^^^^^^^^^^^^^^^^\nE       AttributeError: 'int' object has no attribute 'quantize'\n\nmoney.py:7: AttributeError\n=========================== short test summary info ===========================\nFAILED tests_hidden/test_h.py::test_all - AttributeError: 'int' object has no...\n1 failed in 2.23s\n",
+      "elapsed_s": 51.2,
+      "llm_calls": 10,
+      "prompt_tokens": 21774,
+      "completion_tokens": 2090
+    },
+    {
+      "task_id": "c05_multi_file_rename",
+      "category": "code",
+      "agent_status": "VERIFIED_AFTER_BUDGET",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "replace_in_file",
+        "replace_in_file",
+        "replace_in_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "run",
+        "search"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.39s\n",
+      "elapsed_s": 56.0,
+      "llm_calls": 21,
+      "prompt_tokens": 55697,
+      "completion_tokens": 2331
+    },
+    {
+      "task_id": "c06_cli_flag",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 13,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "write_file",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.40s\n",
+      "elapsed_s": 54.8,
+      "llm_calls": 13,
+      "prompt_tokens": 29827,
+      "completion_tokens": 2569
+    },
+    {
+      "task_id": "c07_fib_performance",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 14,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "list_dir",
+        "write_file",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.50s\n",
+      "elapsed_s": 69.8,
+      "llm_calls": 14,
+      "prompt_tokens": 36767,
+      "completion_tokens": 2962
+    },
+    {
+      "task_id": "c08_csv_quotes",
+      "category": "code",
+      "agent_status": "VERIFIED_AFTER_BUDGET",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "search",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "write_file",
+        "run",
+        "search",
+        "list_dir",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": false,
+      "hidden_exit_code": 1,
+      "visible_tampered": [],
+      "hidden_output_tail": "F                                                                        [100%]\n================================== FAILURES ===================================\n__________________________________ test_all ___________________________________\n\n    def test_all():\n        assert parse_rows('\"Silva, Ana\",30\\nBob,25') == [['Silva, Ana','30'],['Bob','25']]\n>       assert parse_rows('x,\"say \"\"hi\"\"\"') == [['x','say \"hi\"']]\nE       assert [['x', 'say hi']] == [['x', 'say \"hi\"']]\nE         \nE         At index 0 diff: ['x', 'say hi'] != ['x', 'say \"hi\"']\nE         Use -v to get more diff\n\ntests_hidden\\test_h.py:6: AssertionError\n=========================== short test summary info ===========================\nFAILED tests_hidden/test_h.py::test_all - assert [['x', 'say hi']] == [['x', ...\n1 failed in 2.14s\n",
+      "elapsed_s": 95.6,
+      "llm_calls": 20,
+      "prompt_tokens": 74386,
+      "completion_tokens": 5574
+    },
+    {
+      "task_id": "c09_br_date",
+      "category": "code",
+      "agent_status": "VERIFIED_AFTER_BUDGET",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "list_dir",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "list_dir",
+        "list_dir",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "write_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.49s\n",
+      "elapsed_s": 95.8,
+      "llm_calls": 20,
+      "prompt_tokens": 71168,
+      "completion_tokens": 3944
+    },
+    {
+      "task_id": "c10_stack_errors",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 6,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "write_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.32s\n",
+      "elapsed_s": 72.4,
+      "llm_calls": 6,
+      "prompt_tokens": 49871,
+      "completion_tokens": 16567
+    },
+    {
+      "task_id": "c11_deep_merge",
+      "category": "code",
+      "agent_status": "VERIFIED_AFTER_BUDGET",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "read_file",
+        "write_file",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.19s\n",
+      "elapsed_s": 97.4,
+      "llm_calls": 20,
+      "prompt_tokens": 68201,
+      "completion_tokens": 4069
+    },
+    {
+      "task_id": "c12_email_regex",
+      "category": "code",
+      "agent_status": "VERIFIED_AFTER_BUDGET",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "run",
+        "list_dir",
+        "write_file",
+        "run",
+        "write_file",
+        "run",
+        "write_file",
+        "run",
+        "write_file",
+        "run",
+        "write_file",
+        "run",
+        "list_dir",
+        "read_file",
+        "write_file",
+        "run"
+      ],
+      "passed": false,
+      "hidden_exit_code": 1,
+      "visible_tampered": [],
+      "hidden_output_tail": "F                                                                        [100%]\n================================== FAILURES ===================================\n__________________________________ test_all ___________________________________\n\n    def test_all():\n>       for ok in ['ruan.p+tag@mail.example.com.br','a-b@x.io','A_1@b.co']: assert v(ok), ok\n                                                                            ^^^^^^^^^^^^^^^^\nE       AssertionError: A_1@b.co\nE       assert False\nE        +  where False = v('A_1@b.co')\n\ntests_hidden\\test_h.py:5: AssertionError\n=========================== short test summary info ===========================\nFAILED tests_hidden/test_h.py::test_all - AssertionError: A_1@b.co\n1 failed in 1.96s\n",
+      "elapsed_s": 129.1,
+      "llm_calls": 21,
+      "prompt_tokens": 122307,
+      "completion_tokens": 12869
+    },
+    {
+      "task_id": "c13_sort_key",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 18,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "search",
+        "replace_in_file",
+        "run",
+        "run",
+        "write_file",
+        "run",
+        "write_file",
+        "run",
+        "read_file",
+        "write_file",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.29s\n",
+      "elapsed_s": 77.2,
+      "llm_calls": 18,
+      "prompt_tokens": 66674,
+      "completion_tokens": 4465
+    },
+    {
+      "task_id": "c14_lru_cache",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 8,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "search",
+        "write_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.41s\n",
+      "elapsed_s": 38.7,
+      "llm_calls": 8,
+      "prompt_tokens": 14755,
+      "completion_tokens": 1410
+    },
+    {
+      "task_id": "c15_safe_join",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 11,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "search",
+        "list_dir",
+        "replace_in_file",
+        "run",
+        "write_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.53s\n",
+      "elapsed_s": 67.4,
+      "llm_calls": 11,
+      "prompt_tokens": 38494,
+      "completion_tokens": 7837
+    },
+    {
+      "task_id": "b01_dynamic_form",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 10,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.57s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 69.8,
+      "llm_calls": 14,
+      "prompt_tokens": 37586,
+      "completion_tokens": 4256
+    },
+    {
+      "task_id": "b02_table_filter_sum",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 10,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "list_dir",
+        "browser_observe",
+        "browser_act",
+        "read_file",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.16s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 35.8,
+      "llm_calls": 12,
+      "prompt_tokens": 30458,
+      "completion_tokens": 4159
+    },
+    {
+      "task_id": "b03_multi_step_nav",
+      "category": "browser",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "max_turns",
+      "turns": 14,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_observe",
+        "read_file",
+        "browser_act",
+        "read_file",
+        "browser_act",
+        "browser_extract",
+        "browser_act",
+        "list_dir",
+        "list_dir",
+        "list_dir"
+      ],
+      "passed": false,
+      "hidden_exit_code": 1,
+      "visible_tampered": [],
+      "hidden_output_tail": "l\\Programs\\Python\\Python311\\Lib\\pathlib.py:1058: in read_text\n    with self.open(mode='r', encoding=encoding, errors=errors) as f:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\nself = WindowsPath('answer.txt'), mode = 'r', buffering = -1, encoding = 'utf-8'\nerrors = None, newline = None\n\n    def open(self, mode='r', buffering=-1, encoding=None,\n             errors=None, newline=None):\n        \"\"\"\n        Open the file pointed by this path and return a file object, as\n        the built-in open() function does.\n        \"\"\"\n        if \"b\" not in mode:\n            encoding = io.text_encoding(encoding)\n>       return io.open(self, mode, buffering, encoding, errors, newline)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       FileNotFoundError: [Errno 2] No such file or directory: 'answer.txt'\n\nC:\\Users\\juanp\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\pathlib.py:1044: FileNotFoundError\n=========================== short test summary info ===========================\nFAILED tests_hidden/test_h.py::test_answer - FileNotFoundError: [Errno 2] No ...\n1 failed in 2.08s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 51.9,
+      "llm_calls": 17,
+      "prompt_tokens": 61159,
+      "completion_tokens": 6032
+    },
+    {
+      "task_id": "b04_self_healing_button",
+      "category": "browser",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "max_turns",
+      "turns": 14,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_observe",
+        "browser_extract",
+        "browser_act",
+        "browser_extract",
+        "browser_act",
+        "browser_act",
+        "browser_act",
+        "browser_extract"
+      ],
+      "passed": false,
+      "hidden_exit_code": 1,
+      "visible_tampered": [],
+      "hidden_output_tail": "l\\Programs\\Python\\Python311\\Lib\\pathlib.py:1058: in read_text\n    with self.open(mode='r', encoding=encoding, errors=errors) as f:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\nself = WindowsPath('answer.txt'), mode = 'r', buffering = -1, encoding = 'utf-8'\nerrors = None, newline = None\n\n    def open(self, mode='r', buffering=-1, encoding=None,\n             errors=None, newline=None):\n        \"\"\"\n        Open the file pointed by this path and return a file object, as\n        the built-in open() function does.\n        \"\"\"\n        if \"b\" not in mode:\n            encoding = io.text_encoding(encoding)\n>       return io.open(self, mode, buffering, encoding, errors, newline)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       FileNotFoundError: [Errno 2] No such file or directory: 'answer.txt'\n\nC:\\Users\\juanp\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\pathlib.py:1044: FileNotFoundError\n=========================== short test summary info ===========================\nFAILED tests_hidden/test_h.py::test_answer - FileNotFoundError: [Errno 2] No ...\n1 failed in 1.81s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 37.5,
+      "llm_calls": 17,
+      "prompt_tokens": 65941,
+      "completion_tokens": 5055
+    },
+    {
+      "task_id": "b05_validation_calc",
+      "category": "browser",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "max_turns",
+      "turns": 14,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_act",
+        "browser_observe",
+        "read_file",
+        "browser_extract",
+        "browser_act",
+        "browser_act",
+        "browser_act",
+        "browser_observe"
+      ],
+      "passed": false,
+      "hidden_exit_code": 1,
+      "visible_tampered": [],
+      "hidden_output_tail": "l\\Programs\\Python\\Python311\\Lib\\pathlib.py:1058: in read_text\n    with self.open(mode='r', encoding=encoding, errors=errors) as f:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\nself = WindowsPath('answer.txt'), mode = 'r', buffering = -1, encoding = 'utf-8'\nerrors = None, newline = None\n\n    def open(self, mode='r', buffering=-1, encoding=None,\n             errors=None, newline=None):\n        \"\"\"\n        Open the file pointed by this path and return a file object, as\n        the built-in open() function does.\n        \"\"\"\n        if \"b\" not in mode:\n            encoding = io.text_encoding(encoding)\n>       return io.open(self, mode, buffering, encoding, errors, newline)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       FileNotFoundError: [Errno 2] No such file or directory: 'answer.txt'\n\nC:\\Users\\juanp\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\pathlib.py:1044: FileNotFoundError\n=========================== short test summary info ===========================\nFAILED tests_hidden/test_h.py::test_answer - FileNotFoundError: [Errno 2] No ...\n1 failed in 0.95s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 93.2,
+      "llm_calls": 19,
+      "prompt_tokens": 93550,
+      "completion_tokens": 17447
+    }
+  ]
+}
