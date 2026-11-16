@@ -512,3 +512,14 @@ def test_am_bench_browser_tasks_registry() -> None:
         assert "{SITE_URI}" in t.objective
         assert "tests_hidden/test_h.py" in t.hidden
         assert t in ALL_TASKS
+
+
+def test_repeat_tool_loop_breaker_consecutive_read_guard() -> None:
+    from am_ua.execution.agent_loop import RepeatToolLoopBreaker, RepeatToolLoopError
+
+    b = RepeatToolLoopBreaker(window_size=10, max_identical_calls=3, max_consecutive_read_calls=4)
+    for sel in ("#a", "#b", "#c"):
+        ok, _ = b.record_and_check("browser_extract", {"selector": sel})
+        assert ok is True
+    with pytest.raises(RepeatToolLoopError):
+        b.record_and_check("browser_extract", {"selector": "#d"})

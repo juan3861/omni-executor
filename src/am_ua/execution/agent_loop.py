@@ -53,22 +53,34 @@ class RepeatToolLoopError(RuntimeError):
 
 
 class RepeatToolLoopBreaker:
-    """Detects repetitive identical `(tool_name, args)` loops."""
+    """Detects repetitive `(tool_name, args)` and consecutive read-only stall loops."""
 
-    def __init__(self, *, window_size: int = 10, max_identical_calls: int = 3) -> None:
+    CONSECUTIVE_READ_GUARD = frozenset({"browser_extract", "browser_observe", "list_dir", "search"})
+
+    def __init__(self, *, window_size: int = 10, max_identical_calls: int = 3, max_consecutive_read_calls: int = 4) -> None:
         self.window: deque[str] = deque(maxlen=window_size)
+        self.tool_history: deque[str] = deque(maxlen=window_size)
         self.max_identical_calls = max_identical_calls
+        self.max_consecutive_read_calls = max_consecutive_read_calls
 
     def record_and_check(self, tool_name: str, args: Dict[str, Any]) -> Tuple[bool, int]:
         sig = hashlib.sha256(
             json.dumps({"t": tool_name, "a": args}, sort_keys=True, default=str).encode("utf-8")
         ).hexdigest()[:16]
         self.window.append(sig)
+        self.tool_history.append(tool_name)
         count = sum(1 for item in self.window if item == sig)
         if count >= self.max_identical_calls:
             raise RepeatToolLoopError(
                 f"Anti-loop breaker tripped: tool '{tool_name}' invoked {count} times with identical args"
             )
+        n = self.max_consecutive_read_calls
+        if tool_name in self.CONSECUTIVE_READ_GUARD and len(self.tool_history) >= n:
+            if all(t == tool_name for t in list(self.tool_history)[-n:]):
+                raise RepeatToolLoopError(
+                    f"Anti-loop breaker tripped: read-only tool '{tool_name}' called {n} times consecutively without taking action. "
+                    "Use the observed output to write/act or finish."
+                )
         return True, count
 
 
