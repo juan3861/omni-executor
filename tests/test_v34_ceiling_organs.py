@@ -560,3 +560,14 @@ def test_pc_automation_win32_input_shim_on_pyautogui_failure(tmp_path: Path, mon
     pc = PCAutomationEngine(artifact_dir=tmp_path / "pc")
     res = pc.execute_gui_action("move", x=10, y=10, dry_run=True)
     assert res["ok"] is True
+
+
+def test_repeat_tool_loop_breaker_window_caps_for_browser_extract_and_read_file() -> None:
+    from am_ua.execution.agent_loop import RepeatToolLoopBreaker, RepeatToolLoopError
+
+    b = RepeatToolLoopBreaker(window_size=12, max_identical_calls=3)
+    for i in range(4):
+        b.record_and_check("browser_extract", {"selector": f"#s{i}"})
+        b.record_and_check("read_file", {"file": f"f{i}.py"})
+    with pytest.raises(RepeatToolLoopError):
+        b.record_and_check("browser_extract", {"selector": "#s9"})

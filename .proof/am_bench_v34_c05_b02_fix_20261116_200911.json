@@ -1,0 +1,119 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "v34_c05_b02_fix",
+  "workflow": "hierarchical",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\v34_c05_b02_fix_20261116_200911",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 2,
+  "selected": 2,
+  "summary": {
+    "overall": {
+      "n": 2,
+      "passed": 2,
+      "pass_rate": 1.0,
+      "tokens": 115310,
+      "llm_calls": 32,
+      "elapsed_s": 131.6
+    },
+    "browser": {
+      "n": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "tokens": 77285,
+      "llm_calls": 15,
+      "elapsed_s": 77.3
+    },
+    "code": {
+      "n": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "tokens": 38025,
+      "llm_calls": 17,
+      "elapsed_s": 54.3
+    }
+  },
+  "results": [
+    {
+      "task_id": "c05_multi_file_rename",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 17,
+      "providers": [
+        "groq",
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "replace_in_file",
+        "replace_in_file",
+        "replace_in_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "run",
+        "search",
+        "search",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.52s\n",
+      "elapsed_s": 54.3,
+      "llm_calls": 17,
+      "prompt_tokens": 36817,
+      "completion_tokens": 1208
+    },
+    {
+      "task_id": "b02_table_filter_sum",
+      "category": "browser",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "max_turns",
+      "turns": 12,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "browser_observe",
+        "browser_act",
+        "browser_extract",
+        "read_file",
+        "browser_extract",
+        "browser_extract",
+        "browser_act",
+        "list_dir",
+        "write_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.32s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 77.3,
+      "llm_calls": 15,
+      "prompt_tokens": 64162,
+      "completion_tokens": 13123
+    }
+  ]
+}

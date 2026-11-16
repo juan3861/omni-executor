@@ -79,6 +79,16 @@ class RepeatToolLoopBreaker:
                 "Anti-loop breaker tripped: 'list_dir' called too many times in recent window. "
                 "Use the known file paths to read/edit/finish."
             )
+        if tool_name == "browser_extract" and sum(1 for t in self.tool_history if t == "browser_extract") > 4:
+            raise RepeatToolLoopError(
+                "Anti-loop breaker tripped: 'browser_extract' called too many times in recent window. "
+                "Use the extracted DOM data to write/act or finish."
+            )
+        if tool_name == "read_file" and sum(1 for t in self.tool_history if t == "read_file") > 8:
+            raise RepeatToolLoopError(
+                "Anti-loop breaker tripped: 'read_file' called too many times in recent window without progress. "
+                "Apply your edits, run verification, or finish."
+            )
         n = self.max_consecutive_read_calls
         if tool_name in self.CONSECUTIVE_READ_GUARD and len(self.tool_history) >= n:
             if all(t == tool_name for t in list(self.tool_history)[-n:]):
