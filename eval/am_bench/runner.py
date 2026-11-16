@@ -69,7 +69,12 @@ class GuiFixture:
 
     def __enter__(self) -> "GuiFixture":
         self.state_path.unlink(missing_ok=True)
-        self.proc = subprocess.Popen([PYW, str(FIXTURE), self.mode, str(self.state_path), self.payload])
+        self.proc = subprocess.Popen(
+            [PY, str(FIXTURE), self.mode, str(self.state_path), self.payload],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
         deadline = time.time() + 15
         while time.time() < deadline and not self.state_path.exists():
             time.sleep(0.2)

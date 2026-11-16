@@ -1,0 +1,110 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "v34_desktop_ocr2",
+  "workflow": "hierarchical",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\v34_desktop_ocr2_20261116_184740",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 2,
+  "selected": 2,
+  "summary": {
+    "overall": {
+      "n": 2,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "tokens": 123435,
+      "llm_calls": 34,
+      "elapsed_s": 182.3
+    },
+    "desktop": {
+      "n": 2,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "tokens": 123435,
+      "llm_calls": 34,
+      "elapsed_s": 182.3
+    }
+  },
+  "results": [
+    {
+      "task_id": "d01_read_secret",
+      "category": "desktop",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "max_turns",
+      "turns": 15,
+      "providers": [
+        "groq",
+        "openrouter"
+      ],
+      "tools": [
+        "pc_observe",
+        "pc_window",
+        "pc_window",
+        "pc_observe",
+        "pc_process",
+        "pc_window",
+        "pc_observe",
+        "pc_window",
+        "pc_process",
+        "pc_process",
+        "pc_process",
+        "pc_process",
+        "pc_window",
+        "pc_observe",
+        "pc_process"
+      ],
+      "passed": false,
+      "expected": "PTBLYZGD",
+      "got": null,
+      "elapsed_s": 95.0,
+      "llm_calls": 16,
+      "prompt_tokens": 59139,
+      "completion_tokens": 1768
+    },
+    {
+      "task_id": "d04_sum_numbers",
+      "category": "desktop",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "max_turns",
+      "turns": 15,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "pc_window",
+        "pc_observe",
+        "pc_window",
+        "pc_window",
+        "list_dir",
+        "list_dir",
+        "pc_observe",
+        "pc_process",
+        "list_dir",
+        "run",
+        "run",
+        "pc_process",
+        "run",
+        "write_file"
+      ],
+      "passed": false,
+      "expected": "217",
+      "got": null,
+      "elapsed_s": 87.3,
+      "llm_calls": 18,
+      "prompt_tokens": 57075,
+      "completion_tokens": 5453
+    }
+  ]
+}

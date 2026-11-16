@@ -50,6 +50,89 @@ from PIL import Image, ImageDraw, ImageFont
 from am_ua.governance.seal_guard import ConstitutionalViolationError
 
 
+class _Win32InputShim:
+    """Pure Win32 ctypes fallback when pyautogui/pyscreeze/cv2 cannot import (e.g. NumPy 2.x)."""
+
+    FAILSAFE = True
+    _VK = {
+        "ctrl": 0x11, "control": 0x11, "alt": 0x12, "shift": 0x10, "win": 0x5B,
+        "enter": 0x0D, "return": 0x0D, "tab": 0x09, "esc": 0x1B, "escape": 0x1B,
+        "space": 0x20, "backspace": 0x08, "delete": 0x2E, "up": 0x26, "down": 0x28,
+        "left": 0x25, "right": 0x27, "home": 0x24, "end": 0x23,
+    }
+
+    @classmethod
+    def _vk(cls, key: str) -> int:
+        k = key.lower().strip()
+        if k in cls._VK:
+            return cls._VK[k]
+        if len(k) == 1:
+            return ord(k.upper())
+        if k.startswith("f") and k[1:].isdigit():
+            return 0x6F + int(k[1:])
+        return 0
+
+    @staticmethod
+    def moveTo(x: int, y: int, duration: float = 0.0) -> None:
+        if os.name == "nt":
+            ctypes.windll.user32.SetCursorPos(int(x), int(y))
+
+    @classmethod
+    def click(cls, x: int, y: int, button: str = "left") -> None:
+        if os.name != "nt":
+            return
+        u32 = ctypes.windll.user32
+        u32.SetCursorPos(int(x), int(y))
+        down, up = (0x0008, 0x0010) if button == "right" else (0x0002, 0x0004)
+        u32.mouse_event(down, 0, 0, 0, 0)
+        u32.mouse_event(up, 0, 0, 0, 0)
+
+    @classmethod
+    def doubleClick(cls, x: int, y: int) -> None:
+        cls.click(x, y, "left")
+        time.sleep(0.05)
+        cls.click(x, y, "left")
+
+    @classmethod
+    def rightClick(cls, x: int, y: int) -> None:
+        cls.click(x, y, "right")
+
+    @classmethod
+    def press(cls, key: str) -> None:
+        if os.name != "nt":
+            return
+        vk = cls._vk(key)
+        if vk:
+            u32 = ctypes.windll.user32
+            u32.keybd_event(vk, 0, 0, 0)
+            u32.keybd_event(vk, 0, 2, 0)
+
+    @classmethod
+    def hotkey(cls, *keys: str) -> None:
+        if os.name != "nt":
+            return
+        u32 = ctypes.windll.user32
+        vks = [cls._vk(k) for k in keys if cls._vk(k)]
+        for vk in vks:
+            u32.keybd_event(vk, 0, 0, 0)
+        for vk in reversed(vks):
+            u32.keybd_event(vk, 0, 2, 0)
+
+    @staticmethod
+    def scroll(clicks: int) -> None:
+        if os.name == "nt":
+            ctypes.windll.user32.mouse_event(0x0800, 0, 0, int(clicks) * 120, 0)
+
+
+def _get_gui_input_backend() -> Any:
+    try:
+        import pyautogui
+        pyautogui.FAILSAFE = True
+        return pyautogui
+    except Exception:
+        return _Win32InputShim()
+
+
 # ---------------------------------------------------------------------------
 # 0. Windows Input Desktop Attachment & Encoding Helpers
 # ---------------------------------------------------------------------------
@@ -61,6 +144,8 @@ def ensure_windows_input_desktop() -> bool:
     try:
         u32 = ctypes.windll.user32
         u32.SetProcessDPIAware()
+        if os.environ.get("AM_UA_KEEP_CURRENT_DESKTOP") == "1":
+            return True
         desk = u32.OpenInputDesktop(0, False, 0x01FF)
         if desk:
             return bool(u32.SetThreadDesktop(desk))
@@ -493,7 +578,12 @@ class SetOfMarkGrounder:
                 return cand
         return None
 
-    def capture_screen(self, region: Optional[Tuple[int, int, int, int]] = None) -> Tuple[Image.Image, Path]:
+    def capture_screen(
+        self,
+        region: Optional[Tuple[int, int, int, int]] = None,
+        *,
+        target_hwnd: Optional[int] = None,
+    ) -> Tuple[Image.Image, Path]:
         """Capture desktop screenshot via `mss` or `PIL.ImageGrab` and save raw PNG."""
         ensure_windows_input_desktop()
         ts = int(time.time() * 1000)
@@ -512,11 +602,63 @@ class SetOfMarkGrounder:
                 shot = sct.grab(mon)
                 img = Image.frombytes("RGB", shot.size, shot.rgb)
         except Exception:
-            from PIL import ImageGrab
-            img = ImageGrab.grab(bbox=region, all_screens=False)
+            try:
+                from PIL import ImageGrab
+                img = ImageGrab.grab(bbox=region, all_screens=False)
+            except Exception:
+                img = self._capture_via_print_window(target_hwnd=target_hwnd)
 
         img.save(raw_path)
         return img, raw_path
+
+    @staticmethod
+    def _capture_via_print_window(*, target_hwnd: Optional[int] = None) -> Image.Image:
+        """Fallback capture using Win32 PrintWindow when screen-DC grab is unavailable."""
+        if os.name != "nt":
+            return Image.new("RGB", (800, 600), color=(0, 0, 0))
+        try:
+            import win32gui
+            import win32ui
+
+            candidates: List[int] = []
+            if target_hwnd:
+                candidates.append(int(target_hwnd))
+            fg = int(win32gui.GetForegroundWindow() or 0)
+            if fg and fg not in candidates:
+                candidates.append(fg)
+
+            def _enum_cb(hwnd: int, _: Any) -> bool:
+                if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd):
+                    l, t, r, b = win32gui.GetWindowRect(hwnd)
+                    if (r - l) >= 40 and (b - t) >= 40 and hwnd not in candidates:
+                        candidates.append(hwnd)
+                return True
+
+            win32gui.EnumWindows(_enum_cb, None)
+            for hwnd in candidates:
+                l, t, r, b = win32gui.GetWindowRect(hwnd)
+                w, h = r - l, b - t
+                if w < 40 or h < 40:
+                    continue
+                hdc = win32gui.GetWindowDC(hwnd)
+                if not hdc:
+                    continue
+                try:
+                    mfc = win32ui.CreateDCFromHandle(hdc)
+                    save = mfc.CreateCompatibleDC()
+                    bmp = win32ui.CreateBitmap()
+                    bmp.CreateCompatibleBitmap(mfc, w, h)
+                    save.SelectObject(bmp)
+                    if ctypes.windll.user32.PrintWindow(hwnd, save.GetSafeHdc(), 2):
+                        return Image.frombuffer("RGB", (w, h), bmp.GetBitmapBits(True), "raw", "BGRX", 0, 1)
+                finally:
+                    try:
+                        win32gui.ReleaseDC(hwnd, hdc)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return Image.new("RGB", (800, 600), color=(0, 0, 0))
 
     def extract_uia_elements(
         self,
@@ -1140,7 +1282,7 @@ class PCAutomationEngine:
             except Exception:
                 region = None
 
-        img, raw_path = self.grounder.capture_screen(region=region)
+        img, raw_path = self.grounder.capture_screen(region=region, target_hwnd=target_hwnd)
         vis_hash, _ = compute_visual_dhash_2048(img)
         uia_els = self.grounder.extract_uia_elements(hwnd_root=target_hwnd, max_elements=max_elements)
         ocr_els = self.grounder.extract_ocr_elements(img, max_elements=max_elements) if include_ocr else []
@@ -1375,8 +1517,7 @@ class PCAutomationEngine:
         # 4. Execute physical action (unless dry_run=True)
         executed = False
         if not dry_run:
-            import pyautogui
-            pyautogui.FAILSAFE = True
+            pyautogui = _get_gui_input_backend()
 
             if act == "move" and resolved_xy:
                 pyautogui.moveTo(resolved_xy[0], resolved_xy[1], duration=0.1)

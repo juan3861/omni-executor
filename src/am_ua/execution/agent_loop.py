@@ -74,6 +74,11 @@ class RepeatToolLoopBreaker:
             raise RepeatToolLoopError(
                 f"Anti-loop breaker tripped: tool '{tool_name}' invoked {count} times with identical args"
             )
+        if tool_name == "list_dir" and sum(1 for t in self.tool_history if t == "list_dir") > 3:
+            raise RepeatToolLoopError(
+                "Anti-loop breaker tripped: 'list_dir' called too many times in recent window. "
+                "Use the known file paths to read/edit/finish."
+            )
         n = self.max_consecutive_read_calls
         if tool_name in self.CONSECUTIVE_READ_GUARD and len(self.tool_history) >= n:
             if all(t == tool_name for t in list(self.tool_history)[-n:]):

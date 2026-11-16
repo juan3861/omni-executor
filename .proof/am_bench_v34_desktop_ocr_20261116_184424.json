@@ -1,0 +1,109 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "v34_desktop_ocr",
+  "workflow": "hierarchical",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\v34_desktop_ocr_20261116_184424",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 2,
+  "selected": 2,
+  "summary": {
+    "overall": {
+      "n": 2,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "tokens": 95187,
+      "llm_calls": 31,
+      "elapsed_s": 117.4
+    },
+    "desktop": {
+      "n": 2,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "tokens": 95187,
+      "llm_calls": 31,
+      "elapsed_s": 117.4
+    }
+  },
+  "results": [
+    {
+      "task_id": "d01_read_secret",
+      "category": "desktop",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "budget: R09 Economic Stop-Loss triggered: 6 consecutive turns without verified progress",
+      "turns": 13,
+      "providers": [
+        "groq",
+        "openrouter"
+      ],
+      "tools": [
+        "pc_observe",
+        "pc_window",
+        "pc_window",
+        "pc_observe",
+        "pc_observe",
+        "pc_window",
+        "pc_window",
+        "pc_window",
+        "pc_window",
+        "pc_window",
+        "pc_window",
+        "pc_window",
+        "pc_window"
+      ],
+      "passed": false,
+      "expected": "EKJ9CRSF",
+      "got": null,
+      "elapsed_s": 44.6,
+      "llm_calls": 14,
+      "prompt_tokens": 36412,
+      "completion_tokens": 2109
+    },
+    {
+      "task_id": "d04_sum_numbers",
+      "category": "desktop",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "max_turns",
+      "turns": 15,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "run",
+        "pc_window",
+        "run",
+        "pc_observe",
+        "pc_observe",
+        "pc_window",
+        "run",
+        "run",
+        "list_dir",
+        "list_dir",
+        "list_dir",
+        "run",
+        "list_dir",
+        "read_file"
+      ],
+      "passed": false,
+      "expected": "210",
+      "got": null,
+      "elapsed_s": 72.8,
+      "llm_calls": 17,
+      "prompt_tokens": 51760,
+      "completion_tokens": 4906
+    }
+  ]
+}

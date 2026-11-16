@@ -1,0 +1,109 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "v34_c06_c12_fix",
+  "workflow": "hierarchical",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\v34_c06_c12_fix_20261116_184451",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 2,
+  "selected": 2,
+  "summary": {
+    "overall": {
+      "n": 2,
+      "passed": 2,
+      "pass_rate": 1.0,
+      "tokens": 126886,
+      "llm_calls": 29,
+      "elapsed_s": 154.7
+    },
+    "code": {
+      "n": 2,
+      "passed": 2,
+      "pass_rate": 1.0,
+      "tokens": 126886,
+      "llm_calls": 29,
+      "elapsed_s": 154.7
+    }
+  },
+  "results": [
+    {
+      "task_id": "c06_cli_flag",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 8,
+      "providers": [
+        "groq",
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.25s\n",
+      "elapsed_s": 39.2,
+      "llm_calls": 8,
+      "prompt_tokens": 15193,
+      "completion_tokens": 913
+    },
+    {
+      "task_id": "c12_email_regex",
+      "category": "code",
+      "agent_status": "VERIFIED_AFTER_BUDGET",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "list_dir",
+        "read_file",
+        "run",
+        "search",
+        "write_file",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.41s\n",
+      "elapsed_s": 115.5,
+      "llm_calls": 21,
+      "prompt_tokens": 98963,
+      "completion_tokens": 11817
+    }
+  ]
+}

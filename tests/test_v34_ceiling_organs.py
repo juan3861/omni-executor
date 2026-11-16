@@ -523,3 +523,40 @@ def test_repeat_tool_loop_breaker_consecutive_read_guard() -> None:
         assert ok is True
     with pytest.raises(RepeatToolLoopError):
         b.record_and_check("browser_extract", {"selector": "#d"})
+
+
+def test_list_dir_interleaved_loop_breaker_and_print_window_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from am_ua.execution.agent_loop import RepeatToolLoopBreaker, RepeatToolLoopError
+    from am_ua.execution.pc_automation import SetOfMarkGrounder
+
+    b = RepeatToolLoopBreaker(window_size=12, max_identical_calls=3)
+    for i in range(3):
+        b.record_and_check("list_dir", {"path": f"sub{i}"})
+        b.record_and_check("run", {"command": f"echo {i}"})
+    with pytest.raises(RepeatToolLoopError):
+        b.record_and_check("list_dir", {"path": "sub9"})
+
+    monkeypatch.setenv("AM_UA_KEEP_CURRENT_DESKTOP", "1")
+    grounder = SetOfMarkGrounder(artifact_dir=tmp_path / "som")
+    img, raw_path = grounder.capture_screen()
+    assert raw_path.is_file()
+    assert img.size[0] >= 40 and img.size[1] >= 40
+
+
+def test_pc_automation_win32_input_shim_on_pyautogui_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import builtins
+    from am_ua.execution.pc_automation import PCAutomationEngine, _Win32InputShim, _get_gui_input_backend
+
+    real_import = builtins.__import__
+
+    def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "pyautogui":
+            raise AttributeError("_ARRAY_API not found")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    backend = _get_gui_input_backend()
+    assert isinstance(backend, _Win32InputShim)
+    pc = PCAutomationEngine(artifact_dir=tmp_path / "pc")
+    res = pc.execute_gui_action("move", x=10, y=10, dry_run=True)
+    assert res["ok"] is True

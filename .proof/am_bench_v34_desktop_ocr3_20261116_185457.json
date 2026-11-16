@@ -1,0 +1,106 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "v34_desktop_ocr3",
+  "workflow": "hierarchical",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\v34_desktop_ocr3_20261116_185457",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 2,
+  "selected": 2,
+  "summary": {
+    "overall": {
+      "n": 2,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "tokens": 111373,
+      "llm_calls": 32,
+      "elapsed_s": 168.0
+    },
+    "desktop": {
+      "n": 2,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "tokens": 111373,
+      "llm_calls": 32,
+      "elapsed_s": 168.0
+    }
+  },
+  "results": [
+    {
+      "task_id": "d01_read_secret",
+      "category": "desktop",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "budget: R09 Economic Stop-Loss triggered: 6 consecutive turns without verified progress",
+      "turns": 12,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "list_dir",
+        "pc_window",
+        "pc_observe",
+        "pc_window",
+        "pc_ground_vlm",
+        "pc_window",
+        "pc_act",
+        "pc_act",
+        "pc_act",
+        "pc_act",
+        "pc_act"
+      ],
+      "passed": false,
+      "expected": "KKQ7439V",
+      "got": null,
+      "elapsed_s": 43.0,
+      "llm_calls": 15,
+      "prompt_tokens": 38767,
+      "completion_tokens": 4902
+    },
+    {
+      "task_id": "d04_sum_numbers",
+      "category": "desktop",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "max_turns",
+      "turns": 15,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "pc_window",
+        "pc_observe",
+        "list_dir",
+        "run",
+        "list_dir",
+        "pc_act",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "write_file",
+        "run",
+        "pc_act"
+      ],
+      "passed": false,
+      "expected": "313",
+      "got": "4",
+      "elapsed_s": 125.0,
+      "llm_calls": 17,
+      "prompt_tokens": 60751,
+      "completion_tokens": 6953
+    }
+  ]
+}
