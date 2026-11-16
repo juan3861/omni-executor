@@ -181,4 +181,135 @@ DESKTOP_TASKS = [
     ),
 ]
 
-ALL_TASKS = CODE_TASKS + DESKTOP_TASKS
+BROWSER_HINT = (
+    " Use browser_observe, browser_act, and browser_extract (headless=true) to interact with the live page "
+    "and write ONLY the exact extracted result to answer.txt in the workspace."
+)
+
+BROWSER_TASKS = [
+    BenchTask(
+        "b01_dynamic_form",
+        "browser",
+        "Open {SITE_URI}/login.html in the browser, fill #code_input with 'OMEGA-42', click #submit_btn, "
+        "extract #badge, and write its exact text to answer.txt." + BROWSER_HINT,
+        files={
+            "site/login.html": """<!DOCTYPE html>
+<html><body>
+  <h2 id="badge">WAITING</h2>
+  <input id="code_input" type="text" />
+  <button id="submit_btn" onclick="var v=document.getElementById('code_input').value; var s=0; for(var i=0;i<v.length;i++) s+=v.charCodeAt(i); document.getElementById('badge').innerText='AUTH:'+v+':'+s;">Verify</button>
+</body></html>
+""",
+        },
+        hidden={
+            "tests_hidden/test_h.py": _t("""
+import pathlib
+def test_answer():
+    v = pathlib.Path("answer.txt").read_text(encoding="utf-8").strip()
+    expected_sum = sum(ord(c) for c in "OMEGA-42")
+    assert v == f"AUTH:OMEGA-42:{expected_sum}"
+""")
+        },
+        max_turns=12,
+    ),
+    BenchTask(
+        "b02_table_filter_sum",
+        "browser",
+        "Open {SITE_URI}/ledger.html in the browser, click #filter_approved_btn, extract #total_amount, "
+        "and write its exact text to answer.txt." + BROWSER_HINT,
+        files={
+            "site/ledger.html": """<!DOCTYPE html>
+<html><body>
+  <button id="filter_approved_btn" onclick="document.getElementById('total_amount').innerText=String(120+340+95)">Filter Approved</button>
+  <div id="total_amount">0</div>
+</body></html>
+""",
+        },
+        hidden={
+            "tests_hidden/test_h.py": _t("""
+import pathlib
+def test_answer():
+    assert pathlib.Path("answer.txt").read_text(encoding="utf-8").strip() == "555"
+""")
+        },
+        max_turns=12,
+    ),
+    BenchTask(
+        "b03_multi_step_nav",
+        "browser",
+        "Open {SITE_URI}/step1.html in the browser, click #next_step to navigate to step2.html, "
+        "click #reveal_btn, extract #secret_out, and write its exact text to answer.txt." + BROWSER_HINT,
+        files={
+            "site/step1.html": """<!DOCTYPE html>
+<html><body>
+  <h1>Step 1</h1>
+  <a id="next_step" href="step2.html">Continue to Step 2</a>
+</body></html>
+""",
+            "site/step2.html": """<!DOCTYPE html>
+<html><body>
+  <h1>Step 2</h1>
+  <button id="reveal_btn" onclick="document.getElementById('secret_out').innerText='STEP2-CONFIRMED-'+(450*2+1)">Reveal</button>
+  <div id="secret_out">HIDDEN</div>
+</body></html>
+""",
+        },
+        hidden={
+            "tests_hidden/test_h.py": _t("""
+import pathlib
+def test_answer():
+    assert pathlib.Path("answer.txt").read_text(encoding="utf-8").strip() == "STEP2-CONFIRMED-901"
+""")
+        },
+        max_turns=14,
+    ),
+    BenchTask(
+        "b04_self_healing_button",
+        "browser",
+        "Open {SITE_URI}/portal.html in the browser, fill #ref_box with 'REF-88', click the 'Confirm Dispatch' button, "
+        "extract #receipt_box, and write its exact text to answer.txt." + BROWSER_HINT,
+        files={
+            "site/portal.html": """<!DOCTYPE html>
+<html><body>
+  <input id="ref_box" type="text" />
+  <button onclick="document.getElementById('receipt_box').innerText='DISPATCH:'+document.getElementById('ref_box').value+':OK'">Confirm Dispatch</button>
+  <p id="receipt_box">PENDING</p>
+</body></html>
+""",
+        },
+        hidden={
+            "tests_hidden/test_h.py": _t("""
+import pathlib
+def test_answer():
+    assert pathlib.Path("answer.txt").read_text(encoding="utf-8").strip() == "DISPATCH:REF-88:OK"
+""")
+        },
+        max_turns=14,
+    ),
+    BenchTask(
+        "b05_validation_calc",
+        "browser",
+        "Open {SITE_URI}/calc.html in the browser, fill #a_in with '15' and #b_in with '27', click #calc_btn, "
+        "extract #calc_out, and write its exact text to answer.txt." + BROWSER_HINT,
+        files={
+            "site/calc.html": """<!DOCTYPE html>
+<html><body>
+  <input id="a_in" type="text" />
+  <input id="b_in" type="text" />
+  <button id="calc_btn" onclick="var a=parseInt(document.getElementById('a_in').value,10); var b=parseInt(document.getElementById('b_in').value,10); document.getElementById('calc_out').innerText='RES='+((a*3)+b);">Calculate</button>
+  <span id="calc_out">NONE</span>
+</body></html>
+""",
+        },
+        hidden={
+            "tests_hidden/test_h.py": _t("""
+import pathlib
+def test_answer():
+    assert pathlib.Path("answer.txt").read_text(encoding="utf-8").strip() == "RES=72"
+""")
+        },
+        max_turns=14,
+    ),
+]
+
+ALL_TASKS = CODE_TASKS + DESKTOP_TASKS + BROWSER_TASKS

@@ -1,0 +1,57 @@
+{
+  "schema": "AETHERMIND_PHP_PLAN/v1",
+  "plan_id": "plan-agent-508c7290e5",
+  "mission_id": "agent-508c7290e5",
+  "objective": "Open file:///F:/AetherMind_Temp/browser_llm_smoke/portal.html using browser_observe, fill #token_in with AETHER-777, click #unlock_btn, extract #status with browser_extract, and report the exact #status text in finish.",
+  "replan_count": 0,
+  "max_replans": 3,
+  "created_at": 1794781914.7805996,
+  "updated_at": 1794781914.7805996,
+  "is_complete": false,
+  "subgoals": [
+    {
+      "subgoal_id": "sg_1",
+      "title": "Inspect workspace & environment state",
+      "description": "Inspect existing files, tests, or active windows relevant to: Open file:///F:/AetherMind_Temp/browser_llm_smoke/portal.html using browser_observe, fill #token_in with AETHER-777, click #unlock_btn, extract #status with browser_extract, and report the exact #status text in finish.",
+      "depends_on": [],
+      "acceptance_criteria": "Environment state and target files/controls identified.",
+      "suggested_modality": "code_shell",
+      "max_turns": 6,
+      "status": "PENDING",
+      "outcome_summary": "",
+      "state_fingerprint": "",
+      "attempts": 0
+    },
+    {
+      "subgoal_id": "sg_2",
+      "title": "Execute core implementation or GUI interaction",
+      "description": "Open file:///F:/AetherMind_Temp/browser_llm_smoke/portal.html using browser_observe, fill #token_in with AETHER-777, click #unlock_btn, extract #status with browser_extract, and report the exact #status text in finish.",
+      "depends_on": [
+        "sg_1"
+      ],
+      "acceptance_criteria": "Target changes applied or GUI actions completed with receipt.",
+      "suggested_modality": "cdp_browser",
+      "max_turns": 12,
+      "status": "PENDING",
+      "outcome_summary": "",
+      "state_fingerprint": "",
+      "attempts": 0
+    },
+    {
+      "subgoal_id": "sg_3",
+      "title": "Verify acceptance criteria & finalize",
+      "description": "Verify the output artifacts match all requirements of the objective.",
+      "depends_on": [
+        "sg_2"
+      ],
+      "acceptance_criteria": "All objective invariants satisfied.",
+      "suggested_modality": "code_shell",
+      "max_turns": 8,
+      "status": "PENDING",
+      "outcome_summary": "",
+      "state_fingerprint": "",
+      "attempts": 0
+    }
+  ],
+  "replan_history": []
+}

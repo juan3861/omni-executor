@@ -137,8 +137,12 @@ def run_task(task: BenchTask, run_dir: Path, *, workflow: str, max_wall_s: float
         agui_ledger_dir=side / "agui",
         pc_engine=PCAutomationEngine(artifact_dir=side / "pc"),
         skill_forge=AdaptiveSkillForge(side / "skills"),
+        browser_factory=lambda headless=True: __import__("am_ua.gui.cdp_browser", fromlist=["CDPIndexedBrowser"]).CDPIndexedBrowser(
+            artifact_dir=side / "browser", headless=headless
+        ),
     )
-    objective = task.objective + f"\nPython interpreter: {PY} (python is NOT on PATH; call it by full path with '&')."
+    raw_obj = task.objective.replace("{SITE_URI}", (ws / "site").resolve().as_uri())
+    objective = raw_obj + f"\nPython interpreter: {PY} (python is NOT on PATH; call it by full path with '&')."
     calls0, pt0, ct0 = llm.calls, llm.total_prompt_tokens, llm.total_completion_tokens
     t0 = time.perf_counter()
     rec: Dict[str, Any] = {"task_id": task.task_id, "category": task.category}
@@ -156,6 +160,15 @@ def run_task(task: BenchTask, run_dir: Path, *, workflow: str, max_wall_s: float
             with GuiFixture(task.gui_mode or "secret", side / "gui_state.json") as fx:
                 res = _go()
                 verdict = judge_desktop(task, ws, fx)
+        elif task.category == "browser":
+            res = _go()
+            verdict = judge_code(task, ws, visible_hashes)
+            used_browser = any(c["tool"].startswith("browser_") and c.get("ok") for c in res.tool_calls)
+            if not used_browser:
+                verdict["passed"] = False
+                verdict["browser_tool_used"] = False
+            else:
+                verdict["browser_tool_used"] = True
         else:
             res = _go()
             verdict = judge_code(task, ws, visible_hashes)
@@ -192,7 +205,7 @@ def summarize(results: List[Dict[str, Any]]) -> Dict[str, Any]:
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(prog="am-bench")
     ap.add_argument("--label", default="baseline")
-    ap.add_argument("--only", default="", help="comma-separated task ids or a category (code|desktop)")
+    ap.add_argument("--only", default="", help="comma-separated task ids or a category (code|desktop|browser)")
     ap.add_argument("--workflow", default="react")
     ap.add_argument("--max-wall", type=float, default=600.0)
     ap.add_argument("--pause", type=float, default=3.0, help="seconds between tasks (provider rate limits)")

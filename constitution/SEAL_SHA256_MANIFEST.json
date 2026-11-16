@@ -1,5 +1,5 @@
 {
-  "aggregate_sha256": "61fc9b12aeae07cce1944b367a378c8c7f1ac3682a249fc7f6c0736a0a6ed3cb",
+  "aggregate_sha256": "a1e829586acdf261e0bb14fea46e228029dd62688c388a3aaeefa4589d74c216",
   "file_count": 19,
   "files": {
     "constitution/IMMUTABLE_CONSTITUTION.json": "b1fe67d4d453c60d8fbb2c2f5859549dcc5f2d04fd0513f7a58acc05c8adee76",
@@ -10,8 +10,8 @@
     "constitution/personas/systems_architect.md": "d968a9879d0773301fc1a6decdd0c52d9ff58c410aafd415154db5ded1423ffc",
     "eval/am_bench/__init__.py": "0c985357dd891def7cc0e921867e69ac0282afe0914621060e3e0061546d91a6",
     "eval/am_bench/gui_fixture.py": "99e254a93a4f569a6b4324bccc88ce4406d88e5063a16fc255673bbb3d3048b7",
-    "eval/am_bench/runner.py": "2bcf93d01dc1164786461f5ed8327ce951d634af7899ff03a579918984d4d267",
-    "eval/am_bench/tasks.py": "c67ee5bfec338edca256d0b638ebce186ef3916ed660b43d7408f11f3de04c7c",
+    "eval/am_bench/runner.py": "a9ba25f7820716995595c9a97413b609de183bfbad047579c06a624951be8ff6",
+    "eval/am_bench/tasks.py": "de579c6f1b1b40668c84d3c7ee27601c15819e8f5939bb2babe1581d7ad7a759",
     "eval/chaos_qualification_suite.py": "47e6f433aeed98598b0e860cf946c69f64b0f59a3fc00fa6a2300f9e8e18f443",
     "eval/extreme_stress_suite.py": "505e768332f9a9926220ee7f0760cd0fa594af8d9ff150a446d55423731742ba",
     "eval/test_alpha_c13_stateful_selection.py": "efdf70cc7eac839e05341ea3de334dff17229bb6d27fa19add2de5c4d3823f91",

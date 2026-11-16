@@ -501,3 +501,14 @@ def test_agent_loop_browser_cdp_tools_end_to_end(tmp_path: Path) -> None:
         "browser_extract",
     ]
     assert all(tc["ok"] for tc in res.tool_calls)
+
+
+def test_am_bench_browser_tasks_registry() -> None:
+    from eval.am_bench.tasks import ALL_TASKS, BROWSER_TASKS
+
+    assert len(BROWSER_TASKS) == 5
+    for t in BROWSER_TASKS:
+        assert t.category == "browser"
+        assert "{SITE_URI}" in t.objective
+        assert "tests_hidden/test_h.py" in t.hidden
+        assert t in ALL_TASKS

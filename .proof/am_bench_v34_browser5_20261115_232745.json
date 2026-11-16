@@ -1,0 +1,197 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "v34_browser5",
+  "workflow": "hierarchical",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\v34_browser5_20261115_232745",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 5,
+  "selected": 5,
+  "summary": {
+    "overall": {
+      "n": 5,
+      "passed": 4,
+      "pass_rate": 0.8,
+      "tokens": 215230,
+      "llm_calls": 64,
+      "elapsed_s": 197.1
+    },
+    "browser": {
+      "n": 5,
+      "passed": 4,
+      "pass_rate": 0.8,
+      "tokens": 215230,
+      "llm_calls": 64,
+      "elapsed_s": 197.1
+    }
+  },
+  "results": [
+    {
+      "task_id": "b01_dynamic_form",
+      "category": "browser",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "max_turns",
+      "turns": 12,
+      "providers": [
+        "groq",
+        "openrouter"
+      ],
+      "tools": [
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_observe",
+        "browser_extract",
+        "browser_observe",
+        "browser_extract",
+        "browser_extract",
+        "browser_extract",
+        "browser_extract",
+        "browser_extract",
+        "browser_extract"
+      ],
+      "passed": false,
+      "hidden_exit_code": 1,
+      "visible_tampered": [],
+      "hidden_output_tail": "l\\Programs\\Python\\Python311\\Lib\\pathlib.py:1058: in read_text\n    with self.open(mode='r', encoding=encoding, errors=errors) as f:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\nself = WindowsPath('answer.txt'), mode = 'r', buffering = -1, encoding = 'utf-8'\nerrors = None, newline = None\n\n    def open(self, mode='r', buffering=-1, encoding=None,\n             errors=None, newline=None):\n        \"\"\"\n        Open the file pointed by this path and return a file object, as\n        the built-in open() function does.\n        \"\"\"\n        if \"b\" not in mode:\n            encoding = io.text_encoding(encoding)\n>       return io.open(self, mode, buffering, encoding, errors, newline)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       FileNotFoundError: [Errno 2] No such file or directory: 'answer.txt'\n\nC:\\Users\\juanp\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\pathlib.py:1044: FileNotFoundError\n=========================== short test summary info ===========================\nFAILED tests_hidden/test_h.py::test_answer - FileNotFoundError: [Errno 2] No ...\n1 failed in 1.62s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 27.3,
+      "llm_calls": 13,
+      "prompt_tokens": 42427,
+      "completion_tokens": 2294
+    },
+    {
+      "task_id": "b02_table_filter_sum",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 7,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "browser_observe",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.93s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 42.5,
+      "llm_calls": 9,
+      "prompt_tokens": 17944,
+      "completion_tokens": 5080
+    },
+    {
+      "task_id": "b03_multi_step_nav",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 10,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "browser_act",
+        "browser_act",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.56s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 37.4,
+      "llm_calls": 12,
+      "prompt_tokens": 29646,
+      "completion_tokens": 4586
+    },
+    {
+      "task_id": "b04_self_healing_button",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 9,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.98s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 36.8,
+      "llm_calls": 12,
+      "prompt_tokens": 30587,
+      "completion_tokens": 3956
+    },
+    {
+      "task_id": "b05_validation_calc",
+      "category": "browser",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "max_turns",
+      "turns": 14,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_act",
+        "browser_observe",
+        "read_file",
+        "browser_act",
+        "browser_act",
+        "browser_act",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.97s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 53.1,
+      "llm_calls": 18,
+      "prompt_tokens": 74630,
+      "completion_tokens": 4080
+    }
+  ]
+}
