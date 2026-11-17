@@ -431,9 +431,11 @@ class WorkspaceTools:
         headless = bool(args.get("headless", True))
         url = args.get("url")
         wait_ms = int(args.get("wait_ms", 200))
+        force_reload = bool(args.get("force_reload", False))
         return self._get_browser(headless=headless).observe(
             url=str(url) if url else None,
             wait_ms=wait_ms,
+            force_reload=force_reload,
         )
 
     def browser_act(self, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -585,7 +587,7 @@ Tools:
 - send_agent {"recipient_id": "sub-...", "content": "..."}
 - await_agents {"session_ids": ["sub-..."], "timeout_s": 30}
 - mcp_call {"action": "call|list", "server": "local", "tool": "am_pc_probe", "arguments": {...}}
-- browser_observe {"url": "https://...|file:///...", "headless": true}   (CDP/Playwright observe + indexed DOM [idx] + F12/Visual proof)
+- browser_observe {"url": "https://...|file:///...", "headless": true}   (CDP/Playwright observe + indexed DOM [idx]; omit url or pass same url to observe current DOM without reloading)
 - browser_act {"action": "click|fill|goto", "idx": 1, "target": "Submit", "text": "...", "url": "..."}
 - browser_extract {"selector": "body"}
 - repo_map {"max_chars": 3000}   (PageRank + AST symbol overview of repository)
@@ -638,7 +640,7 @@ Tools:
 - send_agent {"recipient_id": "sub-...", "content": "..."}
 - await_agents {"session_ids": ["sub-..."], "timeout_s": 30}
 - mcp_call {"action": "call|list", "server": "local", "tool": "am_pc_probe", "arguments": {...}}
-- browser_observe {"url": "https://...|file:///...", "headless": true}   (CDP/Playwright observe + indexed DOM [idx] + F12/Visual proof)
+- browser_observe {"url": "https://...|file:///...", "headless": true}   (CDP/Playwright observe + indexed DOM [idx]; omit url or pass same url to observe current DOM without reloading)
 - browser_act {"action": "click|fill|goto", "idx": 1, "target": "Submit", "text": "...", "url": "..."}
 - browser_extract {"selector": "body"}
 - repo_map {"max_chars": 3000}   (PageRank + AST symbol overview of repository)
@@ -811,6 +813,77 @@ class AgentLoop:
                 return p
         return "?"
 
+    @staticmethod
+    def _compose_system_prompt(base_prompt: str, objective: str) -> str:
+        """Progressive tool-surface pruning (Caveman/OmO) + Karpathy/Superpowers surgical discipline."""
+        low = (objective or "").lower()
+        need_browser = any(k in low for k in ("browser", "http://", "https://", "file://", ".html", "cdp", "playwright", "click", "url", "dom", "webpage", "website", "site"))
+        need_desktop = any(k in low for k in ("desktop", "window", "gui", "screen", "ocr", "hotkey", "clipboard", "process", "port", "mouse", "dialog", "app"))
+        need_swarm_mcp = len(low) > 450 or any(k in low for k in ("mcp", "swarm", "subagent", "spawn", "skill", "cli", "parallel", "pipeline", "audit"))
+
+        kept: List[str] = []
+        in_tools = False
+        for ln in base_prompt.splitlines():
+            if ln.strip() == "Tools:":
+                in_tools = True
+                kept.append(ln)
+                continue
+            if ln.strip() == "Rules:":
+                in_tools = False
+                kept.append(ln)
+                continue
+            if in_tools and ln.startswith("- "):
+                tname = ln[2:].split(" ", 1)[0].strip()
+                if tname.startswith("browser_") or tname == "web_fetch":
+                    if not need_browser:
+                        continue
+                elif tname.startswith("pc_"):
+                    if not need_desktop:
+                        continue
+                elif tname in ("spawn_agent", "send_agent", "await_agents", "mcp_call", "skill_forge", "skill_run"):
+                    if not need_swarm_mcp:
+                        continue
+            kept.append(ln)
+
+        out = "\n".join(kept)
+        out += (
+            "\n10. SPEED & BATCHING: You may execute up to 6 independent tool calls in ONE turn via "
+            '{"thought": "...", "actions": [{"tool": "...", "args": {...}}, ...]} (e.g. multiple read_file, '
+            "replace_in_file, or browser_act steps). Always prefer surgical replace_in_file over full write_file; "
+            "run ad-hoc checks via `python -c` instead of creating scratch files in workspace; on command failure, "
+            "diagnose root cause before editing again."
+        )
+        return out
+
+    @staticmethod
+    def _build_turn0_inventory(ws: WorkspaceTools, before: Dict[str, Tuple[str, Optional[str]]]) -> str:
+        """Pre-seed workspace file tree (+ RepoMap on small repos) so Turn 1 skips blind list_dir."""
+        rels = sorted(
+            r for r in before
+            if not r.startswith(("tests_hidden/", ".am_"))
+            and "__pycache__" not in r
+            and not r.endswith(("durable.db", "durable.db-shm", "durable.db-wal"))
+        )
+        if not rels:
+            return ""
+        items = []
+        for r in rels[:35]:
+            txt = (before.get(r) or ("", None))[1]
+            sz = f"{len(txt)}ch" if txt is not None else "bin"
+            items.append(f"{r} ({sz})")
+        block = f"WORKSPACE FILES ({len(rels)}): " + ", ".join(items)
+        if len(rels) > 35:
+            block += f", ... (+{len(rels) - 35} more)"
+        if len(rels) <= 15 and ws._repo_mapper_factory is not None:
+            try:
+                rm_res = ws.repo_map({"max_chars": 1000})
+                rm_txt = str(rm_res.get("map") or "").strip()
+                if rm_txt:
+                    block += f"\nREPOMAP:\n{rm_txt[:1000]}"
+            except Exception:
+                pass
+        return block + "\n\n"
+
     # Tools are registered once on the single state owner; they dispatch to the active workspace.
     def _register_tools(self) -> None:
         for name, effect in self.TOOL_EFFECTS.items():
@@ -927,9 +1000,10 @@ class AgentLoop:
             verify_cmd=verify_cmd,
         )
 
-        # SPARC vs ReAct base prompt selection & Persona contract injection
+        # SPARC vs ReAct base prompt selection, tool-surface pruning & Persona contract injection
         role = self.auto_select_role(objective, role)
         base_prompt = SPARC_SYSTEM_PROMPT if (workflow or "").lower() == "sparc" else SYSTEM_PROMPT
+        base_prompt = self._compose_system_prompt(base_prompt, objective)
         system_prompt = self.persona_mgr.inject_persona(base_prompt, role)
 
         # ReasoningBank trajectory grounding (few-shot experience replay)
@@ -974,6 +1048,7 @@ class AgentLoop:
                     subgoals=[asdict(sg) for sg in h_plan.subgoals],
                 )
 
+        task += self._build_turn0_inventory(ws, before)
         task += f"OBJECTIVE:\n{objective}\n\nWORKSPACE: {ws.ws}\n"
         task += f"ACCEPTANCE COMMAND (must exit 0): {verify_cmd}\n" if verify_cmd else "No acceptance command was provided; verify your work yourself.\n"
         messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}, {"role": "user", "content": task}]
@@ -997,12 +1072,26 @@ class AgentLoop:
             messages.append({"role": "assistant", "content": resp.text})
             try:
                 action = extract_json_object(resp.text)
-                tool = str(action.get("tool", "")).strip()
-                if not tool:
-                    raise ValueError("missing non-empty 'tool' name")
-                args = action.get("args") or {}
-                if not isinstance(args, dict):
-                    raise ValueError("args must be an object")
+                batch: List[Tuple[str, Dict[str, Any]]] = []
+                if isinstance(action.get("actions"), list) and action["actions"]:
+                    for item in action["actions"][:6]:
+                        if not isinstance(item, dict):
+                            raise ValueError("each entry in 'actions' must be an object")
+                        t_name = str(item.get("tool", "")).strip()
+                        if not t_name:
+                            raise ValueError("missing non-empty 'tool' name in actions item")
+                        t_args = item.get("args") or {}
+                        if not isinstance(t_args, dict):
+                            raise ValueError("args in actions item must be an object")
+                        batch.append((t_name, t_args))
+                else:
+                    tool = str(action.get("tool", "")).strip()
+                    if not tool:
+                        raise ValueError("missing non-empty 'tool' name")
+                    args = action.get("args") or {}
+                    if not isinstance(args, dict):
+                        raise ValueError("args must be an object")
+                    batch.append((tool, args))
             except ValueError as exc:
                 parse_failures += 1
                 messages.append({"role": "user", "content": f"PROTOCOL ERROR: {exc}. Reply with exactly one JSON object."})
@@ -1012,6 +1101,7 @@ class AgentLoop:
                 continue
 
             thought_text = str(action.get("thought", ""))
+            first_tool = batch[0][0]
             step_name = f"SPARC:{self._extract_sparc_phase(thought_text)}" if (workflow or "").lower() == "sparc" else f"turn:{turn}"
             bus.emit(
                 AGUIEventType.STEP_STARTED,
@@ -1019,155 +1109,178 @@ class AgentLoop:
                 stepName=step_name,
                 thought=thought_text[:300],
             )
-            self._emit({"turn": turn, "tool": tool, "provider": resp.provider, "thought": thought_text[:200]})
+            self._emit({"turn": turn, "tool": first_tool if len(batch) == 1 else f"batch[{len(batch)}]", "provider": resp.provider, "thought": thought_text[:200]})
 
-            if tool == "finish":
-                if verify_cmd and turn < max_turns:
-                    v_pre = ws.run({"command": verify_cmd, "timeout_s": 600})
-                    if v_pre["exit_code"] != 0:
-                        messages.append({
-                            "role": "user",
-                            "content": (
+            turn_obs_chunks: List[str] = []
+            turn_progress = False
+            turn_tools_executed = 0
+            should_break_loop = False
+            reject_finish_msg: Optional[str] = None
+
+            for sub_idx, (tool, args) in enumerate(batch, 1):
+                if tool == "finish":
+                    if verify_cmd and turn < max_turns:
+                        v_pre = ws.run({"command": verify_cmd, "timeout_s": 600})
+                        if v_pre["exit_code"] != 0:
+                            reject_finish_msg = (
                                 f"FINISH REJECTED: acceptance command '{verify_cmd}' failed "
                                 f"(exit_code={v_pre['exit_code']}). Fix the failure before calling finish:\n"
                                 f"{v_pre['output'][-2000:]}"
-                            ),
-                        })
-                        try:
-                            homeo.record_turn_cost(tokens=resp.total_tokens, tool_calls=1, made_verified_progress=False)
-                        except ResourceExhaustedError as exc:
-                            stop_reason = f"budget: {exc}"
+                            )
                             break
-                        continue
-                    pre_verification = {
-                        "command": verify_cmd,
-                        "exit_code": v_pre["exit_code"],
-                        "passed": True,
-                        "output_tail": v_pre["output"][-2500:],
-                    }
-                summary = str(args.get("summary", ""))
-                try:
-                    c = float(args.get("confidence"))
-                    confidence = c if 0.0 <= c <= 1.0 else None
-                except (TypeError, ValueError):
-                    confidence = None
-                stop_reason = "finish"
-                break
+                        pre_verification = {
+                            "command": verify_cmd,
+                            "exit_code": v_pre["exit_code"],
+                            "passed": True,
+                            "output_tail": v_pre["output"][-2500:],
+                        }
+                    summary = str(args.get("summary", ""))
+                    try:
+                        c = float(args.get("confidence"))
+                        confidence = c if 0.0 <= c <= 1.0 else None
+                    except (TypeError, ValueError):
+                        confidence = None
+                    stop_reason = "finish"
+                    should_break_loop = True
+                    break
 
-            # --- Take the Wheel: Human Intervention Gate ---
-            if tool == "request_human":
-                human_requests_count += 1
-                if human_requests_count > 3:
-                    ok, obs = False, {"error": "Maximum of 3 human intervention requests exceeded for this mission. Continue autonomously."}
-                else:
-                    reason = str(args.get("reason", "Human intervention required"))
-                    instructions = str(args.get("instructions", "Please inspect workspace and resolve blocker"))
-                    bus.emit(
-                        AGUIEventType.CUSTOM,
-                        name="HUMAN_INTERVENTION_REQUEST",
-                        reason=reason,
-                        instructions=instructions,
-                        turn=turn,
-                    )
-                    outcome = self.wheel_gate.pause_for_human(
-                        mission_id=mission_id,
-                        reason=reason,
-                        instructions=instructions,
-                        turn=turn,
-                        timeout_s=effective_wheel_timeout,
-                    )
-                    if outcome.action == "ABORTED":
-                        stop_reason = f"human_abort: {outcome.note}"
+                # --- Take the Wheel: Human Intervention Gate ---
+                if tool == "request_human":
+                    human_requests_count += 1
+                    if human_requests_count > 3:
+                        ok, obs = False, {"error": "Maximum of 3 human intervention requests exceeded for this mission. Continue autonomously."}
+                    else:
+                        reason = str(args.get("reason", "Human intervention required"))
+                        instructions = str(args.get("instructions", "Please inspect workspace and resolve blocker"))
                         bus.emit(
                             AGUIEventType.CUSTOM,
-                            name="HUMAN_INTERVENTION_ABORTED",
-                            note=outcome.note,
-                            paused_seconds=outcome.paused_seconds,
+                            name="HUMAN_INTERVENTION_REQUEST",
+                            reason=reason,
+                            instructions=instructions,
+                            turn=turn,
                         )
-                        tool_log.append({"turn": turn, "tool": tool, "args": args, "ok": False, "aborted": True})
-                        break
-                    elif outcome.action == "RESUMED":
-                        homeo.credit_paused_time(outcome.paused_seconds)
-                        bus.emit(
-                            AGUIEventType.CUSTOM,
-                            name="HUMAN_INTERVENTION_RESUMED",
-                            note=outcome.note,
-                            paused_seconds=outcome.paused_seconds,
+                        outcome = self.wheel_gate.pause_for_human(
+                            mission_id=mission_id,
+                            reason=reason,
+                            instructions=instructions,
+                            turn=turn,
+                            timeout_s=effective_wheel_timeout,
                         )
-                        ok, obs = True, {"status": "RESUMED", "human_note": outcome.note, "paused_seconds": outcome.paused_seconds}
-                    else:
-                        ok, obs = True, {"status": outcome.action, "note": outcome.note, "paused_seconds": outcome.paused_seconds}
+                        if outcome.action == "ABORTED":
+                            stop_reason = f"human_abort: {outcome.note}"
+                            bus.emit(
+                                AGUIEventType.CUSTOM,
+                                name="HUMAN_INTERVENTION_ABORTED",
+                                note=outcome.note,
+                                paused_seconds=outcome.paused_seconds,
+                            )
+                            tool_log.append({"turn": turn, "tool": tool, "args": args, "ok": False, "aborted": True})
+                            should_break_loop = True
+                            break
+                        elif outcome.action == "RESUMED":
+                            homeo.credit_paused_time(outcome.paused_seconds)
+                            bus.emit(
+                                AGUIEventType.CUSTOM,
+                                name="HUMAN_INTERVENTION_RESUMED",
+                                note=outcome.note,
+                                paused_seconds=outcome.paused_seconds,
+                            )
+                            ok, obs = True, {"status": "RESUMED", "human_note": outcome.note, "paused_seconds": outcome.paused_seconds}
+                        else:
+                            ok, obs = True, {"status": outcome.action, "note": outcome.note, "paused_seconds": outcome.paused_seconds}
 
-                tool_log.append({"turn": turn, "tool": tool, "args": args, "ok": ok})
-                messages.append({"role": "user", "content": "OBSERVATION:\n" + clip(json.dumps(obs, ensure_ascii=False, default=str))})
-                continue
+                    turn_tools_executed += 1
+                    if ok:
+                        turn_progress = True
+                    tool_log.append({"turn": turn, "tool": tool, "args": args, "ok": ok})
+                    turn_obs_chunks.append(clip(json.dumps(obs, ensure_ascii=False, default=str)))
+                    continue
 
-            tc_id = f"tc-{turn}-{tool}"
-            bus.emit(
-                AGUIEventType.TOOL_CALL_START,
-                toolCallId=tc_id,
-                toolName=tool,
-                args_preview=str(args)[:150],
-            )
-            bus.emit(
-                AGUIEventType.TOOL_CALL_ARGS,
-                toolCallId=tc_id,
-                args=args,
-            )
-
-            ok, obs = True, None
-            call_args = None
-            if tool not in self.TOOL_EFFECTS:
-                ok, obs = False, {"error": f"unknown tool '{tool}'"}
-            else:
-                try:
-                    breaker.record_and_check(tool, args)
-                    call_args = self._prepare_args(tool, args, ws)
-                    pre_dec = self.hook_engine.run_pre(tool, call_args, ws.ws)
-                    if not pre_dec.allowed:
-                        ok, obs = False, {"error": pre_dec.reason, "blocked_by_hook": True}
-                    else:
-                        step_id = f"t{turn}-{hashlib.sha256(json.dumps([tool, call_args], sort_keys=True, default=str).encode()).hexdigest()[:10]}"
-                        cp = self.engine.execute_step(run_id=mission_id, step_id=step_id, step_index=turn, tool_name=f"ws.{tool}",
-                                                      args=call_args, state={"mission_id": mission_id}, lease_epoch=epoch, envelope=envelope)
-                        obs = cp["output"]
-                        if isinstance(obs, dict):
-                            post_notes = self.hook_engine.run_post(tool, call_args, obs, ws.ws)
-                            if post_notes:
-                                obs["hook_annotations"] = post_notes
-                        if tool == "run" and isinstance(obs, dict) and obs.get("exit_code") not in (0, None):
-                            ok = True  # a failing command is still valid information
-                except RepeatToolLoopError as exc:
-                    ok, obs = False, {"error": f"{exc}. Change strategy."}
-                except Exception as exc:  # gate violations, bad args, IO errors -> feed back to the model
-                    ok, obs = False, {"error": f"{type(exc).__name__}: {str(exc)[:500]}"}
-
-            bus.emit(
-                AGUIEventType.TOOL_CALL_END,
-                toolCallId=tc_id,
-                toolName=tool,
-            )
-            bus.emit(
-                AGUIEventType.TOOL_CALL_RESULT,
-                toolCallId=tc_id,
-                ok=ok,
-                result=clip(json.dumps(obs, ensure_ascii=False, default=str), 1500),
-            )
-            if ok and tool in ("write_file", "replace_in_file") and call_args:
-                rel_path = str(call_args.get("path", ""))
-                try:
-                    rel_path = Path(rel_path).relative_to(ws.ws).as_posix()
-                except ValueError:
-                    pass
+                tc_id = f"tc-{turn}-{sub_idx}-{tool}"
                 bus.emit(
-                    AGUIEventType.STATE_DELTA,
-                    deltas=[{"op": "replace", "path": f"/files/{rel_path}"}],
+                    AGUIEventType.TOOL_CALL_START,
+                    toolCallId=tc_id,
+                    toolName=tool,
+                    args_preview=str(args)[:150],
+                )
+                bus.emit(
+                    AGUIEventType.TOOL_CALL_ARGS,
+                    toolCallId=tc_id,
+                    args=args,
                 )
 
-            tool_log.append({"turn": turn, "tool": tool, "args": {k: (v if len(str(v)) < 300 else str(v)[:300] + "...") for k, v in args.items()}, "ok": ok})
-            messages.append({"role": "user", "content": "OBSERVATION:\n" + compressor.compress_tool_payload(tool, obs)})
+                ok, obs = True, None
+                call_args = None
+                if tool not in self.TOOL_EFFECTS:
+                    ok, obs = False, {"error": f"unknown tool '{tool}'"}
+                else:
+                    try:
+                        breaker.record_and_check(tool, args)
+                        call_args = self._prepare_args(tool, args, ws)
+                        pre_dec = self.hook_engine.run_pre(tool, call_args, ws.ws)
+                        if not pre_dec.allowed:
+                            ok, obs = False, {"error": pre_dec.reason, "blocked_by_hook": True}
+                        else:
+                            step_id = f"t{turn}-{sub_idx}-{hashlib.sha256(json.dumps([tool, call_args], sort_keys=True, default=str).encode()).hexdigest()[:10]}"
+                            cp = self.engine.execute_step(run_id=mission_id, step_id=step_id, step_index=turn * 10 + sub_idx, tool_name=f"ws.{tool}",
+                                                          args=call_args, state={"mission_id": mission_id}, lease_epoch=epoch, envelope=envelope)
+                            obs = cp["output"]
+                            if isinstance(obs, dict):
+                                post_notes = self.hook_engine.run_post(tool, call_args, obs, ws.ws)
+                                if post_notes:
+                                    obs["hook_annotations"] = post_notes
+                            if tool == "run" and isinstance(obs, dict) and obs.get("exit_code") not in (0, None):
+                                ok = True  # a failing command is still valid information
+                    except RepeatToolLoopError as exc:
+                        ok, obs = False, {"error": f"{exc}. Change strategy."}
+                    except Exception as exc:  # gate violations, bad args, IO errors -> feed back to the model
+                        ok, obs = False, {"error": f"{type(exc).__name__}: {str(exc)[:500]}"}
+
+                bus.emit(
+                    AGUIEventType.TOOL_CALL_END,
+                    toolCallId=tc_id,
+                    toolName=tool,
+                )
+                bus.emit(
+                    AGUIEventType.TOOL_CALL_RESULT,
+                    toolCallId=tc_id,
+                    ok=ok,
+                    result=clip(json.dumps(obs, ensure_ascii=False, default=str), 1500),
+                )
+                if ok and tool in ("write_file", "replace_in_file") and call_args:
+                    rel_path = str(call_args.get("path", ""))
+                    try:
+                        rel_path = Path(rel_path).relative_to(ws.ws).as_posix()
+                    except ValueError:
+                        pass
+                    bus.emit(
+                        AGUIEventType.STATE_DELTA,
+                        deltas=[{"op": "replace", "path": f"/files/{rel_path}"}],
+                    )
+
+                turn_tools_executed += 1
+                if ok:
+                    turn_progress = True
+                tool_log.append({"turn": turn, "tool": tool, "args": {k: (v if len(str(v)) < 300 else str(v)[:300] + "...") for k, v in args.items()}, "ok": ok})
+                compressed = compressor.compress_tool_payload(tool, obs)
+                prefix = f"[{sub_idx}:{tool}] " if len(batch) > 1 else ""
+                turn_obs_chunks.append(prefix + compressed)
+
+            if should_break_loop:
+                break
+            if reject_finish_msg is not None:
+                obs_head = ("\n".join(turn_obs_chunks) + "\n\n") if turn_obs_chunks else ""
+                messages.append({"role": "user", "content": obs_head + reject_finish_msg})
+                try:
+                    homeo.record_turn_cost(tokens=resp.total_tokens, tool_calls=max(1, turn_tools_executed), made_verified_progress=False)
+                except ResourceExhaustedError as exc:
+                    stop_reason = f"budget: {exc}"
+                    break
+                continue
+
+            messages.append({"role": "user", "content": "OBSERVATION:\n" + "\n".join(turn_obs_chunks)})
             try:
-                homeo.record_turn_cost(tokens=resp.total_tokens, tool_calls=1, made_verified_progress=ok)
+                homeo.record_turn_cost(tokens=resp.total_tokens, tool_calls=max(1, turn_tools_executed), made_verified_progress=turn_progress)
             except ResourceExhaustedError as exc:
                 stop_reason = f"budget: {exc}"
                 break

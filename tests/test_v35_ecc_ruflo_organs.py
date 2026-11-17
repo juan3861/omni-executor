@@ -437,3 +437,82 @@ def test_v38_headroom_compressor_knowledge_index_webfetch_and_sast_shield(tmp_pa
 
     # 6. OMNI_TOPOLOGY_V2 remains clean
     assert InterRepoTopologyGate().audit_package_imports("F:/AetherMind_Universal_Agent/src/am_ua")["ok"] is True
+
+
+def test_v39_rapid_batching_turn0_inventory_and_tool_pruning(tmp_path: Path) -> None:
+    """Verify v3.9 RAPID: multi-action turn batching, Turn-0 workspace inventory, and prompt tool-surface pruning."""
+    from am_ua.agent_kernel import AetherMindUniversalAgent
+    from am_ua.execution.agent_loop import AgentLoop, SYSTEM_PROMPT
+
+    # 1. Dynamic tool pruning cuts unrelated GUI/Browser prompt noise on focused Python tasks
+    pruned_code = AgentLoop._compose_system_prompt(SYSTEM_PROMPT, "Fix off-by-one bug in core.py")
+    assert "replace_in_file" in pruned_code
+    assert "pc_observe" not in pruned_code
+    assert "browser_observe" not in pruned_code
+    assert "actions" in pruned_code
+
+    pruned_browser = AgentLoop._compose_system_prompt(SYSTEM_PROMPT, "Open https://example.com in browser and click #btn")
+    assert "browser_observe" in pruned_browser and "pc_observe" not in pruned_browser
+
+    # 2. Multi-action batching executes multiple read/edit steps in a single LLM turn + injects WORKSPACE FILES at Turn 0
+    ws = tmp_path / "batch_ws"
+    ws.mkdir()
+    (ws / "a.py").write_text("X = 1\n", encoding="utf-8")
+    (ws / "b.py").write_text("Y = 2\n", encoding="utf-8")
+
+    captured_prompts: list[str] = []
+
+    class BatchLLM:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.total_prompt_tokens = 0
+            self.total_completion_tokens = 0
+
+        @staticmethod
+        def available() -> list[str]:
+            return []
+
+        def chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+            self.calls += 1
+            if self.calls == 1:
+                captured_prompts.append(messages[1]["content"])
+            self.total_prompt_tokens += 5
+            self.total_completion_tokens += 5
+
+            class R:
+                provider = "mock"
+                model = "mock-1"
+                prompt_tokens = 5
+                completion_tokens = 5
+                total_tokens = 10
+
+            r = R()
+            if self.calls == 1:
+                r.text = json.dumps({
+                    "thought": "Read both files in one batched turn",
+                    "actions": [
+                        {"tool": "read_file", "args": {"file": "a.py"}},
+                        {"tool": "read_file", "args": {"file": "b.py"}},
+                    ],
+                })
+            elif self.calls == 2:
+                r.text = json.dumps({
+                    "thought": "Edit both files in one batched turn",
+                    "actions": [
+                        {"tool": "replace_in_file", "args": {"file": "a.py", "old": "X = 1", "new": "X = 10"}},
+                        {"tool": "replace_in_file", "args": {"file": "b.py", "old": "Y = 2", "new": "Y = 20"}},
+                    ],
+                })
+            else:
+                r.text = json.dumps({"thought": "done", "tool": "finish", "args": {"summary": "batched", "confidence": 1.0}})
+            return r
+
+    agent = AetherMindUniversalAgent(data_dir=tmp_path / "kdata39")
+    agent.agent_loop.llm = BatchLLM()  # type: ignore[assignment]
+    res = agent.run_agent_mission("Update constants X and Y in a.py and b.py", workspace=ws, max_turns=5, workflow="react")
+    assert res["stop_reason"] == "finish"
+    assert res["turns"] == 3
+    assert [tc["tool"] for tc in res["tool_calls"]] == ["read_file", "read_file", "replace_in_file", "replace_in_file"]
+    assert (ws / "a.py").read_text(encoding="utf-8") == "X = 10\n"
+    assert (ws / "b.py").read_text(encoding="utf-8") == "Y = 20\n"
+    assert captured_prompts and "WORKSPACE FILES (2): a.py" in captured_prompts[0]

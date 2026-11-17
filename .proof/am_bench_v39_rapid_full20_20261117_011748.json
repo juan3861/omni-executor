@@ -1,0 +1,681 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "v39_rapid_full20",
+  "workflow": "hierarchical",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\v39_rapid_full20_20261117_011748",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 20,
+  "selected": 20,
+  "summary": {
+    "overall": {
+      "n": 20,
+      "passed": 19,
+      "pass_rate": 0.95,
+      "tokens": 1091893,
+      "llm_calls": 303,
+      "elapsed_s": 1334.1
+    },
+    "browser": {
+      "n": 5,
+      "passed": 4,
+      "pass_rate": 0.8,
+      "tokens": 290807,
+      "llm_calls": 82,
+      "elapsed_s": 284.8
+    },
+    "code": {
+      "n": 15,
+      "passed": 15,
+      "pass_rate": 1.0,
+      "tokens": 801086,
+      "llm_calls": 221,
+      "elapsed_s": 1049.3
+    }
+  },
+  "results": [
+    {
+      "task_id": "c01_off_by_one",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 8,
+      "providers": [
+        "groq",
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "run",
+        "replace_in_file",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.27s\n",
+      "elapsed_s": 51.7,
+      "llm_calls": 8,
+      "prompt_tokens": 16169,
+      "completion_tokens": 1316
+    },
+    {
+      "task_id": "c02_mutable_default",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 7,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "run",
+        "replace_in_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.55s\n",
+      "elapsed_s": 45.8,
+      "llm_calls": 7,
+      "prompt_tokens": 12980,
+      "completion_tokens": 1085
+    },
+    {
+      "task_id": "c03_slugify_unicode",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 14,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "write_file",
+        "run",
+        "write_file",
+        "run",
+        "replace_in_file",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.55s\n",
+      "elapsed_s": 120.9,
+      "llm_calls": 14,
+      "prompt_tokens": 60796,
+      "completion_tokens": 12392
+    },
+    {
+      "task_id": "c04_money_rounding",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "run",
+        "search",
+        "list_dir",
+        "run",
+        "run",
+        "read_file",
+        "write_file",
+        "run",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.40s\n",
+      "adaptive_escalated": true,
+      "elapsed_s": 109.7,
+      "llm_calls": 26,
+      "prompt_tokens": 94347,
+      "completion_tokens": 6568
+    },
+    {
+      "task_id": "c05_multi_file_rename",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 15,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "replace_in_file",
+        "replace_in_file",
+        "read_file",
+        "replace_in_file",
+        "run",
+        "read_file",
+        "replace_in_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.20s\n",
+      "elapsed_s": 51.6,
+      "llm_calls": 15,
+      "prompt_tokens": 32448,
+      "completion_tokens": 3306
+    },
+    {
+      "task_id": "c06_cli_flag",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 16,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "list_dir",
+        "replace_in_file",
+        "read_file",
+        "replace_in_file",
+        "write_file",
+        "read_file",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.23s\n",
+      "elapsed_s": 58.4,
+      "llm_calls": 16,
+      "prompt_tokens": 40534,
+      "completion_tokens": 3096
+    },
+    {
+      "task_id": "c07_fib_performance",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 7,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.24s\n",
+      "elapsed_s": 41.9,
+      "llm_calls": 7,
+      "prompt_tokens": 12241,
+      "completion_tokens": 2228
+    },
+    {
+      "task_id": "c08_csv_quotes",
+      "category": "code",
+      "agent_status": "VERIFIED_AFTER_BUDGET",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "write_file",
+        "run",
+        "search",
+        "run",
+        "run",
+        "write_file",
+        "write_file",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "write_file",
+        "run",
+        "read_file",
+        "write_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.32s\n",
+      "elapsed_s": 72.8,
+      "llm_calls": 20,
+      "prompt_tokens": 55972,
+      "completion_tokens": 4133
+    },
+    {
+      "task_id": "c09_br_date",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 7,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "write_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.19s\n",
+      "elapsed_s": 36.9,
+      "llm_calls": 7,
+      "prompt_tokens": 12675,
+      "completion_tokens": 1891
+    },
+    {
+      "task_id": "c10_stack_errors",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 15,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "read_file",
+        "write_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.08s\n",
+      "elapsed_s": 58.4,
+      "llm_calls": 15,
+      "prompt_tokens": 36043,
+      "completion_tokens": 2248
+    },
+    {
+      "task_id": "c11_deep_merge",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 15,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "search",
+        "list_dir",
+        "replace_in_file",
+        "run",
+        "write_file",
+        "read_file",
+        "replace_in_file",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.30s\n",
+      "elapsed_s": 69.6,
+      "llm_calls": 15,
+      "prompt_tokens": 54239,
+      "completion_tokens": 6003
+    },
+    {
+      "task_id": "c12_email_regex",
+      "category": "code",
+      "agent_status": "VERIFIED_AFTER_BUDGET",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "search",
+        "run",
+        "read_file",
+        "run",
+        "run",
+        "run",
+        "write_file",
+        "run",
+        "read_file",
+        "run",
+        "read_file",
+        "read_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.25s\n",
+      "adaptive_escalated": true,
+      "elapsed_s": 184.5,
+      "llm_calls": 40,
+      "prompt_tokens": 227336,
+      "completion_tokens": 22163
+    },
+    {
+      "task_id": "c13_sort_key",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 16,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "repo_map",
+        "list_dir",
+        "list_dir",
+        "replace_in_file",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.17s\n",
+      "elapsed_s": 69.5,
+      "llm_calls": 16,
+      "prompt_tokens": 43581,
+      "completion_tokens": 2922
+    },
+    {
+      "task_id": "c14_lru_cache",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 6,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "list_dir",
+        "write_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.29s\n",
+      "elapsed_s": 36.7,
+      "llm_calls": 7,
+      "prompt_tokens": 12461,
+      "completion_tokens": 2413
+    },
+    {
+      "task_id": "c15_safe_join",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 8,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "replace_in_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.96s\n",
+      "elapsed_s": 40.9,
+      "llm_calls": 8,
+      "prompt_tokens": 14714,
+      "completion_tokens": 2786
+    },
+    {
+      "task_id": "b01_dynamic_form",
+      "category": "browser",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "max_turns",
+      "turns": 12,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_act",
+        "browser_observe",
+        "read_file",
+        "browser_extract",
+        "browser_act",
+        "browser_extract",
+        "browser_act",
+        "browser_act",
+        "browser_act"
+      ],
+      "passed": false,
+      "hidden_exit_code": 1,
+      "visible_tampered": [],
+      "hidden_output_tail": "l\\Programs\\Python\\Python311\\Lib\\pathlib.py:1058: in read_text\n    with self.open(mode='r', encoding=encoding, errors=errors) as f:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\nself = WindowsPath('answer.txt'), mode = 'r', buffering = -1, encoding = 'utf-8'\nerrors = None, newline = None\n\n    def open(self, mode='r', buffering=-1, encoding=None,\n             errors=None, newline=None):\n        \"\"\"\n        Open the file pointed by this path and return a file object, as\n        the built-in open() function does.\n        \"\"\"\n        if \"b\" not in mode:\n            encoding = io.text_encoding(encoding)\n>       return io.open(self, mode, buffering, encoding, errors, newline)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       FileNotFoundError: [Errno 2] No such file or directory: 'answer.txt'\n\nC:\\Users\\juanp\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\pathlib.py:1044: FileNotFoundError\n=========================== short test summary info ===========================\nFAILED tests_hidden/test_h.py::test_answer - FileNotFoundError: [Errno 2] No ...\n1 failed in 2.04s\n",
+      "browser_tool_used": true,
+      "adaptive_escalated": true,
+      "elapsed_s": 128.2,
+      "llm_calls": 28,
+      "prompt_tokens": 90680,
+      "completion_tokens": 13626
+    },
+    {
+      "task_id": "b02_table_filter_sum",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 12,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "browser_observe",
+        "browser_act",
+        "browser_observe",
+        "browser_extract",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.00s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 56.6,
+      "llm_calls": 15,
+      "prompt_tokens": 62494,
+      "completion_tokens": 9226
+    },
+    {
+      "task_id": "b03_multi_step_nav",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 10,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.87s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 35.4,
+      "llm_calls": 12,
+      "prompt_tokens": 30305,
+      "completion_tokens": 3733
+    },
+    {
+      "task_id": "b04_self_healing_button",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 9,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.95s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 27.1,
+      "llm_calls": 12,
+      "prompt_tokens": 30772,
+      "completion_tokens": 3827
+    },
+    {
+      "task_id": "b05_validation_calc",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 11,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "list_dir",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.69s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 37.5,
+      "llm_calls": 15,
+      "prompt_tokens": 42206,
+      "completion_tokens": 3938
+    }
+  ]
+}

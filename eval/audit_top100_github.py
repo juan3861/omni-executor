@@ -39,7 +39,7 @@ def _classify_repo(repo: Dict[str, Any]) -> Tuple[str, List[str]]:
     if any(k in text for k in (
         "coding agent", "claude code", "opencode", "codex", "cline", "harness",
         "reverse engineer", "pair programming", "ai-driven development", "autogpt",
-        "openhands", "aider", "cli-anything", "autoresearch",
+        "openhands", "aider", "cli-anything", "autoresearch", "ai workspace", "odysseus",
     )):
         gears.append("autonomous_coding_harness")
     if any(k in text for k in ("ast", "codebase", "symbol", "tree-sitter", "lsp", "code graph", "aider")):
@@ -75,6 +75,7 @@ def _classify_repo(repo: Dict[str, Any]) -> Tuple[str, List[str]]:
         "tutorial", "book", "interview", "lessons", "begginer", "beginners", "classroom", "wifi signals",
         "design system", "design vocabulary", "marketingskills", "awesome-", "leaked system prompts",
         "open data platform for analysts", "it automation platform", "quant investment platform",
+        "elevenlabs alternative", "from scratch", "构建智能体",
     ))
     scope = "vertical_or_curated_list" if (non_core or not gears) else "core_engineering_agent"
     return scope, sorted(set(gears))

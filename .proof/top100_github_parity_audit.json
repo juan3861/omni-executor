@@ -1,8 +1,8 @@
 {
   "schema": "TOP100_GITHUB_PARITY_AUDIT/v1",
   "total_repos_audited": 100,
-  "core_engineering_repos": 79,
-  "vertical_or_curated_repos": 21,
+  "core_engineering_repos": 78,
+  "vertical_or_curated_repos": 22,
   "capabilities_verified_on_disk": {
     "autonomous_coding_harness": true,
     "ast_repomap_and_lsp": true,
@@ -19,7 +19,7 @@
     "skills_and_personas": true,
     "evolution_and_benchmarks": true
   },
-  "core_repos_100pct_gear_covered": 79,
+  "core_repos_100pct_gear_covered": 78,
   "core_gear_coverage_rate": 1.0,
   "uncovered_core_repos": []
 }

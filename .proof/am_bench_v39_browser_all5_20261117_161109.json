@@ -1,0 +1,197 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "v39_browser_all5",
+  "workflow": "hierarchical",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\v39_browser_all5_20261117_161109",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 5,
+  "selected": 5,
+  "summary": {
+    "overall": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0,
+      "tokens": 281872,
+      "llm_calls": 84,
+      "elapsed_s": 223.1
+    },
+    "browser": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0,
+      "tokens": 281872,
+      "llm_calls": 84,
+      "elapsed_s": 223.1
+    }
+  },
+  "results": [
+    {
+      "task_id": "b01_dynamic_form",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 9,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.62s\n",
+      "browser_tool_used": true,
+      "adaptive_escalated": true,
+      "elapsed_s": 83.9,
+      "llm_calls": 25,
+      "prompt_tokens": 84715,
+      "completion_tokens": 14563
+    },
+    {
+      "task_id": "b02_table_filter_sum",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 11,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "browser_observe",
+        "browser_act",
+        "browser_extract",
+        "browser_observe",
+        "browser_extract",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.57s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 39.3,
+      "llm_calls": 14,
+      "prompt_tokens": 37701,
+      "completion_tokens": 4232
+    },
+    {
+      "task_id": "b03_multi_step_nav",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 12,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_observe",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.60s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 30.3,
+      "llm_calls": 15,
+      "prompt_tokens": 42744,
+      "completion_tokens": 4026
+    },
+    {
+      "task_id": "b04_self_healing_button",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 11,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "browser_observe",
+        "browser_extract",
+        "browser_act",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "list_dir",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.59s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 34.8,
+      "llm_calls": 14,
+      "prompt_tokens": 38179,
+      "completion_tokens": 3799
+    },
+    {
+      "task_id": "b05_validation_calc",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 11,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_act",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.55s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 34.8,
+      "llm_calls": 16,
+      "prompt_tokens": 47491,
+      "completion_tokens": 4422
+    }
+  ]
+}

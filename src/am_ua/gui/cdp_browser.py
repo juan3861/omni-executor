@@ -129,11 +129,22 @@ class CDPIndexedBrowser:
         self._page = self._context.new_page()
         return self._page
 
-    def observe(self, url: Optional[str] = None, *, wait_ms: int = 200) -> Dict[str, Any]:
-        """Navigate (if `url` given), index all interactive DOM elements `[1..N]`, and save F12 + Visual proof."""
+    def observe(self, url: Optional[str] = None, *, wait_ms: int = 200, force_reload: bool = False) -> Dict[str, Any]:
+        """Navigate (if `url` given and not already at destination), index all interactive DOM elements `[1..N]`, and save F12 + Visual proof."""
         page = self._ensure_page()
         if url:
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            cur_url = getattr(page, "url", "") or ""
+            target_url = str(url).strip()
+
+            def _norm(u: str) -> str:
+                s = u.lower().rstrip("/").replace("\\", "/")
+                if s.startswith("file:///"):
+                    s = "file://" + s[7:].lstrip("/")
+                return s
+
+            should_navigate = force_reload or not cur_url or (_norm(cur_url) != _norm(target_url))
+            if should_navigate:
+                page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
         if wait_ms > 0:
             page.wait_for_timeout(wait_ms)
 
