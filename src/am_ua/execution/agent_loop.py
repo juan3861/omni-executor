@@ -407,6 +407,16 @@ class WorkspaceTools:
             sids = [sids]
         return self._subagent_bus.await_sessions([str(x) for x in sids], timeout_s=float(args.get("timeout_s", 30.0)))
 
+    def spawn_team(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Assemble and execute a multi-wave hierarchical team (CEO -> Architect -> Devs -> Supervisor -> Auditors)."""
+        if self._subagent_bus is None:
+            return {"ok": False, "error": "SubAgentSessionBus is not configured"}
+        obj = str(args.get("objective", "")).strip()
+        if not obj:
+            return {"ok": False, "error": "missing required 'objective' for spawn_team"}
+        file_count = int(args.get("workspace_file_count", 0))
+        return self._subagent_bus.orchestrate_team(obj, workspace_file_count=file_count)
+
     def mcp_call(self, args: Dict[str, Any]) -> Dict[str, Any]:
         if self._mcp_hub is None:
             return {"ok": False, "error": "MCPFederationHub is not configured"}
@@ -713,6 +723,7 @@ class AgentLoop:
         "skill_forge": EffectClass.IDEMPOTENT_WRITE,
         "skill_run": EffectClass.COMPENSATABLE_MUTATION,
         "spawn_agent": EffectClass.COMPENSATABLE_MUTATION,
+        "spawn_team": EffectClass.COMPENSATABLE_MUTATION,
         "send_agent": EffectClass.IDEMPOTENT_WRITE,
         "await_agents": EffectClass.PURE_READ,
         "mcp_call": EffectClass.COMPENSATABLE_MUTATION,

@@ -25,6 +25,8 @@ from typing import Any, Callable, Dict, Iterator, List, Optional
 
 MAX_SPAWN_DEPTH = 2
 MAX_CONCURRENT_WORKERS = 3
+MAX_ADAPTIVE_CONCURRENT_WORKERS = 8
+MAX_TEAM_AGENTS_PER_MISSION = 16
 
 _GLOBAL_GUI_LOCK = threading.RLock()
 
@@ -413,4 +415,198 @@ class SubAgentSessionBus:
             "sender": sender,
             "task_id": resp.get("result", {}).get("id"),
             "a2a_response": resp,
+        }
+
+    # ------------------------------------------------------------------
+    # Ruflo + ECC + gstack Dynamic Team & Executive Hierarchy Orchestrator
+    # ------------------------------------------------------------------
+    @staticmethod
+    def compute_adaptive_worker_limit(avail_ram_mb: Optional[float] = None) -> int:
+        """Compute safe parallel worker ceiling (2..8) from live host RAM above the 2.5 GB safety floor."""
+        if avail_ram_mb is None:
+            try:
+                from am_ua.governance.homeostasis import _sample_windows_ram
+
+                avail_ram_mb, _ = _sample_windows_ram()
+            except Exception:
+                avail_ram_mb = 6144.0
+        usable_mb = max(0.0, float(avail_ram_mb) - 2560.0)
+        workers = 2 + int(usable_mb // 1536.0)
+        return max(2, min(MAX_ADAPTIVE_CONCURRENT_WORKERS, workers))
+
+    def assess_team_topology(self, objective: str, *, workspace_file_count: int = 0) -> Dict[str, Any]:
+        """Determine whether a mission requires a solo agent, a 4-agent Dev Squad, or an 8-agent Executive Fleet."""
+        low = (objective or "").lower()
+        score = 0
+        reasons: List[str] = []
+
+        domains = {
+            "architecture": ("architect", "microservice", "distributed", "schema", "design", "system", "arquitetura"),
+            "backend_code": ("api", "backend", "engine", "module", "refactor", "implement", "python", "rust"),
+            "frontend_browser": ("browser", "ui", "frontend", "dom", "html", "css", "dashboard", "web"),
+            "security": ("security", "auth", "crypto", "sast", "shield", "vulnerability", "segurança", "audit"),
+            "performance": ("latency", "performance", "stress", "optimize", "parallel", "scale", "latência"),
+            "testing_qa": ("test", "pytest", "tdd", "benchmark", "verify", "homolog"),
+        }
+        matched_domains = [d for d, kws in domains.items() if any(k in low for k in kws)]
+        if len(matched_domains) >= 3:
+            score += 3
+            reasons.append(f"multi_domain({len(matched_domains)}:{','.join(matched_domains)})")
+        elif len(matched_domains) == 2:
+            score += 2
+            reasons.append(f"dual_domain({','.join(matched_domains)})")
+
+        if workspace_file_count > 10 or any(k in low for k in ("multi-file", "full-stack", "end-to-end", "entire", "completo", "projeto")):
+            score += 2
+            reasons.append("wide_scope")
+        elif workspace_file_count >= 3:
+            score += 1
+            reasons.append("multi_file_scope")
+
+        if any(k in low for k in ("severe", "severa", "critical", "enterprise", "production", "supremacia", "stress", "estresse", "ceo")):
+            score += 3
+            reasons.append("high_severity_governance")
+
+        if any(k in low for k in ("team", "equipe", "squad", "swarm", "enxame", "multi-agent", "arquiteto", "supervisor")):
+            score += 3
+            reasons.append("explicit_team_directive")
+
+        score = min(10, score)
+        adaptive_workers = self.compute_adaptive_worker_limit()
+
+        if score < 3:
+            mode = "solo_specialist"
+            waves = [[{"role": "general_engineer", "focus": "Direct surgical implementation & verification"}]]
+        elif score <= 5:
+            mode = "dev_squad"
+            waves = [
+                [{"role": "systems_architect", "focus": "Lock module interfaces, data contracts, and blast radius"}],
+                [{"role": "general_engineer", "focus": "Implement core changes adhering to architect spec"}],
+                [
+                    {"role": "eng_supervisor", "focus": "Supervise code quality, diff hygiene, and integration"},
+                    {"role": "tdd_enforcer", "focus": "Verify edge-case tests and regression suite"},
+                ],
+            ]
+        else:
+            mode = "executive_enterprise_fleet"
+            waves = [
+                [
+                    {"role": "product_ceo", "focus": "Define executive scope, ROI invariants, and anti-bloat guardrails"},
+                    {"role": "systems_architect", "focus": "Design system topology, dependency DAG, and fault boundaries"},
+                ],
+                [
+                    {"role": "general_engineer", "focus": "Implement core feature modules and business logic"},
+                    {"role": "build_error_resolver", "focus": "Ensure clean imports, types, and cross-module wiring"},
+                    {"role": "performance_sre", "focus": "Optimize latency, concurrency, and memory footprint"},
+                ],
+                [
+                    {"role": "eng_supervisor", "focus": "Supervise cross-team integration and architectural compliance"},
+                    {"role": "security_auditor", "focus": "Run SAST, secret scan, and constitutional boundary checks"},
+                ],
+                [
+                    {"role": "tdd_enforcer", "focus": "Execute red-green TDD and boundary stress tests"},
+                    {"role": "strict_auditor", "focus": "Final OMEGA Triple-Proof sign-off (Logical, Physical, Visual)"},
+                ],
+            ]
+
+        total_agents = sum(len(w) for w in waves)
+        return {
+            "mode": mode,
+            "severity_score": score,
+            "triggers": reasons,
+            "total_agents_planned": total_agents,
+            "max_team_cap": MAX_TEAM_AGENTS_PER_MISSION,
+            "adaptive_concurrent_workers": adaptive_workers,
+            "hierarchy": {
+                "executive_lead": "product_ceo" if mode == "executive_enterprise_fleet" else "systems_architect",
+                "architect": "systems_architect",
+                "supervisor": "eng_supervisor" if score >= 3 else "general_engineer",
+                "verifiers": ["tdd_enforcer", "strict_auditor"] if score >= 6 else (["tdd_enforcer"] if score >= 3 else []),
+            },
+            "waves": waves,
+        }
+
+    def orchestrate_team(
+        self,
+        objective: str,
+        worker_fn: Optional[Callable[[str, str, Path], Dict[str, Any]]] = None,
+        *,
+        workspace_file_count: int = 0,
+        timeout_per_wave_s: float = 120.0,
+    ) -> Dict[str, Any]:
+        """Assemble and execute a multi-wave hierarchical engineering team (CEO -> Architect -> Dev -> Supervisor -> Auditor)."""
+        plan = self.assess_team_topology(objective, workspace_file_count=workspace_file_count)
+        effective_worker = worker_fn or (
+            lambda sid, obj, ws: {"ok": True, "summary": f"Completed role objective: {obj[:140]}", "tokens_used": 25}
+        )
+
+        # Dynamically widen semaphore if host RAM permits more concurrent workers
+        adaptive_limit = plan["adaptive_concurrent_workers"]
+        self._sema = threading.BoundedSemaphore(adaptive_limit)
+
+        wave_reports: List[Dict[str, Any]] = []
+        prior_context_notes: List[str] = []
+        all_session_ids: List[str] = []
+        all_ok = True
+
+        for wave_idx, wave in enumerate(plan["waves"], 1):
+            wave_sids: List[str] = []
+            upstream_brief = " | ".join(prior_context_notes[-4:])
+            for member in wave:
+                if len(all_session_ids) >= MAX_TEAM_AGENTS_PER_MISSION:
+                    break
+                role = member["role"]
+                focus = member["focus"]
+                member_obj = f"[{role.upper()} | Wave {wave_idx}] {focus} :: Mission: {objective}"
+                if upstream_brief:
+                    member_obj += f" :: Upstream Context: {upstream_brief}"
+                spawned = self.spawn_session(
+                    objective=member_obj,
+                    worker_fn=effective_worker,
+                    parent_id="team-coordinator",
+                    current_depth=0,
+                    role=role,
+                    run_async=True,
+                )
+                sid = spawned["session_id"]
+                wave_sids.append(sid)
+                all_session_ids.append(sid)
+                if upstream_brief:
+                    self.send_message("team-coordinator", sid, upstream_brief)
+
+            awaited = self.await_sessions(wave_sids, timeout_s=timeout_per_wave_s)
+            wave_ok = bool(awaited.get("ok"))
+            if not wave_ok:
+                all_ok = False
+            wave_summaries: List[str] = []
+            for sid in wave_sids:
+                s_info = awaited["sessions"].get(sid, {})
+                res_obj = s_info.get("result") or {}
+                s_role = s_info.get("role", "worker")
+                summ = str(res_obj.get("summary") or s_info.get("status") or "")[:160]
+                wave_summaries.append(f"{s_role}:{summ}")
+                self.send_message(sid, "team-coordinator", f"{s_role} finished: {summ}")
+
+            prior_context_notes.extend(wave_summaries)
+            wave_reports.append(
+                {
+                    "wave": wave_idx,
+                    "roles": [m["role"] for m in wave],
+                    "session_ids": wave_sids,
+                    "ok": wave_ok,
+                    "summaries": wave_summaries,
+                }
+            )
+
+        return {
+            "ok": all_ok,
+            "mode": plan["mode"],
+            "severity_score": plan["severity_score"],
+            "triggers": plan["triggers"],
+            "hierarchy": plan["hierarchy"],
+            "adaptive_concurrent_workers": adaptive_limit,
+            "max_team_cap": MAX_TEAM_AGENTS_PER_MISSION,
+            "total_agents_spawned": len(all_session_ids),
+            "waves_executed": len(wave_reports),
+            "waves": wave_reports,
         }

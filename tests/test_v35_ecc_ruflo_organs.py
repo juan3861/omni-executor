@@ -570,3 +570,47 @@ def test_v40_a2a_openclaw_gateway_autosync_codegraph_mermaid_and_spill_to_disk(t
     clipped = comp.compress_tool_payload("raw", huge)
     assert "full output saved to" in clipped
     assert len(comp.spill_files) == 1 and Path(comp.spill_files[0]).is_file()
+
+
+def test_v41_executive_team_orchestration_and_max_stress_waves(tmp_path: Path) -> None:
+    """Verify v4.1 Executive & Dev Squad Governance (CEO -> Architect -> Dev/SRE -> Supervisor/Security -> TDD/Strict Auditor)."""
+    from am_ua.cognition.personas import PersonaManager
+    from am_ua.execution.subagent_bus import SubAgentSessionBus
+
+    pm = PersonaManager()
+    assert pm.get_persona("ceo").role == "product_ceo"
+    assert pm.get_persona("architect").role == "systems_architect"
+    assert pm.get_persona("supervisor").role == "eng_supervisor"
+
+    bus = SubAgentSessionBus(db_path=tmp_path / "team_stress.db")
+
+    # 1. Solo mode for simple single-domain fix
+    solo = bus.assess_team_topology("Fix typo in helper.py", workspace_file_count=1)
+    assert solo["mode"] == "solo_specialist" and solo["total_agents_planned"] == 1
+
+    # 2. Dev Squad (4 agents / 3 waves) for medium multi-domain feature
+    squad = bus.assess_team_topology("Implement backend API module and run pytest unit tests", workspace_file_count=4)
+    assert squad["mode"] == "dev_squad" and squad["total_agents_planned"] == 4
+    assert squad["hierarchy"]["architect"] == "systems_architect"
+    assert squad["hierarchy"]["supervisor"] == "eng_supervisor"
+
+    # 3. Full 9-agent Executive Enterprise Fleet under concurrent stress across 4 topological waves
+    severe_obj = (
+        "Severe enterprise full-stack architecture refactor with backend API, browser UI dashboard, "
+        "security SAST audit, latency stress optimization, and strict TDD verification"
+    )
+    fleet = bus.orchestrate_team(
+        severe_obj,
+        worker_fn=lambda sid, obj, ws: {"ok": True, "summary": f"Verified {sid}: {obj[:50]}", "tokens_used": 30},
+        workspace_file_count=20,
+    )
+    assert fleet["ok"] is True
+    assert fleet["mode"] == "executive_enterprise_fleet"
+    assert fleet["hierarchy"]["executive_lead"] == "product_ceo"
+    assert fleet["hierarchy"]["architect"] == "systems_architect"
+    assert fleet["hierarchy"]["supervisor"] == "eng_supervisor"
+    assert fleet["waves_executed"] == 4
+    assert fleet["total_agents_spawned"] == 9
+    assert 2 <= fleet["adaptive_concurrent_workers"] <= 8
+    inbox_coord = bus.read_inbox("team-coordinator")
+    assert len(inbox_coord) == 9

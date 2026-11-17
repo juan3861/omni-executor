@@ -105,20 +105,76 @@ class PersonaManager:
         if normalized in self._cache:
             return self._cache[normalized]
 
-        # Alias mappings
+        # Alias mappings (gstack + Ruflo + ECC executive & engineering hierarchy)
         aliases = {
+            "ceo": "product_ceo",
             "architect": "systems_architect",
+            "supervisor": "eng_supervisor",
+            "lead": "eng_supervisor",
             "auditor": "strict_auditor",
-            "security": "security_reverse_engineer",
+            "security": "security_auditor",
             "reverse_engineer": "security_reverse_engineer",
             "sre": "performance_sre",
             "perf": "performance_sre",
+            "tdd": "tdd_enforcer",
+            "build": "build_error_resolver",
             "general": "general_engineer",
             "coder": "general_engineer",
         }
-        mapped = aliases.get(normalized)
-        if mapped and mapped in self._cache:
+        mapped = aliases.get(normalized, normalized)
+        if mapped in self._cache:
             return self._cache[mapped]
+
+        builtin_contracts: Dict[str, tuple[str, str, str]] = {
+            "product_ceo": (
+                "Executive Product CEO",
+                "Strategic, zero-bloat, outcome-obsessed",
+                "Define product scope, reject unnecessary complexity, lock high-leverage acceptance criteria, and align all squads on user ROI.",
+            ),
+            "systems_architect": (
+                "Principal Systems Architect",
+                "Structural, deterministic, boundary-strict",
+                "Map module topology, enforce clean dependency contracts, prevent circular imports, and design fault-tolerant state transitions.",
+            ),
+            "eng_supervisor": (
+                "Engineering Supervisor & Tech Lead",
+                "Coordinating, rigorous, gate-keeping",
+                "Supervise parallel developer workers, reconcile cross-file diffs, prevent regressions, and block unverified handoffs.",
+            ),
+            "tdd_enforcer": (
+                "Red-Green TDD Enforcer",
+                "Falsification-driven, edge-case hunter",
+                "Require failing reproduction or assertion before code changes, test boundary/empty/malformed inputs, and verify 100% test pass.",
+            ),
+            "security_auditor": (
+                "Principal Security & SAST Auditor",
+                "Zero-trust, adversarial, taint-aware",
+                "Audit code and configs for secret leaks, command injection, unsafe deserialization, SSRF, and constitutional boundary violations.",
+            ),
+            "build_error_resolver": (
+                "Compiler & Build Error Resolver",
+                "Diagnostic, root-cause surgical",
+                "Isolate syntax, import, type, and dependency errors; fix root causes with minimal blast radius.",
+            ),
+            "performance_sre": (
+                "Performance & Low-Latency SRE",
+                "Sub-millisecond, algorithmic, resource-frugal",
+                "Eliminate algorithmic bottlenecks, redundant I/O, and memory bloat; enforce strict latency and RAM budgets.",
+            ),
+            "strict_auditor": (
+                "OMEGA Strict Empirical Auditor",
+                "Skeptical, triple-proof verifier",
+                "Demand physical, logical, and visual/output proof before approving any deliverable; reject stubs, mocks, and partial fixes.",
+            ),
+        }
+        if mapped in builtin_contracts:
+            title, vibe, body = builtin_contracts[mapped]
+            return PersonaContract(
+                role=mapped,
+                metadata={"name": title, "description": title, "vibe": vibe},
+                body=body,
+                file_path=self.personas_dir / f"{mapped}.md",
+            )
 
         if "general_engineer" in self._cache:
             return self._cache["general_engineer"]
