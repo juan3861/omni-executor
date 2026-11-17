@@ -1,0 +1,72 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "v37_b04_fix",
+  "workflow": "hierarchical",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\v37_b04_fix_20261117_000534",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 1,
+  "selected": 1,
+  "summary": {
+    "overall": {
+      "n": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "tokens": 32226,
+      "llm_calls": 11,
+      "elapsed_s": 34.2
+    },
+    "browser": {
+      "n": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "tokens": 32226,
+      "llm_calls": 11,
+      "elapsed_s": 34.2
+    }
+  },
+  "results": [
+    {
+      "task_id": "b04_self_healing_button",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 9,
+      "providers": [
+        "groq",
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_extract",
+        "run",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.59s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 34.2,
+      "llm_calls": 11,
+      "prompt_tokens": 30165,
+      "completion_tokens": 2061
+    }
+  ]
+}

@@ -143,6 +143,7 @@ class WorkspaceTools:
         mcp_hub: Optional[MCPFederationHub] = None,
         browser_factory: Optional[Callable[[bool], Any]] = None,
         hook_engine: Optional[DeterministicHookEngine] = None,
+        repo_mapper_factory: Optional[Callable[[Path], Any]] = None,
     ) -> None:
         self.ws = workspace.resolve()
         self.seal_guard = seal_guard
@@ -153,7 +154,9 @@ class WorkspaceTools:
         self._subagent_bus = subagent_bus
         self._mcp_hub = mcp_hub
         self._browser_factory = browser_factory
+        self._repo_mapper_factory = repo_mapper_factory
         self._browser: Any = None
+        self._checkpoints: Dict[str, Dict[str, bytes]] = {}
         # Workspace itself must be a constitutionally writable location (project root or safe temp root).
         self.seal_guard.assert_write_allowed(self.ws / ".am_probe", actor="agent_loop")
 
@@ -447,6 +450,49 @@ class WorkspaceTools:
         selector = str(args.get("selector", "body"))
         return self._get_browser(headless=bool(args.get("headless", True))).extract(selector=selector)
 
+    def repo_map(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        if self._repo_mapper_factory is None:
+            return {"ok": False, "error": "repo_mapper_factory is not configured"}
+        max_chars = min(int(args.get("max_chars", 3000)), 12000)
+        mapper = self._repo_mapper_factory(self.ws)
+        ranked, text = mapper.build_ranked_map(max_chars=max_chars)
+        return {
+            "ok": True,
+            "file_count": len(ranked),
+            "ranked_files": [{"path": r.rel_path, "pagerank": r.pagerank, "symbols": len(r.symbols)} for r in ranked[:15]],
+            "repomap": text,
+        }
+
+    def checkpoint(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = str(args.get("name", "default")).strip() or "default"
+        snap: Dict[str, bytes] = {}
+        for root, dirs, files in os.walk(self.ws):
+            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+            for f in files:
+                fp = Path(root) / f
+                try:
+                    if fp.stat().st_size <= 512_000:
+                        rel = str(fp.relative_to(self.ws)).replace("\\", "/")
+                        snap[rel] = fp.read_bytes()
+                except OSError:
+                    continue
+        self._checkpoints[name] = snap
+        return {"ok": True, "checkpoint": name, "files_captured": len(snap)}
+
+    def restore_checkpoint(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = str(args.get("name", "default")).strip() or "default"
+        snap = self._checkpoints.get(name)
+        if snap is None:
+            return {"ok": False, "error": f"unknown checkpoint '{name}'"}
+        restored: List[str] = []
+        for rel, data in snap.items():
+            fp = self.resolve(rel)
+            self.seal_guard.assert_write_allowed(fp, actor="agent_loop")
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            fp.write_bytes(data)
+            restored.append(rel)
+        return {"ok": True, "checkpoint": name, "restored_files": restored}
+
     def close(self) -> None:
         if self._browser is not None:
             try:
@@ -503,6 +549,9 @@ Tools:
 - browser_observe {"url": "https://...|file:///...", "headless": true}   (CDP/Playwright observe + indexed DOM [idx] + F12/Visual proof)
 - browser_act {"action": "click|fill|goto", "idx": 1, "target": "Submit", "text": "...", "url": "..."}
 - browser_extract {"selector": "body"}
+- repo_map {"max_chars": 3000}   (PageRank + AST symbol overview of repository)
+- checkpoint {"name": "pre_edit"}   (save lightweight workspace snapshot before risky edits)
+- restore_checkpoint {"name": "pre_edit"}   (rollback workspace files to named checkpoint)
 - request_human {"reason": "<why human intervention is required>", "instructions": "<what the human must do>"}
 - finish {"summary": "<what you did and the evidence>", "confidence": <0..1 probability the acceptance check passes>}
 
@@ -551,6 +600,9 @@ Tools:
 - browser_observe {"url": "https://...|file:///...", "headless": true}   (CDP/Playwright observe + indexed DOM [idx] + F12/Visual proof)
 - browser_act {"action": "click|fill|goto", "idx": 1, "target": "Submit", "text": "...", "url": "..."}
 - browser_extract {"selector": "body"}
+- repo_map {"max_chars": 3000}   (PageRank + AST symbol overview of repository)
+- checkpoint {"name": "pre_edit"}   (save lightweight workspace snapshot before risky edits)
+- restore_checkpoint {"name": "pre_edit"}   (rollback workspace files to named checkpoint)
 - request_human {"reason": "<why human intervention is required>", "instructions": "<what the human must do>"}
 - finish {"summary": "<what you did and the evidence>", "confidence": <0..1 probability the acceptance check passes>}
 
@@ -622,6 +674,9 @@ class AgentLoop:
         "browser_observe": EffectClass.PURE_READ,
         "browser_act": EffectClass.COMPENSATABLE_MUTATION,
         "browser_extract": EffectClass.PURE_READ,
+        "repo_map": EffectClass.PURE_READ,
+        "checkpoint": EffectClass.PURE_READ,
+        "restore_checkpoint": EffectClass.COMPENSATABLE_MUTATION,
     }
 
     def __init__(
@@ -647,6 +702,7 @@ class AgentLoop:
         mcp_hub: Optional[MCPFederationHub] = None,
         browser_factory: Optional[Callable[[bool], Any]] = None,
         hook_engine: Optional[DeterministicHookEngine] = None,
+        repo_mapper_factory: Optional[Callable[[Path], Any]] = None,
     ) -> None:
         self.engine = engine
         self.seal_guard = seal_guard
@@ -666,6 +722,7 @@ class AgentLoop:
         self.modality_router = modality_router or HybridModalityRouter(skill_forge=self.skill_forge)
         self.browser_factory = browser_factory
         self.hook_engine = hook_engine or DeterministicHookEngine()
+        self.repo_mapper_factory = repo_mapper_factory
         self.subagent_bus = subagent_bus or SubAgentSessionBus()
         self.mcp_hub = mcp_hub or MCPFederationHub()
         self._active: Optional[WorkspaceTools] = None
@@ -782,6 +839,7 @@ class AgentLoop:
             subagent_bus=self.subagent_bus,
             mcp_hub=self.mcp_hub,
             browser_factory=self.browser_factory,
+            repo_mapper_factory=self.repo_mapper_factory,
         )
         self._active = ws
         effective_wheel_timeout = self.wheel_timeout_s if wheel_timeout_s is None else max(0.0, float(wheel_timeout_s))
@@ -1151,7 +1209,9 @@ class AgentLoop:
                 break
             c = out[i]["content"]
             if len(c) > 600:
-                out[i] = {"role": out[i]["role"], "content": c[:400] + "\n...[condensed older context]..."}
+                markers = [ln.strip() for ln in c.splitlines() if any(k in ln for k in ('"written":', '"replaced":', '"exit_code":', '"checkpoint":', '"error":'))]
+                state_note = f"\n[PINNED STATE: {' | '.join(markers[:3])[:200]}]" if markers else ""
+                out[i] = {"role": out[i]["role"], "content": c[:360] + state_note + "\n...[condensed older context]..."}
                 total -= len(c) - len(out[i]["content"])
         return out
 

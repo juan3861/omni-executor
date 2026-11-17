@@ -178,7 +178,8 @@ class CDPIndexedBrowser:
 
     def _self_heal_resolve_idx(self, query_or_selector: str) -> Optional[int]:
         """Find best matching `data-am-idx` when a CSS selector or text description is given."""
-        q = (query_or_selector or "").strip().lower()
+        raw = (query_or_selector or "").strip().lower()
+        q = raw.lstrip("#.") if raw.startswith(("#", ".")) else raw
         if not q:
             return None
         best_score = 0.0
@@ -256,6 +257,13 @@ class CDPIndexedBrowser:
                     page.locator(locator_str).first.click(timeout=5000)
                 elif act_name in ("fill", "type"):
                     page.locator(locator_str).first.fill(str(text or ""), timeout=5000)
+            elif act_name == "click" and target:
+                try:
+                    page.get_by_text(str(target), exact=False).first.click(timeout=3000)
+                    self_healed = True
+                    locator_str = f"text:{target}"
+                except Exception:
+                    return {"ok": False, "action": act_name, "locator": locator_str, "error": str(exc)}
             else:
                 return {"ok": False, "action": act_name, "locator": locator_str, "error": str(exc)}
 

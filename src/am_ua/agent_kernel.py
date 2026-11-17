@@ -651,6 +651,9 @@ class AetherMindUniversalAgent:
             def _make_browser(headless: bool = True) -> CDPIndexedBrowser:
                 return CDPIndexedBrowser(artifact_dir=self.data_dir / "browser_art", headless=headless)
 
+            def _make_repomap(ws_path: Path) -> PolyglotRepoMapper:
+                return PolyglotRepoMapper(ws_path)
+
             self._agent_loop = AgentLoop(
                 engine=self.durable_engine,
                 seal_guard=self.seal_guard,
@@ -663,6 +666,7 @@ class AetherMindUniversalAgent:
                 subagent_bus=self.subagent_bus,
                 mcp_hub=self.mcp_hub,
                 browser_factory=_make_browser,
+                repo_mapper_factory=_make_repomap,
             )
         return self._agent_loop
 

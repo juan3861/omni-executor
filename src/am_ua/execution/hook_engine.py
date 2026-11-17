@@ -7,10 +7,11 @@ the LLM prompt loop on PreToolUse and PostToolUse/PostEdit events.
 from __future__ import annotations
 
 import ast
+import builtins
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 
 @dataclass
@@ -46,8 +47,46 @@ def pre_write_secret_guard(tool: str, args: Dict[str, Any], workspace: Path) -> 
     return HookDecision(allowed=True)
 
 
+_BUILTINS: Set[str] = set(dir(builtins)) | {"__name__", "__file__", "__doc__", "__package__"}
+
+
+def _find_undefined_names(tree: ast.AST) -> List[str]:
+    """Fast LSP-lite AST check for obvious undefined global names in module scope."""
+    defined: Set[str] = set(_BUILTINS)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            defined.add(node.name)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for a in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs):
+                    defined.add(a.arg)
+                if node.args.vararg:
+                    defined.add(node.args.vararg.arg)
+                if node.args.kwarg:
+                    defined.add(node.args.kwarg.arg)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                defined.add(alias.asname or alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name != "*":
+                    defined.add(alias.asname or alias.name)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            defined.add(node.id)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            defined.add(node.name)
+        elif isinstance(node, ast.Global):
+            defined.update(node.names)
+
+    undef: List[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            if node.id not in defined and node.id not in undef:
+                undef.append(node.id)
+    return undef[:15]
+
+
 def post_python_syntax_check(tool: str, args: Dict[str, Any], obs: Dict[str, Any], workspace: Path) -> Dict[str, Any]:
-    """Deterministically syntax-check Python files immediately after write/replace."""
+    """Deterministically syntax- and scope-check Python files immediately after write/replace."""
     if tool not in ("write_file", "replace_in_file") or "error" in obs:
         return {}
     raw_path = str(args.get("path") or args.get("file") or "")
@@ -60,8 +99,12 @@ def post_python_syntax_check(tool: str, args: Dict[str, Any], obs: Dict[str, Any
         return {}
     try:
         src = target.read_text(encoding="utf-8", errors="replace")
-        ast.parse(src, filename=str(target))
-        return {"python_syntax_ok": True}
+        tree = ast.parse(src, filename=str(target))
+        undef = _find_undefined_names(tree)
+        out: Dict[str, Any] = {"python_syntax_ok": True}
+        if undef:
+            out["undefined_names_warning"] = undef
+        return out
     except SyntaxError as exc:
         return {"python_syntax_ok": False, "python_syntax_error": f"Line {exc.lineno}: {exc.msg}"}
 

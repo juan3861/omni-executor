@@ -267,3 +267,81 @@ def test_llm_client_half_open_circuit_recovery(monkeypatch: pytest.MonkeyPatch) 
     time.sleep(0.08)
     assert client._is_circuit_open("mock_prov") is False
     assert "mock_prov" in client.available()
+
+
+def test_v37_repomap_checkpoint_lsp_diagnostics_and_smart_condense(tmp_path: Path) -> None:
+    from am_ua.agent_kernel import AetherMindUniversalAgent
+    from am_ua.execution.hook_engine import post_python_syntax_check
+    from am_ua.gui.cdp_browser import CDPIndexedBrowser
+
+    # 1. LSP-lite AST undefined name diagnostic hook
+    mod = tmp_path / "calc.py"
+    mod.write_text("def f(x):\n    return x + unknown_sym\n", encoding="utf-8")
+    diag = post_python_syntax_check("write_file", {"path": str(mod)}, {"written": "calc.py"}, tmp_path)
+    assert diag["python_syntax_ok"] is True
+    assert "unknown_sym" in diag["undefined_names_warning"]
+
+    # 2. AgentLoop tools: repo_map + checkpoint + restore_checkpoint
+    ws = tmp_path / "cp_ws"
+    ws.mkdir()
+    (ws / "app.py").write_text("VERSION = 1\n", encoding="utf-8")
+
+    class CheckpointFlowLLM:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.total_prompt_tokens = 0
+            self.total_completion_tokens = 0
+
+        @staticmethod
+        def available() -> list[str]:
+            return []
+
+        def chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+            self.calls += 1
+            self.total_prompt_tokens += 5
+            self.total_completion_tokens += 5
+
+            class R:
+                provider = "mock"
+                model = "mock-1"
+                prompt_tokens = 5
+                completion_tokens = 5
+                total_tokens = 10
+
+            r = R()
+            seq = [
+                {"thought": "map", "tool": "repo_map", "args": {"max_chars": 1500}},
+                {"thought": "snap", "tool": "checkpoint", "args": {"name": "s1"}},
+                {"thought": "mutate", "tool": "write_file", "args": {"path": "app.py", "content": "VERSION = 999\n"}},
+                {"thought": "undo", "tool": "restore_checkpoint", "args": {"name": "s1"}},
+                {"thought": "done", "tool": "finish", "args": {"summary": "restored", "confidence": 1.0}},
+            ]
+            r.text = json.dumps(seq[min(self.calls - 1, len(seq) - 1)])
+            return r
+
+    agent = AetherMindUniversalAgent(data_dir=tmp_path / "kdata37")
+    agent.agent_loop.llm = CheckpointFlowLLM()  # type: ignore[assignment]
+    res = agent.run_agent_mission("Map repo and test checkpoint", workspace=ws, max_turns=6, workflow="react")
+    assert res["stop_reason"] == "finish"
+    assert (ws / "app.py").read_text(encoding="utf-8") == "VERSION = 1\n"
+    assert [tc["tool"] for tc in res["tool_calls"]] == ["repo_map", "checkpoint", "write_file", "restore_checkpoint"]
+    assert all(tc["ok"] for tc in res["tool_calls"])
+
+    # 3. Smart _condense pins state markers
+    msgs = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "task"},
+        {"role": "user", "content": '{"written": "app.py", "bytes": 12}\n' + ("x" * 1000)},
+    ] + [{"role": "user", "content": "y" * 1000} for _ in range(50)]
+    condensed = AgentLoop._condense(msgs, max_chars=20_000)
+    assert "[PINNED STATE:" in condensed[2]["content"]
+
+    # 4. CDP _self_heal_resolve_idx strips CSS prefix
+    b = CDPIndexedBrowser(artifact_dir=tmp_path / "cdp37", headless=True)
+    from am_ua.gui.cdp_browser import IndexedDOMElement
+    b.last_elements = {1: IndexedDOMElement(idx=1, tag="button", type="button", role="button", name="confirm_btn", text="Confirm Dispatch", placeholder="", href="", bbox=[0, 0, 10, 10])}
+    assert b._self_heal_resolve_idx("#confirm_btn") == 1
+
+    # 5. OMNI_TOPOLOGY_V2 compliance still clean
+    topo = InterRepoTopologyGate().audit_package_imports("F:/AetherMind_Universal_Agent/src/am_ua")
+    assert topo["ok"] is True, f"Topology violations: {topo}"
