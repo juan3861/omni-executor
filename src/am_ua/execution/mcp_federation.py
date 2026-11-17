@@ -110,9 +110,11 @@ class AetherMindMCPServer:
         *,
         pc_engine: Optional[PCAutomationEngine] = None,
         skill_forge: Optional[AdaptiveSkillForge] = None,
+        security_auditor: Any = None,
     ) -> None:
         self.pc_engine = pc_engine or PCAutomationEngine()
         self.skill_forge = skill_forge or AdaptiveSkillForge()
+        self.security_auditor = security_auditor
         self._tools: Dict[str, Tuple[Dict[str, Any], Callable[[Dict[str, Any]], Any]]] = {}
         self._register_default_tools()
 
@@ -123,6 +125,13 @@ class AetherMindMCPServer:
             input_schema={"type": "object", "properties": {}},
             handler=lambda _: self.pc_engine.probe_capabilities(),
         )
+        if self.security_auditor is not None:
+            self.register_tool(
+                name="am_security_shield",
+                description="Run AgentShield static security audit over a directory for secrets, MCP risks, and hook injection.",
+                input_schema={"type": "object", "properties": {"path": {"type": "string"}}},
+                handler=lambda a: self.security_auditor.scan_directory(a.get("path", ".")).to_dict(),
+            )
         self.register_tool(
             name="am_pc_windows",
             description="List visible Windows top-level windows with HWND, PID, and executable.",

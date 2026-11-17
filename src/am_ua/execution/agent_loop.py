@@ -39,6 +39,7 @@ from am_ua.cognition.reasoning_bank import ReasoningBank
 from am_ua.contracts.contracts import CognitiveEnvelope, EpistemicTag, TrustLevel
 from am_ua.execution.adaptive_skills import AdaptiveSkillForge
 from am_ua.execution.durable_engine import DurableExecutionEngine, EffectClass, ToolContract
+from am_ua.execution.hook_engine import DeterministicHookEngine
 from am_ua.execution.human_wheel import HumanWheelGate, WheelOutcome
 from am_ua.execution.mcp_federation import MCPFederationHub
 from am_ua.execution.modality_router import HybridModalityRouter
@@ -141,6 +142,7 @@ class WorkspaceTools:
         subagent_bus: Optional[SubAgentSessionBus] = None,
         mcp_hub: Optional[MCPFederationHub] = None,
         browser_factory: Optional[Callable[[bool], Any]] = None,
+        hook_engine: Optional[DeterministicHookEngine] = None,
     ) -> None:
         self.ws = workspace.resolve()
         self.seal_guard = seal_guard
@@ -644,6 +646,7 @@ class AgentLoop:
         subagent_bus: Optional[SubAgentSessionBus] = None,
         mcp_hub: Optional[MCPFederationHub] = None,
         browser_factory: Optional[Callable[[bool], Any]] = None,
+        hook_engine: Optional[DeterministicHookEngine] = None,
     ) -> None:
         self.engine = engine
         self.seal_guard = seal_guard
@@ -662,6 +665,7 @@ class AgentLoop:
         self.hierarchical_planner = hierarchical_planner or ProactiveHierarchicalPlanner(llm=self.llm)
         self.modality_router = modality_router or HybridModalityRouter(skill_forge=self.skill_forge)
         self.browser_factory = browser_factory
+        self.hook_engine = hook_engine or DeterministicHookEngine()
         self.subagent_bus = subagent_bus or SubAgentSessionBus()
         self.mcp_hub = mcp_hub or MCPFederationHub()
         self._active: Optional[WorkspaceTools] = None
@@ -996,12 +1000,20 @@ class AgentLoop:
                 try:
                     breaker.record_and_check(tool, args)
                     call_args = self._prepare_args(tool, args, ws)
-                    step_id = f"t{turn}-{hashlib.sha256(json.dumps([tool, call_args], sort_keys=True, default=str).encode()).hexdigest()[:10]}"
-                    cp = self.engine.execute_step(run_id=mission_id, step_id=step_id, step_index=turn, tool_name=f"ws.{tool}",
-                                                  args=call_args, state={"mission_id": mission_id}, lease_epoch=epoch, envelope=envelope)
-                    obs = cp["output"]
-                    if tool == "run" and isinstance(obs, dict) and obs.get("exit_code") not in (0, None):
-                        ok = True  # a failing command is still valid information
+                    pre_dec = self.hook_engine.run_pre(tool, call_args, ws.ws)
+                    if not pre_dec.allowed:
+                        ok, obs = False, {"error": pre_dec.reason, "blocked_by_hook": True}
+                    else:
+                        step_id = f"t{turn}-{hashlib.sha256(json.dumps([tool, call_args], sort_keys=True, default=str).encode()).hexdigest()[:10]}"
+                        cp = self.engine.execute_step(run_id=mission_id, step_id=step_id, step_index=turn, tool_name=f"ws.{tool}",
+                                                      args=call_args, state={"mission_id": mission_id}, lease_epoch=epoch, envelope=envelope)
+                        obs = cp["output"]
+                        if isinstance(obs, dict):
+                            post_notes = self.hook_engine.run_post(tool, call_args, obs, ws.ws)
+                            if post_notes:
+                                obs["hook_annotations"] = post_notes
+                        if tool == "run" and isinstance(obs, dict) and obs.get("exit_code") not in (0, None):
+                            ok = True  # a failing command is still valid information
                 except RepeatToolLoopError as exc:
                     ok, obs = False, {"error": f"{exc}. Change strategy."}
                 except Exception as exc:  # gate violations, bad args, IO errors -> feed back to the model

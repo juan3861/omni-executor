@@ -12,6 +12,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from am_ua.cognition.sona_memory import SONAVectorMemory
+
 
 STOP_WORDS = {
     "a", "an", "the", "in", "on", "at", "to", "for", "of", "and", "or", "is", "are",
@@ -42,6 +44,7 @@ class ReasoningBank:
         self.traces_dir = Path(traces_dir or self.DEFAULT_TRACES_DIR).resolve()
         self.traces_dir.mkdir(parents=True, exist_ok=True)
         self._index: List[Dict[str, Any]] = []
+        self.sona = SONAVectorMemory(self.traces_dir / "sona_memory.json")
         self.refresh_index()
 
     def refresh_index(self) -> int:
@@ -76,16 +79,22 @@ class ReasoningBank:
         return len(self._index)
 
     def find_best_trajectory(self, objective: str, min_similarity: float = 0.25) -> Optional[Dict[str, Any]]:
-        """Finds the most relevant past successful trajectory for a given objective."""
+        """Finds the most relevant past successful trajectory using hybrid Jaccard + SONA vector similarity."""
         target_tokens = tokenize(objective)
         if not target_tokens or not self._index:
             return None
 
+        sona_hits = {
+            hit.get("objective", ""): float(hit.get("similarity", 0.0))
+            for hit in self.sona.search_similar(objective, top_k=5, min_score=0.05)
+        }
         best_score = 0.0
         best_entry: Optional[Dict[str, Any]] = None
 
         for entry in self._index:
-            score = jaccard_similarity(target_tokens, entry.get("_tokens", set()))
+            jacc = jaccard_similarity(target_tokens, entry.get("_tokens", set()))
+            vec_sim = sona_hits.get(str(entry.get("objective", ""))[:600], 0.0)
+            score = max(jacc, 0.5 * jacc + 0.5 * vec_sim)
             if score > best_score:
                 best_score = score
                 best_entry = entry
@@ -136,8 +145,22 @@ class ReasoningBank:
         target_file = self.traces_dir / f"{mission_id}.json"
         try:
             target_file.write_text(json.dumps(run_result_dict, indent=2, default=str), encoding="utf-8")
+            verif_ok = (run_result_dict.get("verification") or {}).get("exit_code") == 0
+            status_ok = str(run_result_dict.get("status", "")).startswith("VERIFIED") or run_result_dict.get("status") == "PASSED"
+            succeeded = bool(status_ok or verif_ok)
+            toks = run_result_dict.get("tokens") or {}
+            total_tok = int(toks.get("prompt", 0)) + int(toks.get("completion", 0))
+            self.sona.record_episode(
+                objective=str(run_result_dict.get("objective", "")),
+                workflow=str(run_result_dict.get("workflow", "hierarchical")),
+                role=str(run_result_dict.get("role", "general_engineer")),
+                success=succeeded,
+                tokens=total_tok,
+                summary=str(run_result_dict.get("final_summary", "")),
+                tools_used=[str(tc.get("tool", "")) for tc in (run_result_dict.get("tool_calls") or []) if isinstance(tc, dict)],
+            )
             # Refresh if it was a success
-            if run_result_dict.get("status") == "PASSED" or (run_result_dict.get("verification") or {}).get("exit_code") == 0:
+            if succeeded:
                 run_result_dict["_tokens"] = tokenize(str(run_result_dict.get("objective", "")))
                 run_result_dict["_file_path"] = str(target_file)
                 self._index.append(run_result_dict)

@@ -1,13 +1,16 @@
 {
-  "aggregate_sha256": "e0af9ff0f7259e8a4bd90a8e72fc6b3a3b95f26ff49691aa74c9cd10d733176f",
-  "file_count": 19,
+  "aggregate_sha256": "e0035018d9f274720547b9c13a9bee33bddcc1bca660d073a2b6ed59337a918e",
+  "file_count": 22,
   "files": {
     "constitution/IMMUTABLE_CONSTITUTION.json": "b1fe67d4d453c60d8fbb2c2f5859549dcc5f2d04fd0513f7a58acc05c8adee76",
+    "constitution/personas/build_error_resolver.md": "01b1e8d6c61467e2eda027736c83e0079b0b3446a1f89c84e26ea187b96960aa",
     "constitution/personas/general_engineer.md": "314f5a832c6cf276a950582728738a3bf8e556f47a33332c8830e63f1e64ab1f",
     "constitution/personas/performance_sre.md": "c447556321ab20142e8da52f4194b2fefce45a459d83cc13b6d316600f6605fb",
+    "constitution/personas/security_auditor.md": "5a1396c411ba157323359b59fdc8d186b7849e89d8f35fdd87d10bf570d5d87e",
     "constitution/personas/security_reverse_engineer.md": "3f6786e87c8b3d9277e813043bbc3476e8ed62ea65b5f91e8c2060a2cf8375fb",
     "constitution/personas/strict_auditor.md": "cd3db0f60bc5ac2febf4bfa5982912c02c0785bcdc1617b126b506a65a7cb7d0",
     "constitution/personas/systems_architect.md": "d968a9879d0773301fc1a6decdd0c52d9ff58c410aafd415154db5ded1423ffc",
+    "constitution/personas/tdd_enforcer.md": "ed217f4c64d067fea4b17f54aee085566c26f7e172fa5efcedfec7802c404423",
     "eval/am_bench/__init__.py": "0c985357dd891def7cc0e921867e69ac0282afe0914621060e3e0061546d91a6",
     "eval/am_bench/gui_fixture.py": "99e254a93a4f569a6b4324bccc88ce4406d88e5063a16fc255673bbb3d3048b7",
     "eval/am_bench/runner.py": "5940e72565ad5c8880cad265e358a8b55a12c64d2e7db209d2b4f608be6cc08f",
