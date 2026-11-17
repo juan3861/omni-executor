@@ -120,11 +120,19 @@ def main(argv: list[str] | None = None) -> int:
     p_browser.add_argument("--act-type", default="click", choices=["click", "fill", "press"], help="Interaction type for 'act'")
     p_browser.add_argument("--value", default="", help="Text or key value for 'act'")
 
+    p_shield = sub.add_parser("shield", help="Run AgentShield static security audit over a directory")
+    p_shield.add_argument("target", nargs="?", default=str(ROOT))
+
     args = parser.parse_args(argv)
     if args.cmd == "mcp-serve":
         from am_ua.execution.mcp_federation import AetherMindMCPServer
+        from am_ua.security.agent_shield import AgentShieldAuditor
         agent = AetherMindUniversalAgent()
-        srv = AetherMindMCPServer(pc_engine=agent.pc_automation, skill_forge=agent.skill_forge)
+        srv = AetherMindMCPServer(
+            pc_engine=agent.pc_automation,
+            skill_forge=agent.skill_forge,
+            security_auditor=AgentShieldAuditor(),
+        )
         srv.serve_stdio()
         return 0
 
@@ -134,6 +142,12 @@ def main(argv: list[str] | None = None) -> int:
         rep = agent.doctor()
         print(json.dumps(rep, indent=2, ensure_ascii=False))
         return 0 if rep["homeostasis_healthy"] and rep["topology_v2_ok"] else 1
+
+    if args.cmd == "shield":
+        from am_ua.security.agent_shield import AgentShieldAuditor
+        rep = AgentShieldAuditor().scan_directory(args.target)
+        print(json.dumps(rep.to_dict(), indent=2, ensure_ascii=False))
+        return 0 if rep.passed else 1
 
     if args.cmd == "radar":
         ucip = agent.radar.build_ucip_summary(args.target)

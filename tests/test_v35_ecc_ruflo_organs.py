@@ -160,3 +160,14 @@ def test_ecc_personas_and_v35_topology_compliance() -> None:
     gate = InterRepoTopologyGate()
     res = gate.audit_package_imports("F:/AetherMind_Universal_Agent/src/am_ua")
     assert res["ok"] is True, f"Topology violations: {res}"
+
+
+def test_cli_shield_subcommand_on_repo(capsys: Any) -> None:
+    from am_ua import cli
+
+    rc = cli.main(["shield", r"F:\AetherMind_Universal_Agent"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    data = json.loads(out)
+    assert data["grade"] == "A"
+    assert data["passed"] is True
