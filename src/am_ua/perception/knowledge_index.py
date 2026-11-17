@@ -31,11 +31,15 @@ class HierarchicalKnowledgeIndex:
         self.max_files = max_files
         self.nodes: List[Dict[str, Any]] = []
         self.entity_links: Dict[str, Set[str]] = {}
+        self._file_hashes: Dict[str, str] = {}
         self.build()
 
     def build(self) -> int:
+        import hashlib
+
         self.nodes.clear()
         self.entity_links.clear()
+        self._file_hashes.clear()
         scanned = 0
         for dirpath, dirnames, filenames in os.walk(self.root):
             dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
@@ -48,11 +52,13 @@ class HierarchicalKnowledgeIndex:
                 try:
                     if fp.stat().st_size > 256_000:
                         continue
-                    text = fp.read_text(encoding="utf-8", errors="replace")
+                    raw_bytes = fp.read_bytes()
+                    text = raw_bytes.decode("utf-8", errors="replace")
                 except OSError:
                     continue
                 scanned += 1
                 rel = str(fp.relative_to(self.root)).replace("\\", "/")
+                self._file_hashes[rel] = hashlib.sha256(raw_bytes).hexdigest()
                 self._index_file(rel, fp.suffix.lower(), text)
         return len(self.nodes)
 
@@ -141,3 +147,90 @@ class HierarchicalKnowledgeIndex:
             "hits": hits,
             "related_files": sorted(related)[:12],
         }
+
+    def sync_changes(self) -> Dict[str, Any]:
+        """CodeGraph-style incremental delta sync: re-index only added/modified/deleted files."""
+        import hashlib
+
+        current_hashes: Dict[str, Tuple[str, str, str]] = {}
+        scanned = 0
+        for dirpath, dirnames, filenames in os.walk(self.root):
+            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+            for fname in filenames:
+                if scanned >= self.max_files:
+                    break
+                fp = Path(dirpath) / fname
+                if fp.suffix.lower() not in self.TARGET_EXTS:
+                    continue
+                try:
+                    if fp.stat().st_size > 256_000:
+                        continue
+                    raw = fp.read_bytes()
+                except OSError:
+                    continue
+                scanned += 1
+                rel = str(fp.relative_to(self.root)).replace("\\", "/")
+                h = hashlib.sha256(raw).hexdigest()
+                current_hashes[rel] = (h, fp.suffix.lower(), raw.decode("utf-8", errors="replace"))
+
+        removed = sorted(set(self._file_hashes) - set(current_hashes))
+        added = sorted(set(current_hashes) - set(self._file_hashes))
+        updated = sorted(
+            r for r in (set(current_hashes) & set(self._file_hashes))
+            if current_hashes[r][0] != self._file_hashes[r]
+        )
+        dirty = set(removed) | set(added) | set(updated)
+        if dirty:
+            self.nodes = [n for n in self.nodes if n["file"] not in dirty]
+            for r in removed:
+                self._file_hashes.pop(r, None)
+            for r in sorted(added + updated):
+                h, ext, txt = current_hashes[r]
+                self._file_hashes[r] = h
+                self._index_file(r, ext, txt)
+            # Rebuild entity_links cleanly from current nodes
+            self.entity_links.clear()
+            for n in self.nodes:
+                for t in list(n["_tokens"])[:25]:
+                    if len(t) >= 4:
+                        self.entity_links.setdefault(t, set()).add(n["file"])
+
+        return {
+            "ok": True,
+            "added": added,
+            "updated": updated,
+            "removed": removed,
+            "node_count": len(self.nodes),
+        }
+
+    def export_mermaid_graph(self, *, max_edges: int = 24) -> str:
+        """Archify / Understand-Anything style Mermaid architecture graph synthesis over indexed files."""
+        pair_weights: Dict[Tuple[str, str], int] = {}
+        for tok, files in self.entity_links.items():
+            if len(files) < 2 or len(files) > 10:
+                continue
+            flist = sorted(files)
+            for i in range(len(flist)):
+                for j in range(i + 1, len(flist)):
+                    pair = (flist[i], flist[j])
+                    pair_weights[pair] = pair_weights.get(pair, 0) + 1
+
+        ranked_edges = sorted(pair_weights.items(), key=lambda x: x[1], reverse=True)[:max_edges]
+        lines = ["flowchart TD"]
+        node_ids: Dict[str, str] = {}
+
+        def _nid(rel: str) -> str:
+            if rel not in node_ids:
+                nid = f"F{len(node_ids) + 1}"
+                node_ids[rel] = nid
+                lines.append(f'    {nid}["{rel}"]')
+            return node_ids[rel]
+
+        if not ranked_edges:
+            for n in self.nodes[:8]:
+                _nid(n["file"])
+        else:
+            for (f1, f2), w in ranked_edges:
+                u, v = _nid(f1), _nid(f2)
+                lines.append(f"    {u} <-->|{w} refs| {v}")
+        return "\n".join(lines)

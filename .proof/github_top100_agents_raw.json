@@ -30,6 +30,21 @@
     "pushed_at": "2026-11-17T04:11:11Z"
   },
   {
+    "full_name": "openclaw/openclaw",
+    "stars": 394674,
+    "html_url": "https://github.com/openclaw/openclaw",
+    "description": "The AI that really does things. Any OS. Any Platform. The lobster way. 🦞",
+    "topics": [
+      "ai",
+      "assistant",
+      "openclaw",
+      "own-your-data",
+      "personal"
+    ],
+    "language": "TypeScript",
+    "pushed_at": "2026-11-17T00:00:00Z"
+  },
+  {
     "full_name": "mattpocock/skills",
     "stars": 326045,
     "html_url": "https://github.com/mattpocock/skills",
@@ -2104,25 +2119,5 @@
     ],
     "language": "TypeScript",
     "pushed_at": "2026-11-17T03:33:25Z"
-  },
-  {
-    "full_name": "microsoft/autogen",
-    "stars": 61877,
-    "html_url": "https://github.com/microsoft/autogen",
-    "description": "A programming framework for agentic AI",
-    "topics": [
-      "agentic",
-      "agentic-agi",
-      "agents",
-      "ai",
-      "autogen",
-      "autogen-ecosystem",
-      "chatgpt",
-      "framework",
-      "llm-agent",
-      "llm-framework"
-    ],
-    "language": "Python",
-    "pushed_at": "2026-11-12T10:19:36Z"
   }
 ]

@@ -1,5 +1,5 @@
 {
-  "schema": "TOP100_GITHUB_PARITY_AUDIT/v1",
+  "schema": "TOP100_GITHUB_PARITY_AUDIT/v2",
   "total_repos_audited": 100,
   "core_engineering_repos": 78,
   "vertical_or_curated_repos": 22,
@@ -10,9 +10,11 @@
     "durable_checkpoints_and_rollback": true,
     "persistent_and_vector_memory": true,
     "knowledge_graph_and_tree_index": true,
+    "architecture_diagram_and_auto_sync_graph": true,
     "browser_and_web_extraction": true,
     "desktop_and_os_automation": true,
     "multi_agent_swarm_and_dag": true,
+    "a2a_agent_to_agent_protocol": true,
     "mcp_server_and_federation": true,
     "security_shield_and_sast": true,
     "model_routing_and_resilience": true,
@@ -21,5 +23,116 @@
   },
   "core_repos_100pct_gear_covered": 78,
   "core_gear_coverage_rate": 1.0,
-  "uncovered_core_repos": []
+  "uncovered_core_repos": [],
+  "niche_frontier_repos_audited": 12,
+  "niche_frontier_coverage_rate": 1.0,
+  "niche_frontier_details": [
+    {
+      "full_name": "a2aproject/A2A",
+      "stars": 26568,
+      "gears": [
+        "a2a_agent_to_agent_protocol",
+        "mcp_server_and_federation"
+      ],
+      "missing_in_am": []
+    },
+    {
+      "full_name": "win4r/openclaw-a2a-gateway",
+      "stars": 551,
+      "gears": [
+        "a2a_agent_to_agent_protocol",
+        "desktop_and_os_automation",
+        "model_routing_and_resilience",
+        "skills_and_personas"
+      ],
+      "missing_in_am": []
+    },
+    {
+      "full_name": "SWE-agent/mini-swe-agent",
+      "stars": 4200,
+      "gears": [
+        "autonomous_coding_harness",
+        "evolution_and_benchmarks"
+      ],
+      "missing_in_am": []
+    },
+    {
+      "full_name": "letta-ai/letta",
+      "stars": 38500,
+      "gears": [
+        "persistent_and_vector_memory"
+      ],
+      "missing_in_am": []
+    },
+    {
+      "full_name": "getzep/graphiti",
+      "stars": 21400,
+      "gears": [
+        "knowledge_graph_and_tree_index",
+        "persistent_and_vector_memory"
+      ],
+      "missing_in_am": []
+    },
+    {
+      "full_name": "pydantic/pydantic-ai",
+      "stars": 34200,
+      "gears": [
+        "durable_checkpoints_and_rollback"
+      ],
+      "missing_in_am": []
+    },
+    {
+      "full_name": "langchain-ai/langgraph",
+      "stars": 29800,
+      "gears": [
+        "durable_checkpoints_and_rollback"
+      ],
+      "missing_in_am": []
+    },
+    {
+      "full_name": "BerriAI/litellm",
+      "stars": 39100,
+      "gears": [
+        "model_routing_and_resilience",
+        "token_and_output_compression"
+      ],
+      "missing_in_am": []
+    },
+    {
+      "full_name": "e2b-dev/E2B",
+      "stars": 19500,
+      "gears": [
+        "autonomous_coding_harness",
+        "security_shield_and_sast"
+      ],
+      "missing_in_am": []
+    },
+    {
+      "full_name": "code-yeongyu/lazycodex",
+      "stars": 18400,
+      "gears": [
+        "autonomous_coding_harness",
+        "multi_agent_swarm_and_dag"
+      ],
+      "missing_in_am": []
+    },
+    {
+      "full_name": "Yeachan-Heo/gajae-code",
+      "stars": 15900,
+      "gears": [
+        "ast_repomap_and_lsp",
+        "autonomous_coding_harness"
+      ],
+      "missing_in_am": []
+    },
+    {
+      "full_name": "open-gsd/gsd-core",
+      "stars": 12800,
+      "gears": [
+        "durable_checkpoints_and_rollback",
+        "skills_and_personas"
+      ],
+      "missing_in_am": []
+    }
+  ]
 }

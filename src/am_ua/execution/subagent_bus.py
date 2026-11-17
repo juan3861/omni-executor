@@ -289,3 +289,128 @@ class SubAgentSessionBus:
                     """
                 ).fetchall()
         return [SubAgentSessionRecord(*r).to_dict() for r in rows]
+
+    # ------------------------------------------------------------------
+    # A2A (Agent2Agent Protocol v0.3) + OpenClaw Multi-Channel Gateway
+    # ------------------------------------------------------------------
+    def get_agent_card(self) -> Dict[str, Any]:
+        """Return official A2A AgentCard (/.well-known/agent.json) for AetherMind Universal Agent."""
+        return {
+            "schema": "A2A_AGENT_CARD/v1",
+            "name": "AetherMind Universal Agent",
+            "version": "4.0.0",
+            "protocolVersion": "0.3.0",
+            "description": "Constitutional neuro-symbolic coding, browser (CDP), and Win32 desktop agent.",
+            "capabilities": {
+                "streaming": True,
+                "pushNotifications": False,
+                "stateTransitionHistory": True,
+            },
+            "defaultInputModes": ["text/plain", "application/json", "file"],
+            "defaultOutputModes": ["text/plain", "application/json", "text/markdown"],
+            "skills": [
+                {"id": "autonomous_coding", "name": "Autonomous Coding & TDD", "tags": ["code", "ast", "pytest"]},
+                {"id": "browser_cdp", "name": "Verified CDP Browser Automation", "tags": ["browser", "dom", "osint"]},
+                {"id": "desktop_rpa", "name": "Closed-Loop Set-of-Mark Desktop RPA", "tags": ["win32", "uia", "ocr"]},
+                {"id": "knowledge_graph", "name": "Auto-Sync Knowledge Graph & Mermaid", "tags": ["graph", "mermaid"]},
+                {"id": "security_audit", "name": "AgentShield SAST & Constitutional Seal", "tags": ["security", "sast"]},
+            ],
+        }
+
+    def handle_a2a_rpc(
+        self,
+        request: Dict[str, Any],
+        *,
+        executor_fn: Optional[Callable[[str, str, Path], Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Process an Agent2Agent (A2A) JSON-RPC 2.0 request (`agent/card`, `tasks/send`, `tasks/get`, `tasks/cancel`)."""
+        req_id = request.get("id", "1")
+        method = str(request.get("method", "")).strip()
+        params = request.get("params") if isinstance(request.get("params"), dict) else {}
+
+        if method in ("agent/card", "agent/authenticatedExtendedCard"):
+            return {"jsonrpc": "2.0", "id": req_id, "result": self.get_agent_card()}
+
+        if method == "tasks/send":
+            msg = params.get("message") if isinstance(params.get("message"), dict) else {}
+            parts = msg.get("parts") if isinstance(msg.get("parts"), list) else []
+            texts = [str(p.get("text", "")) for p in parts if isinstance(p, dict) and p.get("text")]
+            objective = "\n".join(texts).strip() or str(params.get("objective", "")).strip()
+            if not objective:
+                return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32602, "message": "Missing task objective"}}
+            role = str(params.get("role", "general_engineer"))
+            wait = bool(params.get("wait", False))
+            w_fn = executor_fn or (lambda sid, obj, ws: {"ok": True, "summary": f"A2A queued: {obj}", "tokens_used": 0})
+            spawned = self.spawn_session(objective=objective, worker_fn=w_fn, role=role, run_async=not wait)
+            sid = spawned["session_id"]
+            sess = self.get_session(sid) or spawned
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "id": sid,
+                    "status": {"state": str(sess.get("status", "RUNNING")).lower()},
+                    "session": sess,
+                },
+            }
+
+        if method == "tasks/get":
+            tid = str(params.get("id") or params.get("session_id") or "").strip()
+            sess = self.get_session(tid)
+            if sess is None:
+                return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32001, "message": f"Task '{tid}' not found"}}
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "id": tid,
+                    "status": {"state": str(sess["status"]).lower()},
+                    "session": sess,
+                    "messages": self.read_inbox(tid),
+                },
+            }
+
+        if method == "tasks/cancel":
+            tid = str(params.get("id") or params.get("session_id") or "").strip()
+            sess = self.get_session(tid)
+            if sess is None:
+                return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32001, "message": f"Task '{tid}' not found"}}
+            with self._db_lock, self._connect() as conn:
+                conn.execute(
+                    "UPDATE subagent_sessions SET status = ?, finished_at = ? WHERE session_id = ?",
+                    ("CANCELED", time.time(), tid),
+                )
+            return {"jsonrpc": "2.0", "id": req_id, "result": {"id": tid, "status": {"state": "canceled"}}}
+
+        return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": f"Unsupported A2A method: {method}"}}
+
+    def ingest_channel_event(
+        self,
+        event: Dict[str, Any],
+        *,
+        executor_fn: Optional[Callable[[str, str, Path], Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """OpenClaw-style unified channel gateway: normalize Discord/Telegram/Slack/WhatsApp/Webhook events into A2A tasks."""
+        channel = str(event.get("channel", "cli")).strip().lower()
+        sender = str(event.get("sender") or event.get("user_id") or "anonymous").strip()
+        text = str(event.get("text") or event.get("content") or event.get("message") or "").strip()
+        if not text:
+            return {"ok": False, "error": "empty channel message"}
+        rpc_req = {
+            "jsonrpc": "2.0",
+            "id": f"oc-{channel}-{uuid.uuid4().hex[:8]}",
+            "method": "tasks/send",
+            "params": {
+                "role": str(event.get("role", "general_engineer")),
+                "wait": bool(event.get("wait", False)),
+                "message": {"role": "user", "parts": [{"type": "text", "text": f"[{channel}:{sender}] {text}"}]},
+            },
+        }
+        resp = self.handle_a2a_rpc(rpc_req, executor_fn=executor_fn)
+        return {
+            "ok": "result" in resp,
+            "channel": channel,
+            "sender": sender,
+            "task_id": resp.get("result", {}).get("id"),
+            "a2a_response": resp,
+        }

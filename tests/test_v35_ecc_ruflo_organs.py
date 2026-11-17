@@ -516,3 +516,57 @@ def test_v39_rapid_batching_turn0_inventory_and_tool_pruning(tmp_path: Path) -> 
     assert (ws / "a.py").read_text(encoding="utf-8") == "X = 10\n"
     assert (ws / "b.py").read_text(encoding="utf-8") == "Y = 20\n"
     assert captured_prompts and "WORKSPACE FILES (2): a.py" in captured_prompts[0]
+
+
+def test_v40_a2a_openclaw_gateway_autosync_codegraph_mermaid_and_spill_to_disk(tmp_path: Path) -> None:
+    """Verify v4.0 gears: A2A Protocol + OpenClaw Channel Gateway, CodeGraph auto-sync + Mermaid diagram, and Spill-to-Disk."""
+    from am_ua.execution.output_compressor import ToolOutputCompressor
+    from am_ua.execution.subagent_bus import SubAgentSessionBus
+    from am_ua.perception.knowledge_index import HierarchicalKnowledgeIndex
+
+    # 1. A2A Protocol (a2aproject/A2A) + OpenClaw Multi-Channel Gateway
+    bus = SubAgentSessionBus(db_path=tmp_path / "a2a_bus.db")
+    card_resp = bus.handle_a2a_rpc({"jsonrpc": "2.0", "id": "c1", "method": "agent/card"})
+    assert card_resp["result"]["schema"] == "A2A_AGENT_CARD/v1"
+    assert any(s["id"] == "autonomous_coding" for s in card_resp["result"]["skills"])
+
+    ch_out = bus.ingest_channel_event(
+        {"channel": "whatsapp", "sender": "MestreRuan", "text": "Audit repository architecture", "wait": True},
+        executor_fn=lambda sid, obj, ws: {"ok": True, "summary": f"Completed: {obj}", "tokens_used": 42},
+    )
+    assert ch_out["ok"] is True
+    tid = ch_out["task_id"]
+    get_resp = bus.handle_a2a_rpc({"jsonrpc": "2.0", "id": "g1", "method": "tasks/get", "params": {"id": tid}})
+    assert get_resp["result"]["status"]["state"] == "completed"
+
+    cancel_spawn = bus.handle_a2a_rpc(
+        {"jsonrpc": "2.0", "id": "s2", "method": "tasks/send", "params": {"objective": "Long task", "wait": False}},
+        executor_fn=lambda sid, obj, ws: (__import__("time").sleep(0.5) or {"ok": True}),
+    )
+    tid2 = cancel_spawn["result"]["id"]
+    cancel_resp = bus.handle_a2a_rpc({"jsonrpc": "2.0", "id": "x1", "method": "tasks/cancel", "params": {"id": tid2}})
+    assert cancel_resp["result"]["status"]["state"] == "canceled"
+
+    # 2. CodeGraph Incremental Auto-Sync + Archify/Understand-Anything Mermaid Synthesis
+    kg_dir = tmp_path / "kg_proj"
+    kg_dir.mkdir()
+    (kg_dir / "engine.py").write_text("class CoreEngine:\n    def run_pipeline(self):\n        return True\n", encoding="utf-8")
+    (kg_dir / "worker.py").write_text("def dispatch_worker():\n    # uses CoreEngine run_pipeline\n    return 1\n", encoding="utf-8")
+
+    idx = HierarchicalKnowledgeIndex(kg_dir)
+    mermaid = idx.export_mermaid_graph()
+    assert mermaid.startswith("flowchart TD") and "engine.py" in mermaid and "worker.py" in mermaid
+
+    (kg_dir / "router.py").write_text("class OmniGateway:\n    pass\n", encoding="utf-8")
+    (kg_dir / "worker.py").write_text("def dispatch_worker_v2():\n    return 2\n", encoding="utf-8")
+    delta = idx.sync_changes()
+    assert delta["added"] == ["router.py"]
+    assert delta["updated"] == ["worker.py"]
+    assert idx.query("OmniGateway")["hits"][0]["file"] == "router.py"
+
+    # 3. Spill-to-Disk on oversized ToolOutputCompressor observations
+    comp = ToolOutputCompressor(max_obs_chars=400, spill_dir=tmp_path / "spills")
+    huge = "LINE_DATA_" * 200
+    clipped = comp.compress_tool_payload("raw", huge)
+    assert "full output saved to" in clipped
+    assert len(comp.spill_files) == 1 and Path(comp.spill_files[0]).is_file()

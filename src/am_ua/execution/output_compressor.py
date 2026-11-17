@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List
+from pathlib import Path
+import time
+from typing import Any, Dict, List, Optional
 
 
 _MULTI_BLANK_RX = re.compile(r"\n{3,}")
@@ -19,10 +21,12 @@ _ANSI_RX = re.compile(r"\x1b\[[0-9;]*m")
 class ToolOutputCompressor:
     """Loss-minimizing compressor for tool observations entering AgentLoop messages."""
 
-    def __init__(self, *, max_obs_chars: int = 12_000) -> None:
+    def __init__(self, *, max_obs_chars: int = 12_000, spill_dir: Optional[Path | str] = None) -> None:
         self.max_obs_chars = max_obs_chars
+        self.spill_dir = Path(spill_dir or r"F:\AetherMind_Temp\tool_spill")
         self.total_chars_before = 0
         self.total_chars_after = 0
+        self.spill_files: List[str] = []
 
     def compress_tool_payload(self, tool: str, obs: Any) -> str:
         """Return a compact JSON/text representation optimized for LLM attention."""
@@ -96,12 +100,20 @@ class ToolOutputCompressor:
             return "\n".join(deduped[:30] + [f"... [{len(deduped) - 85} middle lines compressed] ..."] + deduped[-55:])
         return "\n".join(deduped)
 
-    @staticmethod
-    def _clip_text(text: str, limit: int) -> str:
+    def _clip_text(self, text: str, limit: int) -> str:
         if len(text) <= limit:
             return text
+        spill_note = ""
+        try:
+            self.spill_dir.mkdir(parents=True, exist_ok=True)
+            sp = self.spill_dir / f"spill_{int(time.time() * 1000)}_{len(text)}.log"
+            sp.write_text(text, encoding="utf-8", errors="replace")
+            self.spill_files.append(str(sp))
+            spill_note = f"; full output saved to {sp}"
+        except OSError:
+            pass
         head = limit * 2 // 3
-        return text[:head] + f"\n... [{len(text) - limit} chars omitted] ...\n" + text[-(limit - head) :]
+        return text[:head] + f"\n... [{len(text) - limit} chars omitted{spill_note}] ...\n" + text[-(limit - head) :]
 
     def _track(self, before: str, after: str) -> str:
         self.total_chars_before += len(before)
