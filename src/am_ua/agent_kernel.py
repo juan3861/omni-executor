@@ -654,6 +654,10 @@ class AetherMindUniversalAgent:
             def _make_repomap(ws_path: Path) -> PolyglotRepoMapper:
                 return PolyglotRepoMapper(ws_path)
 
+            def _make_knowledge(ws_path: Path) -> Any:
+                from am_ua.perception.knowledge_index import HierarchicalKnowledgeIndex
+                return HierarchicalKnowledgeIndex(ws_path)
+
             self._agent_loop = AgentLoop(
                 engine=self.durable_engine,
                 seal_guard=self.seal_guard,
@@ -667,6 +671,7 @@ class AetherMindUniversalAgent:
                 mcp_hub=self.mcp_hub,
                 browser_factory=_make_browser,
                 repo_mapper_factory=_make_repomap,
+                knowledge_factory=_make_knowledge,
             )
         return self._agent_loop
 

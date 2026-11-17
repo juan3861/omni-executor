@@ -1,0 +1,159 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "v38_headroom_probe",
+  "workflow": "hierarchical",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\v38_headroom_probe_20261117_003636",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 3,
+  "selected": 3,
+  "summary": {
+    "overall": {
+      "n": 3,
+      "passed": 3,
+      "pass_rate": 1.0,
+      "tokens": 182807,
+      "llm_calls": 53,
+      "elapsed_s": 135.8
+    },
+    "browser": {
+      "n": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "tokens": 49677,
+      "llm_calls": 15,
+      "elapsed_s": 45.6
+    },
+    "code": {
+      "n": 2,
+      "passed": 2,
+      "pass_rate": 1.0,
+      "tokens": 133130,
+      "llm_calls": 38,
+      "elapsed_s": 90.2
+    }
+  },
+  "results": [
+    {
+      "task_id": "c05_multi_file_rename",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 18,
+      "providers": [
+        "groq",
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "replace_in_file",
+        "replace_in_file",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "read_file",
+        "read_file",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.59s\n",
+      "elapsed_s": 34.7,
+      "llm_calls": 18,
+      "prompt_tokens": 45161,
+      "completion_tokens": 1667
+    },
+    {
+      "task_id": "c12_email_regex",
+      "category": "code",
+      "agent_status": "VERIFIED_AFTER_BUDGET",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "list_dir",
+        "run",
+        "search",
+        "write_file",
+        "read_file",
+        "write_file",
+        "run",
+        "write_file",
+        "write_file",
+        "run",
+        "write_file",
+        "read_file",
+        "write_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.64s\n",
+      "elapsed_s": 55.5,
+      "llm_calls": 20,
+      "prompt_tokens": 80774,
+      "completion_tokens": 5528
+    },
+    {
+      "task_id": "b04_self_healing_button",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 12,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "list_dir",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "read_file",
+        "list_dir",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.56s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 45.6,
+      "llm_calls": 15,
+      "prompt_tokens": 44814,
+      "completion_tokens": 4863
+    }
+  ]
+}

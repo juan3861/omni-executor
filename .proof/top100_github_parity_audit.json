@@ -1,0 +1,25 @@
+{
+  "schema": "TOP100_GITHUB_PARITY_AUDIT/v1",
+  "total_repos_audited": 100,
+  "core_engineering_repos": 79,
+  "vertical_or_curated_repos": 21,
+  "capabilities_verified_on_disk": {
+    "autonomous_coding_harness": true,
+    "ast_repomap_and_lsp": true,
+    "token_and_output_compression": true,
+    "durable_checkpoints_and_rollback": true,
+    "persistent_and_vector_memory": true,
+    "knowledge_graph_and_tree_index": true,
+    "browser_and_web_extraction": true,
+    "desktop_and_os_automation": true,
+    "multi_agent_swarm_and_dag": true,
+    "mcp_server_and_federation": true,
+    "security_shield_and_sast": true,
+    "model_routing_and_resilience": true,
+    "skills_and_personas": true,
+    "evolution_and_benchmarks": true
+  },
+  "core_repos_100pct_gear_covered": 79,
+  "core_gear_coverage_rate": 1.0,
+  "uncovered_core_repos": []
+}

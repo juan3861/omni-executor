@@ -345,3 +345,95 @@ def test_v37_repomap_checkpoint_lsp_diagnostics_and_smart_condense(tmp_path: Pat
     # 5. OMNI_TOPOLOGY_V2 compliance still clean
     topo = InterRepoTopologyGate().audit_package_imports("F:/AetherMind_Universal_Agent/src/am_ua")
     assert topo["ok"] is True, f"Topology violations: {topo}"
+
+
+def test_v38_headroom_compressor_knowledge_index_webfetch_and_sast_shield(tmp_path: Path) -> None:
+    from am_ua.agent_kernel import AetherMindUniversalAgent
+    from am_ua.execution.output_compressor import ToolOutputCompressor
+    from am_ua.perception.knowledge_index import HierarchicalKnowledgeIndex
+
+    # 1. ToolOutputCompressor (Headroom / Caveman style)
+    comp = ToolOutputCompressor(max_obs_chars=4000)
+    noisy_lines = ["line_ok"] * 120 + ["ERR_HERE"]
+    c_str = comp.compress_tool_payload("run", {"exit_code": 1, "output": "\n".join(noisy_lines)})
+    assert "repeated" in c_str and "ERR_HERE" in c_str
+    assert comp.stats()["chars_saved"] > 0
+
+    # 2. HierarchicalKnowledgeIndex (Graphify / PageIndex style)
+    kws = tmp_path / "kws"
+    kws.mkdir()
+    (kws / "ARCHITECTURE.md").write_text("# Sovereign Memory\nTriadMemory uses Hopfield + ACT-R.\n", encoding="utf-8")
+    (kws / "schema.sql").write_text("CREATE TABLE agent_missions (id TEXT PRIMARY KEY, status TEXT);\n", encoding="utf-8")
+    (kws / "page.html").write_text("<html><script>bad()</script><body><h1>Hello Docs</h1><p>Clean Markdown</p></body></html>", encoding="utf-8")
+    idx = HierarchicalKnowledgeIndex(kws)
+    q = idx.query("Sovereign Memory Hopfield")
+    assert q["hits"] and q["hits"][0]["file"] == "ARCHITECTURE.md"
+
+    # 3. AgentLoop tools: knowledge_query + web_fetch
+    html_uri = (kws / "page.html").as_uri()
+
+    class V38LLM:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.total_prompt_tokens = 0
+            self.total_completion_tokens = 0
+
+        @staticmethod
+        def available() -> list[str]:
+            return []
+
+        def chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+            self.calls += 1
+            self.total_prompt_tokens += 5
+            self.total_completion_tokens += 5
+
+            class R:
+                provider = "mock"
+                model = "mock-1"
+                prompt_tokens = 5
+                completion_tokens = 5
+                total_tokens = 10
+
+            r = R()
+            seq = [
+                {"thought": "query knowledge", "tool": "knowledge_query", "args": {"question": "agent_missions table"}},
+                {"thought": "fetch html", "tool": "web_fetch", "args": {"url": html_uri}},
+                {"thought": "done", "tool": "finish", "args": {"summary": "verified", "confidence": 1.0}},
+            ]
+            r.text = json.dumps(seq[min(self.calls - 1, len(seq) - 1)])
+            return r
+
+    agent = AetherMindUniversalAgent(data_dir=tmp_path / "kdata38")
+    agent.agent_loop.llm = V38LLM()  # type: ignore[assignment]
+    res = agent.run_agent_mission("Query knowledge and fetch local html", workspace=kws, max_turns=5, workflow="react")
+    assert res["stop_reason"] == "finish"
+    assert [tc["tool"] for tc in res["tool_calls"]] == ["knowledge_query", "web_fetch"]
+    assert all(tc["ok"] for tc in res["tool_calls"])
+
+    # 4. AgentShield SAST code rules (Cloudflare security-audit-skill style)
+    sast_dir = tmp_path / "sast_proj"
+    sast_dir.mkdir()
+    (sast_dir / "vuln.py").write_text(
+        "import pickle, yaml, subprocess\n"
+        "data = pickle.loads(b'x')\n"
+        "cfg = yaml.load('a: 1')\n"
+        "subprocess.run('dir', shell=True)\n",
+        encoding="utf-8",
+    )
+    rep = AgentShieldAuditor().scan_directory(sast_dir, include_source_sast=True)
+    rids = {f.rule_id for f in rep.findings}
+    assert {"SHIELD-SAST-001", "SHIELD-SAST-002", "SHIELD-SAST-004"}.issubset(rids)
+
+    # 5. CLI-Anything Wrapper Synthesis (HKUDS/CLI-Anything gear)
+    import sys
+    from am_ua.execution.adaptive_skills import AdaptiveSkillForge
+
+    forge = AdaptiveSkillForge(skills_dir=tmp_path / "cli_skills")
+    wrapped = forge.wrap_cli_tool(sys.executable, skill_name="cli_py_probe", help_args=["--help"])
+    assert wrapped["ok"] is True
+    assert Path(wrapped["skill_md_path"]).is_file()
+    exec_json = forge.run_skill("cli_py_probe", {"argv": ["-c", "import json; print(json.dumps({'agent_native': True}))"]})
+    assert exec_json["ok"] and exec_json["result"]["parsed_json"] == {"agent_native": True}
+
+    # 6. OMNI_TOPOLOGY_V2 remains clean
+    assert InterRepoTopologyGate().audit_package_imports("F:/AetherMind_Universal_Agent/src/am_ua")["ok"] is True

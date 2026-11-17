@@ -43,6 +43,7 @@ from am_ua.execution.hook_engine import DeterministicHookEngine
 from am_ua.execution.human_wheel import HumanWheelGate, WheelOutcome
 from am_ua.execution.mcp_federation import MCPFederationHub
 from am_ua.execution.modality_router import HybridModalityRouter
+from am_ua.execution.output_compressor import ToolOutputCompressor
 from am_ua.execution.pc_automation import PCAutomationEngine
 from am_ua.execution.subagent_bus import SubAgentSessionBus
 from am_ua.governance.homeostasis import HomeostasisGovernor, ResourceExhaustedError
@@ -144,6 +145,7 @@ class WorkspaceTools:
         browser_factory: Optional[Callable[[bool], Any]] = None,
         hook_engine: Optional[DeterministicHookEngine] = None,
         repo_mapper_factory: Optional[Callable[[Path], Any]] = None,
+        knowledge_factory: Optional[Callable[[Path], Any]] = None,
     ) -> None:
         self.ws = workspace.resolve()
         self.seal_guard = seal_guard
@@ -155,6 +157,7 @@ class WorkspaceTools:
         self._mcp_hub = mcp_hub
         self._browser_factory = browser_factory
         self._repo_mapper_factory = repo_mapper_factory
+        self._knowledge_factory = knowledge_factory
         self._browser: Any = None
         self._checkpoints: Dict[str, Dict[str, bytes]] = {}
         # Workspace itself must be a constitutionally writable location (project root or safe temp root).
@@ -479,6 +482,42 @@ class WorkspaceTools:
         self._checkpoints[name] = snap
         return {"ok": True, "checkpoint": name, "files_captured": len(snap)}
 
+    def knowledge_query(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        if self._knowledge_factory is None:
+            return {"ok": False, "error": "knowledge_factory is not configured"}
+        question = str(args.get("question", "")).strip()
+        top_k = min(int(args.get("top_k", 5)), 15)
+        idx = self._knowledge_factory(self.ws)
+        return idx.query(question, top_k=top_k)
+
+    def web_fetch(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Lightweight HTML/Text-to-Markdown fetcher (Crawl4AI/Agent-Reach style, R16 tainted)."""
+        import html as _html
+        import urllib.request
+
+        url = str(args.get("url", "")).strip()
+        if not url.startswith(("http://", "https://", "file://")):
+            return {"ok": False, "error": "Only http://, https://, or file:// URLs are permitted"}
+        if url.startswith(("http://localhost", "http://127.0.0.1", "https://localhost")):
+            return {"ok": False, "error": "Loopback web_fetch blocked (SSRF protection)"}
+        max_chars = min(int(args.get("max_chars", 6000)), 20_000)
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "AetherMind-WebFetch/3.8"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                raw = resp.read(256_000).decode("utf-8", errors="replace")
+            cleaned = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", raw)
+            cleaned = re.sub(r"(?is)<h([1-4])[^>]*>(.*?)</h\1>", lambda m: f"\n{'#' * int(m.group(1))} {re.sub(r'<[^>]+>', '', m.group(2)).strip()}\n", cleaned)
+            cleaned = re.sub(r"(?is)<[^>]+>", " ", cleaned)
+            cleaned = _html.unescape(re.sub(r"[ \t]+", " ", re.sub(r"\n{3,}", "\n\n", cleaned))).strip()
+            return {
+                "ok": True,
+                "url": url,
+                "taint": "UNTRUSTED_EXTERNAL",
+                "content": clip(cleaned, max_chars),
+            }
+        except Exception as exc:
+            return {"ok": False, "url": url, "error": f"{type(exc).__name__}: {str(exc)[:300]}"}
+
     def restore_checkpoint(self, args: Dict[str, Any]) -> Dict[str, Any]:
         name = str(args.get("name", "default")).strip() or "default"
         snap = self._checkpoints.get(name)
@@ -550,6 +589,8 @@ Tools:
 - browser_act {"action": "click|fill|goto", "idx": 1, "target": "Submit", "text": "...", "url": "..."}
 - browser_extract {"selector": "body"}
 - repo_map {"max_chars": 3000}   (PageRank + AST symbol overview of repository)
+- knowledge_query {"question": "...", "top_k": 5}   (Graphify/PageIndex tree query over docs, SQL schemas, configs, code)
+- web_fetch {"url": "https://...|file:///...", "max_chars": 6000}   (lightweight HTML-to-Markdown reader without launching Chromium)
 - checkpoint {"name": "pre_edit"}   (save lightweight workspace snapshot before risky edits)
 - restore_checkpoint {"name": "pre_edit"}   (rollback workspace files to named checkpoint)
 - request_human {"reason": "<why human intervention is required>", "instructions": "<what the human must do>"}
@@ -601,6 +642,8 @@ Tools:
 - browser_act {"action": "click|fill|goto", "idx": 1, "target": "Submit", "text": "...", "url": "..."}
 - browser_extract {"selector": "body"}
 - repo_map {"max_chars": 3000}   (PageRank + AST symbol overview of repository)
+- knowledge_query {"question": "...", "top_k": 5}   (Graphify/PageIndex tree query over docs, SQL schemas, configs, code)
+- web_fetch {"url": "https://...|file:///...", "max_chars": 6000}   (lightweight HTML-to-Markdown reader without launching Chromium)
 - checkpoint {"name": "pre_edit"}   (save lightweight workspace snapshot before risky edits)
 - restore_checkpoint {"name": "pre_edit"}   (rollback workspace files to named checkpoint)
 - request_human {"reason": "<why human intervention is required>", "instructions": "<what the human must do>"}
@@ -675,6 +718,8 @@ class AgentLoop:
         "browser_act": EffectClass.COMPENSATABLE_MUTATION,
         "browser_extract": EffectClass.PURE_READ,
         "repo_map": EffectClass.PURE_READ,
+        "knowledge_query": EffectClass.PURE_READ,
+        "web_fetch": EffectClass.PURE_READ,
         "checkpoint": EffectClass.PURE_READ,
         "restore_checkpoint": EffectClass.COMPENSATABLE_MUTATION,
     }
@@ -703,6 +748,7 @@ class AgentLoop:
         browser_factory: Optional[Callable[[bool], Any]] = None,
         hook_engine: Optional[DeterministicHookEngine] = None,
         repo_mapper_factory: Optional[Callable[[Path], Any]] = None,
+        knowledge_factory: Optional[Callable[[Path], Any]] = None,
     ) -> None:
         self.engine = engine
         self.seal_guard = seal_guard
@@ -723,6 +769,7 @@ class AgentLoop:
         self.browser_factory = browser_factory
         self.hook_engine = hook_engine or DeterministicHookEngine()
         self.repo_mapper_factory = repo_mapper_factory
+        self.knowledge_factory = knowledge_factory
         self.subagent_bus = subagent_bus or SubAgentSessionBus()
         self.mcp_hub = mcp_hub or MCPFederationHub()
         self._active: Optional[WorkspaceTools] = None
@@ -840,6 +887,7 @@ class AgentLoop:
             mcp_hub=self.mcp_hub,
             browser_factory=self.browser_factory,
             repo_mapper_factory=self.repo_mapper_factory,
+            knowledge_factory=self.knowledge_factory,
         )
         self._active = ws
         effective_wheel_timeout = self.wheel_timeout_s if wheel_timeout_s is None else max(0.0, float(wheel_timeout_s))
@@ -936,6 +984,7 @@ class AgentLoop:
         parse_failures, turn = 0, 0
         human_requests_count = 0
         pre_verification: Optional[Dict[str, Any]] = None
+        compressor = ToolOutputCompressor()
         for turn in range(1, max_turns + 1):
             messages = self._condense(messages)
             try:
@@ -1116,7 +1165,7 @@ class AgentLoop:
                 )
 
             tool_log.append({"turn": turn, "tool": tool, "args": {k: (v if len(str(v)) < 300 else str(v)[:300] + "...") for k, v in args.items()}, "ok": ok})
-            messages.append({"role": "user", "content": "OBSERVATION:\n" + clip(json.dumps(obs, ensure_ascii=False, default=str))})
+            messages.append({"role": "user", "content": "OBSERVATION:\n" + compressor.compress_tool_payload(tool, obs)})
             try:
                 homeo.record_turn_cost(tokens=resp.total_tokens, tool_calls=1, made_verified_progress=ok)
             except ResourceExhaustedError as exc:

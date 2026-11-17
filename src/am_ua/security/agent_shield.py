@@ -80,8 +80,17 @@ _PERM_PATTERNS: Tuple[Tuple[str, str, str, re.Pattern[str]], ...] = (
     ),
 )
 
+_SAST_CODE_PATTERNS: Tuple[Tuple[str, str, str, re.Pattern[str]], ...] = (
+    ("SHIELD-SAST-001", "HIGH", "Unsafe deserialization via pickle.loads (CWE-502)", re.compile(r"\bpickle\.loads?\s*\(")),
+    ("SHIELD-SAST-002", "HIGH", "YAML deserialization without SafeLoader (CWE-502)", re.compile(r"\byaml\.load\s*\([^)]*\)")),
+    ("SHIELD-SAST-003", "MEDIUM", "TLS verification disabled via verify=False (CWE-295)", re.compile(r"\bverify\s*=\s*False\b")),
+    ("SHIELD-SAST-004", "HIGH", "Subprocess invocation with shell=True (CWE-78)", re.compile(r"\bsubprocess\.[A-Za-z_]+\([^)]*shell\s*=\s*True")),
+    ("SHIELD-SAST-005", "HIGH", "Dynamic code execution via eval()/exec() (CWE-95)", re.compile(r"(?<!\.)\b(?:eval|exec)\s*\(")),
+)
+
 _SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "venv", "third_party", "vendor", "data"}
 _SCAN_EXTS = {".json", ".yaml", ".yml", ".toml", ".env", ".cmd", ".ps1", ".sh", ".md"}
+_CODE_EXTS = {".py", ".js", ".ts"}
 
 
 class AgentShieldAuditor:
@@ -130,6 +139,22 @@ class AgentShieldAuditor:
                             remediation="Enforce least-privilege tool allowlists and keep seals enabled.",
                         )
                     )
+            if Path(rel_path).suffix.lower() in _CODE_EXTS:
+                for rule_id, sev, msg, rx in _SAST_CODE_PATTERNS:
+                    if rx.search(line):
+                        if rule_id == "SHIELD-SAST-002" and "SafeLoader" in line:
+                            continue
+                        findings.append(
+                            ShieldFinding(
+                                rule_id=rule_id,
+                                severity=sev,
+                                category="sast",
+                                file=rel_path,
+                                line=idx,
+                                message=msg,
+                                remediation="Replace unsafe sink with parameterized/safe API or SafeLoader.",
+                            )
+                        )
         if rel_path.lower().endswith(".json"):
             findings.extend(self._audit_mcp_json(text, rel_path=rel_path))
         return findings
@@ -180,10 +205,11 @@ class AgentShieldAuditor:
                 )
         return out
 
-    def scan_directory(self, root: Path | str, *, max_files: int = 400) -> ShieldScanReport:
+    def scan_directory(self, root: Path | str, *, max_files: int = 400, include_source_sast: bool = False) -> ShieldScanReport:
         base = Path(root).resolve()
         findings: List[ShieldFinding] = []
         scanned = 0
+        allowed_exts = _SCAN_EXTS | (_CODE_EXTS if include_source_sast else set())
         for p in base.rglob("*"):
             if scanned >= max_files:
                 break
@@ -191,7 +217,7 @@ class AgentShieldAuditor:
                 continue
             if not p.is_file():
                 continue
-            if p.suffix.lower() not in _SCAN_EXTS and not p.name.startswith(".env"):
+            if p.suffix.lower() not in allowed_exts and not p.name.startswith(".env"):
                 continue
             try:
                 if p.stat().st_size > 256_000:

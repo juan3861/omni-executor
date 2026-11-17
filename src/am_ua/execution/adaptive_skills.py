@@ -293,3 +293,108 @@ class AdaptiveSkillForge:
                 scored.append((sim, d))
         scored.sort(key=lambda pair: pair[0], reverse=True)
         return [item[1] for item in scored[:top_k]]
+
+    def wrap_cli_tool(
+        self,
+        executable: str,
+        *,
+        skill_name: Optional[str] = None,
+        help_args: Optional[List[str]] = None,
+        timeout_s: float = 15.0,
+    ) -> Dict[str, Any]:
+        """Assimilates HKUDS/CLI-Anything: wrap an external CLI binary/script into an AST-sealed JSON skill + SKILL.md."""
+        import shutil
+        import subprocess
+
+        exe_raw = str(executable or "").strip()
+        if not exe_raw:
+            raise ValueError("executable must not be empty")
+        resolved = exe_raw if Path(exe_raw).is_file() else (shutil.which(exe_raw) or exe_raw)
+        stem = re.sub(r"[^a-z0-9_]+", "_", Path(exe_raw).stem.lower()).strip("_") or "tool"
+        clean_skill = (skill_name or f"cli_{stem}").strip().lower()
+        if not SKILL_NAME_RE.match(clean_skill):
+            clean_skill = re.sub(r"[^a-z0-9_]+", "_", clean_skill).strip("_")
+            if not clean_skill or not clean_skill[0].isalpha():
+                clean_skill = f"cli_{clean_skill or 'tool'}"
+            clean_skill = clean_skill[:64]
+
+        probe_flags = list(help_args or ["--help"])
+        try:
+            proc = subprocess.run(
+                [resolved, *probe_flags],
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+                shell=False,
+            )
+            help_text = (proc.stdout or proc.stderr or "").strip()
+        except Exception as exc:
+            help_text = f"(help probe unavailable: {exc})"
+
+        # Extract documented flags and subcommands cleanly for SKILL.md and summary
+        flags = sorted(set(re.findall(r"(?<![A-Za-z0-9_-])(--?[a-zA-Z0-9][a-zA-Z0-9_-]*)", help_text)))[:24]
+        subcmds = sorted(
+            {
+                m.group(1)
+                for m in re.finditer(r"^\s{1,6}([a-z][a-z0-9_-]{1,24})\s{2,}\S", help_text, re.MULTILINE)
+            }
+        )[:16]
+
+        code = f'''"""Auto-generated CLI-Anything JSON skill wrapper for {Path(exe_raw).name}."""
+import json
+import shlex
+import subprocess
+from typing import Any, Dict, List, Optional, Union
+
+_EXECUTABLE = {resolved!r}
+
+def {clean_skill}(argv: Optional[Union[str, List[str]]] = None, timeout_s: float = {float(timeout_s)}) -> Dict[str, Any]:
+    if argv is None:
+        cmd_args: List[str] = []
+    elif isinstance(argv, str):
+        cmd_args = shlex.split(argv)
+    else:
+        cmd_args = [str(a) for a in argv]
+    proc = subprocess.run(
+        [_EXECUTABLE, *cmd_args],
+        capture_output=True,
+        text=True,
+        timeout=float(timeout_s),
+        shell=False,
+    )
+    out_s = (proc.stdout or "").strip()
+    parsed = None
+    if out_s.startswith("{{") or out_s.startswith("["):
+        try:
+            parsed = json.loads(out_s)
+        except Exception:
+            parsed = None
+    return {{
+        "ok": proc.returncode == 0,
+        "returncode": proc.returncode,
+        "stdout": out_s[:8000],
+        "stderr": (proc.stderr or "").strip()[:2000],
+        "parsed_json": parsed,
+    }}
+'''
+        desc = f"Agent-native CLI wrapper for `{Path(exe_raw).name}` (subcommands={len(subcmds)}, flags={len(flags)})."
+        forged = self.forge_skill(
+            name=clean_skill,
+            description=desc,
+            code=code,
+            tags=["cli-anything", stem, "agent-native-cli"],
+            test_kwargs={"argv": probe_flags},
+        )
+        skill_md_path = self.skills_dir / f"{clean_skill}.SKILL.md"
+        skill_md = (
+            f"# {clean_skill} (CLI-Anything Wrapper)\n\n"
+            f"- Executable: `{resolved}`\n"
+            f"- Subcommands: {', '.join(subcmds) if subcmds else 'none detected'}\n"
+            f"- Flags: {', '.join(flags) if flags else 'none detected'}\n\n"
+            f"## Usage\nCall `run_skill('{clean_skill}', {{'argv': ['--help']}})` to get structured JSON output.\n"
+        )
+        skill_md_path.write_text(skill_md, encoding="utf-8", newline="\n")
+        forged["skill_md_path"] = str(skill_md_path)
+        forged["discovered_subcommands"] = subcmds
+        forged["discovered_flags"] = flags
+        return forged
