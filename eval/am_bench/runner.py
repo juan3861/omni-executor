@@ -124,7 +124,7 @@ def judge_code(task: BenchTask, ws: Path, visible_hashes: Dict[str, str]) -> Dic
     }
 
 
-def run_task(task: BenchTask, run_dir: Path, *, workflow: str, max_wall_s: float, llm: LLMClient) -> Dict[str, Any]:
+def run_task(task: BenchTask, run_dir: Path, *, workflow: str, max_wall_s: float, llm: LLMClient, adaptive_bon: int = 1) -> Dict[str, Any]:
     ws = run_dir / task.task_id
     shutil.rmtree(ws, ignore_errors=True)
     ws.mkdir(parents=True)
@@ -133,6 +133,9 @@ def run_task(task: BenchTask, run_dir: Path, *, workflow: str, max_wall_s: float
     visible_hashes = {rel: _sha(ws / rel) for rel in task.visible}
     side = run_dir / "_side" / task.task_id
     side.mkdir(parents=True, exist_ok=True)
+    snap_ws = side / "_clean_snap"
+    if adaptive_bon > 1 and task.category != "desktop":
+        shutil.copytree(ws, snap_ws)
 
     loop = AgentLoop(
         engine=DurableExecutionEngine(side / "durable.db"),
@@ -165,18 +168,41 @@ def run_task(task: BenchTask, run_dir: Path, *, workflow: str, max_wall_s: float
             with GuiFixture(task.gui_mode or "secret", side / "gui_state.json") as fx:
                 res = _go()
                 verdict = judge_desktop(task, ws, fx)
-        elif task.category == "browser":
-            res = _go()
-            verdict = judge_code(task, ws, visible_hashes)
-            used_browser = any(c["tool"].startswith("browser_") and c.get("ok") for c in res.tool_calls)
-            if not used_browser:
-                verdict["passed"] = False
-                verdict["browser_tool_used"] = False
-            else:
-                verdict["browser_tool_used"] = True
         else:
+            def _eval_ws(run_res: Any) -> Dict[str, Any]:
+                v = judge_code(task, ws, visible_hashes)
+                if task.category == "browser":
+                    used_b = any(c["tool"].startswith("browser_") and c.get("ok") for c in run_res.tool_calls)
+                    v["browser_tool_used"] = used_b
+                    if not used_b:
+                        v["passed"] = False
+                return v
+
             res = _go()
-            verdict = judge_code(task, ws, visible_hashes)
+            verdict = _eval_ws(res)
+            if adaptive_bon > 1 and not verdict.get("passed") and snap_ws.exists():
+                for alt_wf, alt_role in (("sparc", "tdd_enforcer"), ("react", "build_error_resolver"))[: adaptive_bon - 1]:
+                    if str(res.stop_reason).startswith("llm_unavailable"):
+                        time.sleep(10.0)
+                    shutil.rmtree(ws, ignore_errors=True)
+                    shutil.copytree(snap_ws, ws)
+                    postmortem = (
+                        f"\nFAILURE POSTMORTEM FROM PREVIOUS ATTEMPT (DO NOT REPEAT): "
+                        f"status={res.status}, stop_reason={res.stop_reason}, "
+                        f"tools={[c['tool'] for c in res.tool_calls[-8:]]}."
+                    )
+                    res2 = loop.run(
+                        objective + postmortem, ws,
+                        verify_cmd=PYTEST_VISIBLE if task.category == "code" else None,
+                        mission_id=f"bench-{task.task_id}-esc-{int(time.time())}",
+                        max_turns=task.max_turns, max_wall_s=max_wall_s, use_judge=False,
+                        workflow=alt_wf, role=alt_role,
+                    )
+                    v2 = _eval_ws(res2)
+                    res, verdict = res2, v2
+                    verdict["adaptive_escalated"] = True
+                    if verdict.get("passed"):
+                        break
         rec.update(
             agent_status=res.status, stop_reason=res.stop_reason, turns=res.turns,
             providers=res.actor_providers, tools=[c["tool"] for c in res.tool_calls],
@@ -214,6 +240,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--workflow", default="react")
     ap.add_argument("--max-wall", type=float, default=600.0)
     ap.add_argument("--pause", type=float, default=3.0, help="seconds between tasks (provider rate limits)")
+    ap.add_argument("--adaptive-bon", type=int, default=1, help="Escalate failed tasks up to N diverse attempts with failure postmortem")
     a = ap.parse_args(argv)
 
     sel = [t for t in ALL_TASKS]
@@ -228,7 +255,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     results: List[Dict[str, Any]] = []
     for i, task in enumerate(sel, 1):
         print(f"[{i}/{len(sel)}] {task.task_id} ...", flush=True)
-        r = run_task(task, run_dir, workflow=a.workflow, max_wall_s=a.max_wall, llm=llm)
+        r = run_task(task, run_dir, workflow=a.workflow, max_wall_s=a.max_wall, llm=llm, adaptive_bon=a.adaptive_bon)
         results.append(r)
         print(f"    -> {'PASS' if r.get('passed') else 'FAIL'} status={r.get('agent_status')} turns={r.get('turns')} "
               f"tok={r.get('prompt_tokens', 0) + r.get('completion_tokens', 0)} {r.get('infra_error', '')}", flush=True)

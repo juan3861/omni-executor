@@ -107,36 +107,48 @@ class ReasoningBank:
         return None
 
     def format_trajectory_exemplar(self, objective: str, min_similarity: float = 0.25) -> Optional[str]:
-        """Formats the best matching trajectory as few-shot guidance for the LLM."""
+        """Formats the best matching trajectory and SONA pitfall warnings as guidance for the LLM."""
         match = self.find_best_trajectory(objective, min_similarity=min_similarity)
-        if not match:
+        sona_hits = self.sona.search_similar(objective, top_k=3, min_score=0.2)
+        pitfalls = [h for h in sona_hits if not h.get("success")]
+        if not match and not pitfalls:
             return None
 
-        lines = [
-            f"=== REASONING BANK: SIMILAR PAST SUCCESSFUL TRAJECTORY (Match Score: {match.get('_similarity_score')}) ===",
-            f"Past Goal: {match.get('objective', '').strip()}",
-            "Successful Actions Taken:",
-        ]
+        lines: List[str] = []
+        if match:
+            lines.extend([
+                f"=== REASONING BANK: SIMILAR PAST SUCCESSFUL TRAJECTORY (Match Score: {match.get('_similarity_score')}) ===",
+                f"Past Goal: {match.get('objective', '').strip()}",
+                "Successful Actions Taken:",
+            ])
 
-        tool_calls = match.get("tool_calls", [])
-        if isinstance(tool_calls, list):
-            for i, tc in enumerate(tool_calls[:8], 1):
-                if isinstance(tc, dict):
-                    tool = tc.get("tool", "action")
-                    args = tc.get("args", {})
-                    # Compact representation of args
-                    arg_str = ", ".join(f"{k}={repr(v)[:50]}" for k, v in args.items() if k not in ("content", "new"))
-                    lines.append(f"  Step {i}: {tool}({arg_str})")
+            tool_calls = match.get("tool_calls", [])
+            if isinstance(tool_calls, list):
+                for i, tc in enumerate(tool_calls[:8], 1):
+                    if isinstance(tc, dict):
+                        tool = tc.get("tool", "action")
+                        args = tc.get("args", {})
+                        arg_str = ", ".join(f"{k}={repr(v)[:50]}" for k, v in args.items() if k not in ("content", "new"))
+                        lines.append(f"  Step {i}: {tool}({arg_str})")
 
-        summary = match.get("final_summary")
-        if summary:
-            lines.append(f"Resolution Summary: {summary.strip()}")
+            summary = match.get("final_summary")
+            if summary:
+                lines.append(f"Resolution Summary: {summary.strip()}")
 
-        lines.extend([
-            "Guidance: Reuse the successful strategy above if applicable to your current workspace.",
-            "=== END REASONING BANK EXEMPLAR ===",
-            "",
-        ])
+            lines.extend([
+                "Guidance: Reuse the successful strategy above if applicable to your current workspace.",
+                "=== END REASONING BANK EXEMPLAR ===",
+                "",
+            ])
+
+        if pitfalls:
+            p0 = pitfalls[0]
+            lines.append(
+                f"SONA PITFALL WARNING (sim={p0.get('similarity')}): A similar past mission failed "
+                f"(tools={p0.get('tools_used', [])[:6]}; summary={str(p0.get('summary', ''))[:160]}). "
+                "Avoid repeating that stall or incomplete fix."
+            )
+            lines.append("")
         return "\n".join(lines)
 
     def record_run(self, run_result_dict: Dict[str, Any]) -> Optional[Path]:

@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from am_ua.cognition.personas import PersonaManager
 from am_ua.cognition.reasoning_bank import ReasoningBank
 from am_ua.cognition.sona_memory import SONAVectorMemory
@@ -171,3 +173,97 @@ def test_cli_shield_subcommand_on_repo(capsys: Any) -> None:
     data = json.loads(out)
     assert data["grade"] == "A"
     assert data["passed"] is True
+
+
+def test_auto_role_routing_sona_pitfall_and_adaptive_best_of_n(tmp_path: Path) -> None:
+    import sys
+    from am_ua.agent_kernel import AetherMindUniversalAgent
+
+    assert AgentLoop.auto_select_role("Run security scan on .mcp.json", "auto") == "security_auditor"
+    assert AgentLoop.auto_select_role("Fix SyntaxError in parser.py", "auto") == "build_error_resolver"
+    assert AgentLoop.auto_select_role("Fix bug and failing pytest edge case", "auto") == "tdd_enforcer"
+
+    rb = ReasoningBank(traces_dir=tmp_path / "rb_pit")
+    rb.record_run(
+        {
+            "mission_id": "m-fail-1",
+            "objective": "Fix date parser edge case",
+            "status": "FAILED",
+            "workflow": "hierarchical",
+            "role": "general_engineer",
+            "tokens": {"prompt": 100, "completion": 50},
+            "tool_calls": [{"tool": "list_dir", "args": {}}],
+            "final_summary": "Timed out reading directory",
+        }
+    )
+    guide = rb.format_trajectory_exemplar("Fix date parser edge case")
+    assert guide is not None and "SONA PITFALL WARNING" in guide
+
+    ws = tmp_path / "esc_ws"
+    ws.mkdir()
+    (ws / "target.py").write_text("VAL = 0\n", encoding="utf-8")
+
+    class EscalationTestLLM:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.total_prompt_tokens = 0
+            self.total_completion_tokens = 0
+
+        @staticmethod
+        def available() -> list[str]:
+            return []
+
+        def chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+            self.calls += 1
+            self.total_prompt_tokens += 5
+            self.total_completion_tokens += 5
+
+            class R:
+                provider = "mock"
+                model = "mock-1"
+                prompt_tokens = 5
+                completion_tokens = 5
+                total_tokens = 10
+
+            r = R()
+            user_blob = "\n".join(m.get("content", "") for m in messages)
+            if "FAILURE POSTMORTEM FROM ATTEMPT 1" in user_blob:
+                if not any('"written":' in m.get("content", "") for m in messages):
+                    r.text = json.dumps({"thought": "SPARC Phase R: fix VAL", "tool": "write_file", "args": {"path": "target.py", "content": "VAL = 42\n"}})
+                else:
+                    r.text = json.dumps({"thought": "SPARC Phase C: verified", "tool": "finish", "args": {"summary": "VAL=42", "confidence": 1.0}})
+            else:
+                # Attempt 1 makes broken edit and aborts/stops without passing verify_cmd
+                if self.calls == 1:
+                    r.text = json.dumps({"thought": "bad guess", "tool": "write_file", "args": {"path": "target.py", "content": "VAL = -1\n"}})
+                else:
+                    r.text = json.dumps({"thought": "give up", "tool": "finish", "args": {"summary": "stuck", "confidence": 0.1}})
+            return r
+
+    agent = AetherMindUniversalAgent(data_dir=tmp_path / "kdata")
+    agent.agent_loop.llm = EscalationTestLLM()  # type: ignore[assignment]
+    res = agent.run_agent_mission(
+        "Set VAL = 42 in target.py",
+        workspace=ws,
+        verify_cmd=f'"{sys.executable}" -c "import target; assert target.VAL == 42"',
+        max_turns=2,
+        workflow="hierarchical",
+        adaptive_best_of_n=2,
+    )
+    assert res["status"] == "VERIFIED"
+    assert res.get("adaptive_escalated") is True
+    assert "VAL = 42" in (ws / "target.py").read_text(encoding="utf-8")
+
+
+def test_llm_client_half_open_circuit_recovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    import time
+    from am_ua.cognition.llm_client import LLMClient, ProviderSpec
+
+    spec = ProviderSpec("mock_prov", "http://127.0.0.1:9", "NONEXISTENT_ENV", "m1")
+    client = LLMClient(providers=[spec], breaker_threshold=2, breaker_cooldown_s=0.05)
+    client._failures["mock_prov"] = 2
+    client._cooldown_until["mock_prov"] = time.monotonic() + 0.05
+    assert client._is_circuit_open("mock_prov") is True
+    time.sleep(0.08)
+    assert client._is_circuit_open("mock_prov") is False
+    assert "mock_prov" in client.available()

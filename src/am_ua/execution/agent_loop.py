@@ -672,6 +672,21 @@ class AgentLoop:
         self._register_tools()
 
     @staticmethod
+    def auto_select_role(objective: str, requested_role: str) -> str:
+        """Select optimal ECC/engineering persona when `role='auto'`."""
+        r = (requested_role or "general_engineer").strip().lower()
+        if r != "auto":
+            return requested_role
+        low = (objective or "").lower()
+        if any(k in low for k in ("security", "secret", "shield", "vulnerability", "injection", "audit")):
+            return "security_auditor"
+        if any(k in low for k in ("syntaxerror", "importerror", "build error", "compile", "type error")):
+            return "build_error_resolver"
+        if any(k in low for k in ("test", "pytest", "bug", "fix", "edge case", "regression")):
+            return "tdd_enforcer"
+        return "general_engineer"
+
+    @staticmethod
     def _extract_sparc_phase(thought: str) -> str:
         s = str(thought).strip()
         m = re.search(r"SPARC\s*Phase:\s*([SPARC])", s, re.IGNORECASE)
@@ -807,6 +822,7 @@ class AgentLoop:
         )
 
         # SPARC vs ReAct base prompt selection & Persona contract injection
+        role = self.auto_select_role(objective, role)
         base_prompt = SPARC_SYSTEM_PROMPT if (workflow or "").lower() == "sparc" else SYSTEM_PROMPT
         system_prompt = self.persona_mgr.inject_persona(base_prompt, role)
 

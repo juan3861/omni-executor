@@ -118,20 +118,38 @@ class LLMClient:
         providers: Optional[List[ProviderSpec]] = None,
         *,
         timeout_s: float = 90.0,
-        breaker_threshold: int = 2,
+        breaker_threshold: int = 3,
+        breaker_cooldown_s: float = 25.0,
     ) -> None:
         self.providers = providers if providers is not None else build_provider_chain()
         self.timeout_s = timeout_s
         self.breaker_threshold = breaker_threshold
+        self.breaker_cooldown_s = float(breaker_cooldown_s)
         self._failures: Dict[str, int] = {}
+        self._cooldown_until: Dict[str, float] = {}
+        self._dead: set[str] = set()
         self._lock = threading.Lock()
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
         self.calls = 0
 
     # ------------------------------------------------------------------ helpers
+    def _is_circuit_open(self, name: str) -> bool:
+        if name in self._dead:
+            return True
+        if self._failures.get(name, 0) < self.breaker_threshold:
+            return False
+        until = self._cooldown_until.get(name, 0.0)
+        if time.monotonic() >= until:
+            # Half-open recovery after transient cooldown
+            with self._lock:
+                self._failures[name] = max(0, self.breaker_threshold - 1)
+                self._cooldown_until.pop(name, None)
+            return False
+        return True
+
     def available(self) -> List[str]:
-        return [p.name for p in self.providers if self._failures.get(p.name, 0) < self.breaker_threshold]
+        return [p.name for p in self.providers if not self._is_circuit_open(p.name)]
 
     @staticmethod
     def _payload(spec: ProviderSpec, messages: List[Dict[str, str]], max_tokens: int, temperature: Optional[float], json_mode: bool) -> Dict[str, Any]:
@@ -176,8 +194,15 @@ class LLMClient:
         if prefer:
             chain.sort(key=lambda p: 0 if p.name == prefer else 1)
         attempts: List[Dict[str, Any]] = []
+        # If every non-dead provider is momentarily in short cooldown, wait briefly instead of failing fast
+        live = [p for p in chain if p.name not in self._dead]
+        if live and all(self._is_circuit_open(p.name) for p in live):
+            soonest = min(self._cooldown_until.get(p.name, 0.0) for p in live)
+            wait_s = max(0.0, soonest - time.monotonic())
+            if 0.0 < wait_s <= self.breaker_cooldown_s + 1.0:
+                time.sleep(min(wait_s + 0.2, 26.0))
         for spec in chain:
-            if self._failures.get(spec.name, 0) >= self.breaker_threshold:
+            if self._is_circuit_open(spec.name):
                 attempts.append({"provider": spec.name, "skipped": "circuit_open"})
                 continue
             models_to_try = [spec.model] + [m for m in spec.fallback_models if m != spec.model]
@@ -196,6 +221,7 @@ class LLMClient:
                         ct = int(usage.get("completion_tokens") or 0)
                         with self._lock:
                             self._failures[spec.name] = 0
+                            self._cooldown_until.pop(spec.name, None)
                             self.total_prompt_tokens += pt
                             self.total_completion_tokens += ct
                             self.calls += 1
@@ -213,15 +239,22 @@ class LLMClient:
                         quota_dead = "insufficient_quota" in detail or "credit_balance" in detail
                         if exc.code not in self.RETRYABLE_HTTP or quota_dead:
                             with self._lock:
+                                self._dead.add(spec.name)
                                 self._failures[spec.name] = self.breaker_threshold
                         else:
                             with self._lock:
-                                self._failures[spec.name] = self._failures.get(spec.name, 0) + 1
+                                fails = self._failures.get(spec.name, 0) + 1
+                                self._failures[spec.name] = fails
+                                if fails >= self.breaker_threshold:
+                                    self._cooldown_until[spec.name] = time.monotonic() + self.breaker_cooldown_s
                         break
                     except (urllib.error.URLError, TimeoutError, socket.timeout, OSError, ValueError, json.JSONDecodeError) as exc:
                         attempts.append({"provider": spec.name, "model": cand_model, "error": f"{type(exc).__name__}: {str(exc)[:200]}"})
                         with self._lock:
-                            self._failures[spec.name] = self._failures.get(spec.name, 0) + 1
+                            fails = self._failures.get(spec.name, 0) + 1
+                            self._failures[spec.name] = fails
+                            if fails >= self.breaker_threshold:
+                                self._cooldown_until[spec.name] = time.monotonic() + self.breaker_cooldown_s
                         break
         raise LLMUnavailableError(f"All LLM providers failed: {attempts}")
 

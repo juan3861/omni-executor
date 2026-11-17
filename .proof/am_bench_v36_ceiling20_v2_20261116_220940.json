@@ -1,0 +1,692 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "v36_ceiling20_v2",
+  "workflow": "hierarchical",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\v36_ceiling20_v2_20261116_220940",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 20,
+  "selected": 20,
+  "summary": {
+    "overall": {
+      "n": 20,
+      "passed": 19,
+      "pass_rate": 0.95,
+      "tokens": 1780730,
+      "llm_calls": 326,
+      "elapsed_s": 2323.5
+    },
+    "browser": {
+      "n": 5,
+      "passed": 4,
+      "pass_rate": 0.8,
+      "tokens": 322265,
+      "llm_calls": 84,
+      "elapsed_s": 306.2
+    },
+    "code": {
+      "n": 15,
+      "passed": 15,
+      "pass_rate": 1.0,
+      "tokens": 1458465,
+      "llm_calls": 242,
+      "elapsed_s": 2017.3
+    }
+  },
+  "results": [
+    {
+      "task_id": "c01_off_by_one",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 9,
+      "providers": [
+        "groq",
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "run",
+        "replace_in_file",
+        "run",
+        "run",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.04s\n",
+      "elapsed_s": 45.5,
+      "llm_calls": 9,
+      "prompt_tokens": 18568,
+      "completion_tokens": 1280
+    },
+    {
+      "task_id": "c02_mutable_default",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 7,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.42s\n",
+      "elapsed_s": 35.8,
+      "llm_calls": 7,
+      "prompt_tokens": 11626,
+      "completion_tokens": 1204
+    },
+    {
+      "task_id": "c03_slugify_unicode",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "replace_in_file",
+        "run",
+        "run",
+        "run",
+        "replace_in_file",
+        "run",
+        "run",
+        "list_dir",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.09s\n",
+      "elapsed_s": 86.4,
+      "llm_calls": 20,
+      "prompt_tokens": 79508,
+      "completion_tokens": 5387
+    },
+    {
+      "task_id": "c04_money_rounding",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 7,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.39s\n",
+      "elapsed_s": 46.5,
+      "llm_calls": 7,
+      "prompt_tokens": 12224,
+      "completion_tokens": 1470
+    },
+    {
+      "task_id": "c05_multi_file_rename",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "search",
+        "run",
+        "replace_in_file",
+        "replace_in_file",
+        "replace_in_file",
+        "replace_in_file",
+        "search",
+        "run",
+        "run",
+        "run",
+        "run",
+        "list_dir",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.32s\n",
+      "adaptive_escalated": true,
+      "elapsed_s": 328.1,
+      "llm_calls": 35,
+      "prompt_tokens": 259299,
+      "completion_tokens": 65279
+    },
+    {
+      "task_id": "c06_cli_flag",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 9,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.97s\n",
+      "elapsed_s": 47.7,
+      "llm_calls": 10,
+      "prompt_tokens": 19599,
+      "completion_tokens": 2522
+    },
+    {
+      "task_id": "c07_fib_performance",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 16,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "write_file",
+        "run",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "read_file",
+        "replace_in_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.29s\n",
+      "elapsed_s": 133.6,
+      "llm_calls": 17,
+      "prompt_tokens": 59967,
+      "completion_tokens": 7535
+    },
+    {
+      "task_id": "c08_csv_quotes",
+      "category": "code",
+      "agent_status": "VERIFIED_AFTER_BUDGET",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "search",
+        "run",
+        "write_file",
+        "run",
+        "replace_in_file",
+        "run",
+        "list_dir",
+        "run",
+        "run",
+        "read_file",
+        "write_file",
+        "run",
+        "write_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.28s\n",
+      "elapsed_s": 66.9,
+      "llm_calls": 20,
+      "prompt_tokens": 68075,
+      "completion_tokens": 4259
+    },
+    {
+      "task_id": "c09_br_date",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 14,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "write_file",
+        "run",
+        "run",
+        "list_dir"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.40s\n",
+      "elapsed_s": 491.7,
+      "llm_calls": 14,
+      "prompt_tokens": 135406,
+      "completion_tokens": 40128
+    },
+    {
+      "task_id": "c10_stack_errors",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 10,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "run",
+        "list_dir",
+        "list_dir",
+        "write_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.15s\n",
+      "elapsed_s": 37.2,
+      "llm_calls": 10,
+      "prompt_tokens": 19530,
+      "completion_tokens": 1400
+    },
+    {
+      "task_id": "c11_deep_merge",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 8,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "write_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.09s\n",
+      "elapsed_s": 43.6,
+      "llm_calls": 8,
+      "prompt_tokens": 15600,
+      "completion_tokens": 2732
+    },
+    {
+      "task_id": "c12_email_regex",
+      "category": "code",
+      "agent_status": "VERIFIED_AFTER_BUDGET",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "run",
+        "list_dir",
+        "replace_in_file",
+        "run",
+        "write_file",
+        "run",
+        "replace_in_file",
+        "read_file",
+        "write_file",
+        "run",
+        "run",
+        "write_file",
+        "read_file",
+        "replace_in_file",
+        "run",
+        "write_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.05s\n",
+      "adaptive_escalated": true,
+      "elapsed_s": 413.9,
+      "llm_calls": 42,
+      "prompt_tokens": 366096,
+      "completion_tokens": 81286
+    },
+    {
+      "task_id": "c13_sort_key",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 11,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "run",
+        "replace_in_file",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.26s\n",
+      "elapsed_s": 56.5,
+      "llm_calls": 11,
+      "prompt_tokens": 26765,
+      "completion_tokens": 2202
+    },
+    {
+      "task_id": "c14_lru_cache",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 15,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "list_dir",
+        "write_file",
+        "run",
+        "run",
+        "run",
+        "read_file",
+        "write_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.38s\n",
+      "elapsed_s": 73.4,
+      "llm_calls": 15,
+      "prompt_tokens": 46741,
+      "completion_tokens": 3878
+    },
+    {
+      "task_id": "c15_safe_join",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 16,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "search",
+        "list_dir",
+        "replace_in_file",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "read_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.32s\n",
+      "elapsed_s": 110.5,
+      "llm_calls": 17,
+      "prompt_tokens": 83338,
+      "completion_tokens": 15561
+    },
+    {
+      "task_id": "b01_dynamic_form",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 9,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.19s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 45.5,
+      "llm_calls": 11,
+      "prompt_tokens": 27922,
+      "completion_tokens": 3896
+    },
+    {
+      "task_id": "b02_table_filter_sum",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 8,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "browser_observe",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.21s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 37.8,
+      "llm_calls": 10,
+      "prompt_tokens": 21983,
+      "completion_tokens": 4069
+    },
+    {
+      "task_id": "b03_multi_step_nav",
+      "category": "browser",
+      "agent_status": "COMPLETED_UNVERIFIED",
+      "stop_reason": "finish",
+      "turns": 10,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_extract",
+        "write_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.10s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 53.1,
+      "llm_calls": 14,
+      "prompt_tokens": 36214,
+      "completion_tokens": 3953
+    },
+    {
+      "task_id": "b04_self_healing_button",
+      "category": "browser",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "max_turns",
+      "turns": 14,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_act",
+        "read_file",
+        "browser_extract",
+        "write_file",
+        "read_file",
+        "browser_observe",
+        "browser_extract",
+        "browser_extract",
+        "browser_act",
+        "browser_act",
+        "browser_extract"
+      ],
+      "passed": false,
+      "hidden_exit_code": 1,
+      "visible_tampered": [],
+      "hidden_output_tail": "F                                                                        [100%]\n================================== FAILURES ===================================\n_________________________________ test_answer _________________________________\n\n    def test_answer():\n>       assert pathlib.Path(\"answer.txt\").read_text(encoding=\"utf-8\").strip() == \"DISPATCH:REF-88:OK\"\nE       AssertionError: assert 'Confirm Disp...CH:REF-第一个:OK' == 'DISPATCH:REF-88:OK'\nE         \nE         + Confirm Dispatch\nE         + \nE         - DISPATCH:REF-88:OK\nE         ?              ^^\nE         + DISPATCH:REF-第一个:OK\nE         ?              ^^^\n\ntests_hidden\\test_h.py:5: AssertionError\n=========================== short test summary info ===========================\nFAILED tests_hidden/test_h.py::test_answer - AssertionError: assert 'Confirm ...\n1 failed in 1.62s\n",
+      "browser_tool_used": true,
+      "adaptive_escalated": true,
+      "elapsed_s": 125.6,
+      "llm_calls": 31,
+      "prompt_tokens": 128932,
+      "completion_tokens": 14624
+    },
+    {
+      "task_id": "b05_validation_calc",
+      "category": "browser",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "max_turns",
+      "turns": 14,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_act",
+        "browser_observe",
+        "browser_act",
+        "browser_act",
+        "browser_act",
+        "read_file",
+        "browser_observe",
+        "browser_act",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 1.35s\n",
+      "browser_tool_used": true,
+      "elapsed_s": 44.2,
+      "llm_calls": 18,
+      "prompt_tokens": 76474,
+      "completion_tokens": 4198
+    }
+  ]
+}

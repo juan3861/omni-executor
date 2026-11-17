@@ -681,6 +681,7 @@ class AetherMindUniversalAgent:
         wheel_timeout_s: float = 0.0,
         agui_port: Optional[int] = None,
         best_of_n: int = 1,
+        adaptive_best_of_n: int = 1,
     ) -> Dict[str, Any]:
         """REAL agent mission: LLM plans and acts via tools; VERIFIED only if `verify_cmd` exits 0."""
         mc = MissionContract(
@@ -745,6 +746,11 @@ class AetherMindUniversalAgent:
             if on_event:
                 event_bus.add_sink(CallbackSink(on_event))
 
+        snap_dir: Optional[Path] = None
+        if int(adaptive_best_of_n) > 1:
+            snap_dir = self.bbon_engine.scratch_root / f"snap-{mc.mission_id}"
+            self.bbon_engine._copy_workspace(Path(workspace).resolve(), snap_dir)
+
         try:
             with self.telemetry.start_span("kernel.run_agent_mission", attributes={"mission_id": mc.mission_id, "role": role, "workflow": workflow}) as sp:
                 res = loop.run(
@@ -754,9 +760,64 @@ class AetherMindUniversalAgent:
                 )
                 sp["tokens_used"] = res.tokens["prompt"] + res.tokens["completion"]
                 sp["attributes"]["status"] = res.status
+
+            attempt1_passed = bool(res.verification and res.verification.get("passed")) if verify_cmd else (res.stop_reason == "finish" and res.status != "FAILED")
+            if snap_dir is not None and not attempt1_passed:
+                v_tail = ((res.verification or {}).get("output_tail") or "")[-600:]
+                postmortem = (
+                    f"\n\nFAILURE POSTMORTEM FROM ATTEMPT 1 (DO NOT REPEAT): "
+                    f"status={res.status}, stop_reason={res.stop_reason}, "
+                    f"tools={[c.get('tool') for c in res.tool_calls[-8:]]}."
+                    + (f"\nLast verification output:\n{v_tail}" if v_tail else "")
+                )
+                esc_strategies = [("sparc", "tdd_enforcer"), ("react", "build_error_resolver")]
+                esc_runs: Dict[str, Dict[str, Any]] = {}
+
+                def _esc_runner(cand_ws: Path, cand_idx: int) -> Dict[str, Any]:
+                    wf_alt, role_alt = esc_strategies[(cand_idx - 1) % len(esc_strategies)]
+                    r2 = loop.run(
+                        objective + postmortem,
+                        cand_ws,
+                        verify_cmd=verify_cmd,
+                        mission_id=f"{mc.mission_id}-esc{cand_idx}",
+                        max_turns=max_turns,
+                        actor_provider=actor_provider,
+                        role=role_alt,
+                        workflow=wf_alt,
+                        wheel_timeout_s=wheel_timeout_s,
+                    )
+                    d2 = asdict(r2)
+                    esc_runs[f"cand_{cand_idx}"] = d2
+                    return d2
+
+                bbon_res = self.bbon_engine.run_code_best_of_n(
+                    objective=objective,
+                    workspace=snap_dir,
+                    runner_fn=_esc_runner,
+                    n=int(adaptive_best_of_n) - 1,
+                    early_stop_on_first_verified=True,
+                    use_llm_judge=False,
+                )
+                win_id = bbon_res["winner_candidate_id"]
+                winner_out = dict(esc_runs.get(win_id) or next(iter(esc_runs.values())))
+                winner_passed = bool((winner_out.get("verification") or {}).get("passed")) if verify_cmd else (winner_out.get("stop_reason") == "finish")
+                if winner_passed or winner_out.get("status", "").startswith("VERIFIED"):
+                    sync_files = sorted(set(res.changed_files or []) | set(winner_out.get("changed_files") or []) | set(bbon_res.get("synced_files") or []))
+                    self.bbon_engine._sync_winner_to_workspace(snap_dir, Path(workspace).resolve(), sync_files)
+                    winner_out["adaptive_escalated"] = True
+                    winner_out["attempt1_status"] = res.status
+                    self.memory.sync_turn(objective, f"[{winner_out.get('status')}] {str(winner_out.get('final_summary',''))[:500]}", session_id=mc.mission_id)
+                    return winner_out
+
             self.memory.sync_turn(objective, f"[{res.status}] {res.final_summary[:500]}", session_id=mc.mission_id)
-            return asdict(res)
+            out_dict = asdict(res)
+            if int(adaptive_best_of_n) > 1:
+                out_dict["adaptive_escalated"] = False
+            return out_dict
         finally:
+            if snap_dir is not None and snap_dir.exists():
+                import shutil
+                shutil.rmtree(snap_dir, ignore_errors=True)
             if sse_server:
                 sse_server.close()
 
