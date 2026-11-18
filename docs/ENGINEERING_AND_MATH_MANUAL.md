@@ -155,7 +155,42 @@ where $\bar{x}_i$ is the mean reward of candidate $i$, $n_i$ its visit count and
 
 ---
 
-## 7. External reasoning components
+## 7. Pipe-aware fail-closed command risk classification
+
+**Source:** `classify_shell_command` and `evaluate_autonomy_gate` in `src/am_ua/execution/hook_engine.py`
+
+Before a shell command runs, quoted heredoc and here-string literal bodies (`<< 'EOF'`, `@' ... '@`) are stripped as inert data while unquoted heredocs stay inspectable. The command is split quote-safely across pipes and chain operators (`|`, `&&`, `||`, `;`) into segments $\mathrm{seg}_1, \dots, \mathrm{seg}_m$, each assigned an ordered integer risk class $C(\mathrm{seg}_k) \in \{1:\mathrm{READ},\ 2:\mathrm{WRITE},\ 3:\mathrm{NETWORK},\ 4:\mathrm{INSTALL},\ 5:\mathrm{DESTRUCTIVE}\}$:
+
+```math
+C(\mathrm{cmd}) = \max_{1 \le k \le m} C(\mathrm{seg}_k)
+```
+
+where any segment not matching the deterministic read-only allowlist fails closed to $2\ (\mathrm{WRITE})$, and any segment sequence where $\mathrm{NETWORK}$ ($3$) pipes into a shell interpreter upgrades to $5\ (\mathrm{DESTRUCTIVE})$. Decisions (`ALLOW`, `PROMPT`, `BLOCK`) then evaluate deterministically against the active autonomy tier (`readonly`, `supervised`, `full`) and optional prefix allowlist.
+
+**Where to reuse it:** CI/CD runners, developer assistants, and database migration CLI wrappers where chained commands must inherit the worst-case blast radius rather than trusting the first verb.
+
+---
+
+## 8. Two-stage calibrated tool & scope filtering
+
+**Source:** `rank_tools_for_objective` and `ROLE_TOOL_SCOPES` in `src/am_ua/execution/agent_loop.py`
+
+To avoid sending bloated tool schemas to weak or latency-bound models, tool selection runs in two deterministic stages:
+
+1. **Candidate narrowing:** `ROLE_TOOL_SCOPES` restricts specialist roles (`strict_auditor`, `security_auditor`, `product_ceo`, `systems_architect`, `eng_supervisor`), and either `FamilyThenDecide` selects at most $2$ relevant tool families or `RetrieveThenDecide` pre-shortlists top-$K$ candidates ($K=20$) to form $\mathcal{C}(q)$.
+2. **Calibrated filtering & thresholding:** Over $\mathcal{C}(q)$, BM25-style relevance logits $s(q, t)$ normalize via Softmax and drop tools below $p_{\min} = 0.05$:
+
+```math
+P(t \mid q) = \frac{\exp\!\big(s(q,t)\big)}{\sum_{j \in \mathcal{C}(q)} \exp\!\big(s(q,j)\big)}, \qquad \mathcal{T}(q) = \{\, t \in \mathcal{C}(q) : P(t \mid q) \ge p_{\min} \,\}
+```
+
+A separate binary estimate (`needs_tools_prob`) indicates whether the prompt needs workspace tools at all. In browser execution (`src/am_ua/gui/cdp_browser.py`), checkout/payment actions are guarded prior to DOM interaction (`block_on_payment=True`), halting before irreversible financial clicks.
+
+**Where to reuse it:** large tool/plugin registries (50–500 MCP tools) where full-catalog schema injection blows context budgets or triggers hallucinated tool calls.
+
+---
+
+## 9. External reasoning components
 
 `src/am_ua/cognition/ure_bridge.py` delegates formal checks to external components: an SMT solver (Z3) for consistency and minimal unsatisfiable cores, and a causal engine that audits claims of necessity and sufficiency of the form $do(X)$. `src/am_ua/memory/mnemos_connector.py` adapts an external long-term memory service. These integrations require those components to be installed and are not re-derived here; consult the respective projects for their mathematics.
 

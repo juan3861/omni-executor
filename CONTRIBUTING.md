@@ -26,7 +26,7 @@ playwright install chromium
 Run all three verification commands from the repository root and confirm clean pass results:
 
 ```powershell
-# 1. Automated test suite (73 unit & integration tests)
+# 1. Automated test suite (74 unit & integration tests)
 pytest tests -q
 
 # 2. Multi-organ & SHA-256 constitutional readiness audit

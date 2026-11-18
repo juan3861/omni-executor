@@ -1,0 +1,45 @@
+# OmniExecutor Agent
+
+> Autonomous software engineering harness with a durable SQLite-WAL execution engine, executable verification oracle (`--verify`), pipe-aware fail-closed command gating, hierarchical multi-wave team orchestrator (`solo_specialist` -> `dev_squad` -> `executive_enterprise_fleet`), self-healing CDP browser engine, closed-loop Windows desktop RPA, AST-sealed adaptive Python skills, and native MCP / A2A v0.3 / AG-UI protocol support.
+
+## Canonical Documentation
+- [README.md](README.md): Complete user & developer guide covering installation, 14 CLI subcommands, 29 workspace tools, 10 engineering personas, MCP/A2A/AG-UI integrations, 15 SAST rules, playbooks, benchmarks, and caveats.
+- [docs/ENGINEERING_AND_MATH_MANUAL.md](docs/ENGINEERING_AND_MATH_MANUAL.md): Exact mathematical formulations (durable effect fencing, Brier autonomy tiers, PageRank code centrality, RAM worker scaling, Casimir storage pressure, UCB1 evolution, pipe-aware command classification, and two-stage tool probability selection).
+- [CONTRIBUTING.md](CONTRIBUTING.md): Setup, automated verification gate, constitutional seal boundaries, and extension points.
+- [SECURITY.md](SECURITY.md): Defense-in-depth security architecture, secret/SAST rules, symlink protection, and reporting policy.
+- [LICENSE](LICENSE): MIT License.
+
+## Entry Points
+- Public Python Facade: `from am_ua import OmniExecutorAgent` (`src/am_ua/__init__.py` -> `src/am_ua/agent_kernel.py`)
+- Windows CLI Wrapper: `omni-executor.cmd` (`src/am_ua/cli.py`)
+- MCP Server (`stdio`, JSON-RPC 2.0): `omni-executor.cmd mcp-serve` (`src/am_ua/execution/mcp_federation.py`)
+- A2A v0.3 & Channel Gateway: `SubAgentSessionBus.handle_a2a_rpc` / `ingest_channel_event` (`src/am_ua/execution/subagent_bus.py`)
+- Live AG-UI SSE Stream: `--agui-port <port>` (`src/am_ua/cognition/agui_protocol.py`)
+
+## CLI Subcommands (14)
+- `doctor`: Multi-organ readiness, SQLite-WAL single state owner, SHA-256 constitutional seal, and host headroom.
+- `shield [target]`: Static security & SAST scanner (`Grade A`–`F` across 15 rules).
+- `mission "<objective>"`: Autonomous coding/browser/desktop execution verified against `--verify` (`--workflow react|sparc|hierarchical`, `--role`, `--best-of-n`, `--wheel-timeout`, `--agui-port`).
+- `repomap [target]`: Polyglot AST symbol map ranked with PageRank (`Python`, `JS/TS`, `Rust`, `Go`).
+- `radar [target]`: Topological coupling & cohesion summary.
+- `browser observe|act|extract`: Isolated Playwright/CDP browser with `[1..N]` indexed DOM, self-healing selectors, and payment hard-stop guard.
+- `pc probe|windows|observe|find|clipboard|processes|port`: Closed-loop Windows UIA + Set-of-Mark + OCR automation.
+- `skills list|search|run`: AST-gated, SHA-256 sealed adaptive Python skills & CLI wrappers.
+- `mcp-serve`: Expose 7 tools over MCP `stdio`.
+- `bench run|report`: Execute or summarize sealed evaluation tasks (`eval/am_bench/`).
+- `wheel status|resume|abort`: Human-in-the-loop pause/resume control.
+- `ingest-doc <file>`: Ingest `.docx`/`.xlsx`/`.csv`/`.pdf`/`.md` with external taint tracking.
+- `handoff`: Export portable `HANDOFF_PACK`.
+- `pipeline "<objective>"`: Deterministic diagnostic pipeline.
+
+## Key Subsystems (`src/am_ua/`)
+- `governance/seal_guard.py`: SHA-256 manifest enforcement over protected zones (`constitution/`, `eval/`).
+- `governance/homeostasis.py`: RAM, disk pressure (`F_c(d)`), token budget, and stagnation governor.
+- `execution/durable_engine.py`: SQLite-WAL durable state owner, effect taxonomy, `OUTCOME_UNKNOWN` recovery, and lease-epoch fencing.
+- `execution/hook_engine.py`: Deterministic `PreToolUse`/`PostToolUse` hooks, secret write blocker, Python AST checker, and pipe-aware 5-class command classifier (`READ | WRITE | NETWORK | INSTALL | DESTRUCTIVE`) + autonomy gate (`readonly | supervised | full`).
+- `execution/agent_loop.py`: ReAct/SPARC/Hierarchical loop, Turn-0 workspace inventory, up to 6 batched actions/turn, symlink escape guard, `ROLE_TOOL_SCOPES` (`HostOnly`), and `rank_tools_for_objective` (`FamilyThenDecide` / `RetrieveThenDecide`).
+- `execution/subagent_bus.py`: 3-tier severity-scored team orchestration (`1 -> 4 -> 9` agents across 4 waves, max depth `2`, max `16` agents, exclusive GUI lock), A2A v0.3 JSON-RPC, and inbound channel burst debouncing.
+- `gui/cdp_browser.py`: Indexed CDP browser with self-healing DOM recovery and checkout/payment boundary hard stop.
+- `memory/triad_provider.py`: Unified core blocks + bi-temporal + Q-utility memory with host-pinned `ScopedMemoryFacade` namespace isolation.
+- `perception/`: `polyglot_repomap.py` (PageRank), `knowledge_index.py` (SHA-256 incremental tree index & Mermaid export), `silicon_radar.py`.
+- `security/agent_shield.py`: 15-rule scanner covering hardcoded keys, MCP configs, hook injection, permission bypasses, and Python/JS/TS SAST patterns.

@@ -10,6 +10,7 @@ Unifies all 3 memory tiers behind the official `hermes-agent` `MemoryProvider` A
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -24,6 +25,80 @@ from agent.memory_provider import MemoryProvider  # type: ignore[import-untyped]
 from .core_blocks import CoreMemoryBlockStore
 from .mnemos_connector import MnemosBiTemporalAdapter
 from .msea_client import MSEAFrankensteinClient
+
+
+_NAMESPACE_RX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+
+
+class ScopedMemoryFacade:
+    """Host-pinned memory namespace isolation facade (prevents cross-tenant memory poisoning)."""
+
+    def __init__(self, provider: "TriadMemoryProvider", namespace: str) -> None:
+        ns = (namespace or "").strip()
+        if not ns or ".." in ns or "/" in ns or "\\" in ns or "\x00" in ns or not _NAMESPACE_RX.match(ns):
+            raise ValueError(f"Invalid memory namespace: {namespace!r}")
+        self._provider = provider
+        self._namespace = ns
+
+    @property
+    def namespace(self) -> str:
+        return self._namespace
+
+    def write(
+        self,
+        content: str,
+        *,
+        memory_type: str = "semantic",
+        confidence: float = 0.8,
+        **ignored_metadata: Any,
+    ) -> Dict[str, Any]:
+        """Write scoped memory bound strictly to the host-pinned namespace (ignores caller namespace args)."""
+        _ = ignored_metadata  # caller/LLM cannot override namespace
+        tag = f"[ns:{self._namespace}]"
+        scoped_content = f"{tag} {content.strip()}"
+        mn_rec = self._provider.mnemos.write_memory(
+            scoped_content,
+            memory_type=memory_type,
+            importance=max(0.1, min(1.0, float(confidence))),
+            source_origin=f"ns:{self._namespace}",
+            auto_invalidate_conflicts=False,
+        )
+        ms_atom = self._provider.msea.ingest_atom(
+            scoped_content,
+            kind=memory_type,
+            confidence=confidence,
+            source=f"ns://{self._namespace}",
+        )
+        return {
+            "ok": True,
+            "namespace": self._namespace,
+            "mnemos_record": mn_rec,
+            "msea_atom": ms_atom,
+        }
+
+    def recall(self, query: str, *, limit: int = 4, **ignored_metadata: Any) -> Dict[str, Any]:
+        """Recall only entries belonging to the host-pinned namespace."""
+        _ = ignored_metadata
+        tag = f"[ns:{self._namespace}]"
+        raw = self._provider.recall_triad(query, limit=max(10, limit * 4))
+        mn_hits = [
+            item
+            for item in raw.get("mnemos", {}).get("items", [])
+            if tag in str(item.get("content", "")) or item.get("source_origin") == f"ns:{self._namespace}"
+        ][:limit]
+        ms_hits: List[Dict[str, Any]] = []
+        for hit in raw.get("msea", {}).get("hits", []):
+            atom = hit.get("atom", hit)
+            if tag in str(atom.get("content", "")) or atom.get("source") == f"ns://{self._namespace}":
+                ms_hits.append(hit)
+                if len(ms_hits) >= limit:
+                    break
+        return {
+            "ok": True,
+            "namespace": self._namespace,
+            "mnemos": {"items": mn_hits},
+            "msea": {"hits": ms_hits},
+        }
 
 
 class TriadMemoryProvider(MemoryProvider):
@@ -244,3 +319,7 @@ class TriadMemoryProvider(MemoryProvider):
 
     def shutdown(self) -> None:
         self._prefetched_cache.clear()
+
+    def scoped(self, namespace: str) -> ScopedMemoryFacade:
+        """Return a memory facade bound immutably by the host to `namespace`."""
+        return ScopedMemoryFacade(self, namespace)

@@ -24,8 +24,17 @@ import difflib
 import hashlib
 import json
 from pathlib import Path
+import re
 import time
 from typing import Any, Dict, List, Optional
+
+
+PAYMENT_TRIGGER_RE = re.compile(
+    r"\b(pay\s+now|place\s+order|complete\s+purchase|confirm\s+payment|submit\s+payment|"
+    r"buy\s+now|checkout\s+now|pagar\s+agora|finalizar\s+compra|confirmar\s+pagamento|"
+    r"pix\s+copia|credit\s*card|cvv|card\s*number)\b",
+    re.IGNORECASE,
+)
 
 
 DOM_INDEXER_JS = """
@@ -101,12 +110,14 @@ class CDPIndexedBrowser:
         artifact_dir: Optional[Path | str] = None,
         *,
         headless: bool = True,
+        block_on_payment: bool = True,
     ) -> None:
         self.artifact_dir = Path(
             artifact_dir or r"F:\AetherMind_Temp\cdp_browser_artifacts"
         ).resolve()
         self.artifact_dir.mkdir(parents=True, exist_ok=True)
         self.headless = bool(headless)
+        self.block_on_payment = bool(block_on_payment)
         self._pw: Any = None
         self._browser: Any = None
         self._context: Any = None
@@ -210,6 +221,42 @@ class CDPIndexedBrowser:
                 best_idx = idx
         return best_idx
 
+    def detect_payment_boundary(
+        self,
+        *,
+        action: str,
+        idx: Optional[int] = None,
+        target: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Detect checkout/payment buttons or labels before dispatching an irreversible click/submit."""
+        act_name = (action or "").lower().strip()
+        if act_name not in ("click", "press", "submit"):
+            return None
+
+        resolved_idx = int(idx) if idx is not None else None
+        if resolved_idx is None and target:
+            resolved_idx = self._self_heal_resolve_idx(target)
+
+        candidates: List[str] = []
+        elem_text = ""
+        if resolved_idx is not None and resolved_idx in self.last_elements:
+            el = self.last_elements[resolved_idx]
+            elem_text = f"{el.text} {el.name} {el.placeholder} {el.href}".strip()
+            candidates.append(elem_text)
+        if target:
+            candidates.append(str(target))
+
+        for hay in candidates:
+            m = PAYMENT_TRIGGER_RE.search(hay)
+            if m:
+                return {
+                    "matched_phrase": m.group(0),
+                    "idx": resolved_idx,
+                    "element_text": elem_text or str(target or ""),
+                    "target": target,
+                }
+        return None
+
     def act(
         self,
         action: str,
@@ -218,11 +265,28 @@ class CDPIndexedBrowser:
         target: Optional[str] = None,
         text: Optional[str] = None,
         url: Optional[str] = None,
+        allow_payment_override: bool = False,
     ) -> Dict[str, Any]:
         """Stagehand/browser-use `act` primitive with self-healing selector recovery and Triple Proof."""
-        page = self._ensure_page()
         t0 = time.perf_counter()
         act_name = action.lower().strip()
+
+        if self.block_on_payment and not allow_payment_override:
+            boundary = self.detect_payment_boundary(action=act_name, idx=idx, target=target)
+            if boundary is not None:
+                return {
+                    "ok": False,
+                    "blocked_by_payment_guard": True,
+                    "requires_human_approval": True,
+                    "action": act_name,
+                    "matched_trigger": boundary,
+                    "error": (
+                        "Payment/checkout boundary reached: autonomous execution paused before financial "
+                        "transaction. Request human approval."
+                    ),
+                }
+
+        page = self._ensure_page()
 
         if act_name == "goto" and (url or target):
             obs = self.observe(url=url or target)

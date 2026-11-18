@@ -121,6 +121,19 @@ class AdaptiveSkillForge:
         self._records: Dict[str, AdaptiveSkillRecord] = {}
         self._load_manifest()
 
+    def _assert_no_symlink(self, path: Path) -> None:
+        """Reject symlinked skill bundles and escapes outside skills_dir."""
+        if path.is_symlink():
+            raise SkillSecurityViolationError(f"Symlinked skill files are not permitted: {path}")
+        resolved = path.resolve()
+        if resolved != self.skills_dir and self.skills_dir not in resolved.parents:
+            raise SkillSecurityViolationError(f"Skill path escapes skills directory: {path}")
+        cur = resolved
+        while cur != self.skills_dir and self.skills_dir in cur.parents:
+            if cur.is_symlink():
+                raise SkillSecurityViolationError(f"Symlinked directory component rejected: {cur}")
+            cur = cur.parent
+
     def _load_manifest(self) -> None:
         if not self.manifest_path.is_file():
             self._records = {}
@@ -181,6 +194,7 @@ class AdaptiveSkillForge:
             )
 
         skill_file = self.skills_dir / f"{clean_name}.py"
+        self._assert_no_symlink(skill_file)
         skill_file.write_text(clean_code, encoding="utf-8", newline="\n")
         digest = hashlib.sha256(skill_file.read_bytes()).hexdigest()
 
@@ -235,6 +249,7 @@ class AdaptiveSkillForge:
 
         rec = self._records[clean_name]
         skill_file = Path(rec.file_path)
+        self._assert_no_symlink(skill_file)
         if not skill_file.is_file():
             return {"ok": False, "error": f"Skill file missing on disk: {skill_file}"}
 

@@ -2,7 +2,7 @@
 
 **An autonomous software engineering agent with a hierarchical team orchestrator, a self-healing CDP browser engine, closed-loop Windows desktop automation, and an MCP / A2A / AG-UI interoperability harness — built around durable execution, executable verification, and hard safety gates.**
 
-[![Tests](https://img.shields.io/badge/pytest-73%20passed-2ea44f?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/pytest-74%20passed-2ea44f?style=flat-square)](tests/)
 [![Benchmark](https://img.shields.io/badge/bundled%20benchmark-20%2F20%20(self--reported)-2ea44f?style=flat-square)](#benchmarks-and-honest-caveats)
 [![Static analysis](https://img.shields.io/badge/built--in%20SAST-grade%20A-0969da?style=flat-square)](SECURITY.md)
 [![Protocols](https://img.shields.io/badge/protocols-MCP%20%7C%20A2A%20v0.3%20%7C%20AG--UI-8250df?style=flat-square)](#protocol-integrations)
@@ -48,14 +48,14 @@ OmniExecutor Agent treats every one of those failure modes as a systems-engineer
 
 | Domain | What OmniExecutor Agent Can Do | Primary Module(s) |
 | :--- | :--- | :--- |
-| **Autonomous Coding Loop** | ReAct, SPARC (`S/P/A/R/C`), and Hierarchical DAG workflows; Turn-0 workspace inventory; up to 6 batched actions/turn; `replace_in_file`; workspace `checkpoint`/`restore_checkpoint`; repeat-loop breaker; `best_of_n` & adaptive recovery | `execution/agent_loop.py`, `agent_kernel.py` |
+| **Autonomous Coding Loop** | ReAct, SPARC (`S/P/A/R/C`), and Hierarchical DAG workflows; Turn-0 workspace inventory; `ROLE_TOOL_SCOPES` & 2-stage BM25/Softmax tool ranking; up to 6 batched actions/turn; `replace_in_file`; workspace `checkpoint`/`restore_checkpoint`; repeat-loop breaker; `best_of_n` & adaptive recovery | `execution/agent_loop.py`, `agent_kernel.py` |
 | **Hierarchical Teams** | Automatic severity scoring (`0–10`) selecting 1 solo agent, a 4-agent Dev Squad, or a 9-agent Executive Fleet across 4 dependency waves with live RAM-scaled concurrency | `execution/subagent_bus.py`, `cognition/personas.py` |
 | **Code Intelligence** | Polyglot AST/parser symbol map ranked with weighted PageRank (`Python`, `JS/TS`, `Rust`, `Go`); vectorless tree index with SHA-256 delta sync and Mermaid graph export; coupling/cohesion radar | `perception/polyglot_repomap.py`, `perception/knowledge_index.py`, `perception/silicon_radar.py` |
-| **Browser Automation** | Isolated Chromium via Playwright/CDP with `[1..N]` indexed interactive elements, self-healing multi-strategy locators, same-URL idempotence, and lightweight SSRF-guarded `web_fetch` | `gui/cdp_browser.py`, `gui/verified_browser_adapter.py` |
+| **Browser Automation** | Isolated Chromium via Playwright/CDP with `[1..N]` indexed interactive elements, self-healing multi-strategy locators, payment/checkout hard-stop guard (`block_on_payment`), same-URL idempotence, and SSRF-guarded `web_fetch` | `gui/cdp_browser.py`, `gui/verified_browser_adapter.py` |
 | **Desktop Automation (Windows)** | Closed-loop Win32 UI Automation + Set-of-Mark visual tagging + OCR + window/process/port/clipboard control protected by a process-wide exclusive GUI lock | `execution/pc_automation.py` |
-| **Skill Self-Extension** | Runtime Python skill creation gated by an AST sandbox and SHA-256 integrity verification, plus one-call wrapping of any external CLI binary into a typed JSON skill + `SKILL.md` | `execution/adaptive_skills.py` |
-| **Protocol Federation** | Built-in MCP server over stdio & client federation hub; Agent2Agent (A2A v0.3) JSON-RPC 2.0 router; multi-channel ingress gateway; zero-dependency loopback AG-UI SSE streamer | `execution/mcp_federation.py`, `execution/subagent_bus.py`, `cognition/agui_protocol.py` |
-| **Security & Governance** | SHA-256 constitutional seal guard; 15-rule secret, MCP, hook & SAST scanner (`shield`); deterministic pre/post AST hooks; Windows DPAPI vault envelopes; RAM/disk/stagnation homeostasis | `governance/`, `security/`, `execution/hook_engine.py` |
+| **Skill Self-Extension** | Runtime Python skill creation gated by an AST sandbox, symlink rejection, and SHA-256 verification, plus one-call wrapping of external CLI binaries into typed JSON skills | `execution/adaptive_skills.py` |
+| **Protocol Federation** | Built-in MCP server (`mcp-serve`) & client hub; A2A v0.3 JSON-RPC 2.0 router; burst-debounced multi-channel ingress gateway; zero-dependency loopback AG-UI SSE streamer; [`llms.txt`](llms.txt) repository index | `execution/mcp_federation.py`, `execution/subagent_bus.py`, `cognition/agui_protocol.py` |
+| **Security & Governance** | SHA-256 seal guard; 15-rule `shield` SAST scanner; pipe-aware 5-class command gate (`READ..DESTRUCTIVE`); symlink escape guard; host-pinned memory namespaces (`TriadMemoryProvider.scoped`); DPAPI envelopes; RAM/disk homeostasis | `governance/`, `security/`, `execution/hook_engine.py`, `memory/triad_provider.py` |
 | **Memory, Calibration & Evolution** | Three-layer memory; episodic trajectory replay; domain Brier-score calibration (`REQUIRE_DOUBLE_CHECK` / `CAUTIOUS_VERIFY` / `FULL_AUTONOMY`); UCB1 + Pareto-gated evolution | `memory/`, `cognition/reasoning_bank.py`, `contracts/calibration.py`, `evolution/` |
 
 ---
@@ -184,7 +184,7 @@ $env:OPENROUTER_API_KEY = "<your-openrouter-key>"
 ```powershell
 .\omni-executor.cmd doctor     # Multi-organ readiness, SHA-256 seal, SQLite-WAL & host headroom
 .\omni-executor.cmd shield .   # Built-in static analysis (secrets, MCP configs, hooks, SAST)
-pytest tests -q                # Automated suite (73 unit & integration tests)
+pytest tests -q                # Automated suite (74 unit & integration tests)
 ```
 
 ---
@@ -396,8 +396,11 @@ queued = bus.handle_a2a_rpc(
 )
 status = bus.handle_a2a_rpc({"jsonrpc": "2.0", "id": "3", "method": "tasks/get", "params": {"id": queued["result"]["id"]}})
 
-# 3. Normalize a chat/webhook event directly into an A2A task
-res = bus.ingest_channel_event({"channel": "slack", "sender": "alice", "text": "Fix flaky date parser in parser.py"})
+# 3. Normalize chat/webhook events into A2A tasks (with optional burst debouncing)
+bus.ingest_channel_event({"channel": "telegram", "sender": "alice", "text": "Fix bug in parser.py"}, debounce_window_s=2.0)
+bus.ingest_channel_event({"channel": "telegram", "sender": "alice", "text": "Also add edge case tests"}, debounce_window_s=2.0)
+flushed = bus.flush_channel_debounce(channel="telegram", sender="alice", executor_fn=real_worker)
+print(flushed[0]["coalesced_count"], flushed[0]["turn_id"])  # 2, turn-...
 ```
 
 ### 3. Live AG-UI Event Stream (Loopback Server-Sent Events)
@@ -430,6 +433,13 @@ Running `.\omni-executor.cmd shield .` (or `AgentShieldAuditor().scan_directory(
 | `SHIELD-SAST-003` | MEDIUM | `sast` | Explicit TLS certificate validation bypass (`verify=False`, **CWE-295**) |
 | `SHIELD-SAST-004` | HIGH | `sast` | Process spawning (`subprocess.*`) with shell invocation enabled (**CWE-78**) |
 | `SHIELD-SAST-005` | HIGH | `sast` | Arbitrary code evaluation primitives (**CWE-95**) in `.py`/`.js`/`.ts` files |
+
+### Pipe-Aware Command Classifier & Runtime Isolation Guardrails
+
+- **Pipe-aware fail-closed command gating (`hook_engine.py`):** Shell commands passed to `run` strip quoted heredocs/here-strings (`<< 'EOF'`, `@' ... '@`) as inert data, split quote-safely across `|`, `&&`, `||`, `;`, classify every segment (`READ` $\rightarrow$ `WRITE` $\rightarrow$ `NETWORK` $\rightarrow$ `INSTALL` $\rightarrow$ `DESTRUCTIVE`), upgrade `NETWORK -> shell interpreter` pipes to `DESTRUCTIVE`, and fail closed to `WRITE` for unknown binaries. `evaluate_autonomy_gate` enforces `readonly`, `supervised`, and `full` tiers cleanly.
+- **Browser Payment Hard-Stop (`cdp_browser.py`):** `CDPIndexedBrowser(block_on_payment=True)` inspects target DOM elements and labels prior to clicks/submissions, halting automatically before checkout or payment actions (`blocked_by_payment_guard=True`, `requires_human_approval=True`).
+- **Symlink Traversal & Host-Pinned Memory Isolation:** `WorkspaceTools.resolve()` and `AdaptiveSkillForge` reject symlink traversal inside workspaces and skill bundles; `TriadMemoryProvider.scoped(namespace)` pins tenant namespaces strictly on the host side so LLM tool arguments cannot cross memory scopes.
+- **Role Tool Scopes & 2-Stage Tool Ranking (`agent_loop.py`):** `ROLE_TOOL_SCOPES` strips non-essential write/GUI tools on read-only/coordinator personas (`strict_auditor`, `security_auditor`, `product_ceo`, `systems_architect`), while `rank_tools_for_objective` applies `FamilyThenDecide` / `RetrieveThenDecide` Softmax filtering ($p_{\min} = 0.05$).
 
 ---
 
@@ -590,7 +600,7 @@ The repository bundles a sealed real-LLM evaluation suite (`eval/am_bench/`) whe
 | :--- | :--- | :--- |
 | Code tasks (`eval/am_bench`) | 15 / 15 passed | [`am_bench_v39_rapid_full20_20261117_011748.json`](.proof/am_bench_v39_rapid_full20_20261117_011748.json) |
 | Browser tasks (`eval/am_bench`) | 5 / 5 passed (separate re-run after navigation fix) | [`am_bench_v39_browser_all5_20261117_161109.json`](.proof/am_bench_v39_browser_all5_20261117_161109.json) |
-| Unit & integration test suite | 73 passed | `pytest tests -q` ([`tests/`](tests/)) |
+| Unit & integration test suite | 74 passed | `pytest tests -q` ([`tests/`](tests/)) |
 | Built-in static analysis | Grade `A`, `0` findings | `.\omni-executor.cmd shield .` |
 
 **Honest Interpretation & Methodological Caveats:**
@@ -619,6 +629,7 @@ The repository bundles a sealed real-LLM evaluation suite (`eval/am_bench/`) whe
 omni-executor/
 ├── omni-executor.cmd                       # CLI wrapper entry point (Windows)
 ├── pyproject.toml                          # Package metadata (omni-executor v4.1.0)
+├── llms.txt                                # Machine-readable AI discovery index
 ├── LICENSE                                 # MIT License
 ├── CONTRIBUTING.md                         # Development, testing & extension guide
 ├── SECURITY.md                             # Security model & reporting guide
@@ -641,7 +652,7 @@ omni-executor/
 │   ├── perception/                         # PageRank RepoMap, HierarchicalKnowledgeIndex, architectural radar
 │   ├── routing/                            # Provider & endpoint routing
 │   └── security/                           # 15-rule AgentShield scanner & Windows DPAPI vault
-└── tests/                                  # 73 unit & integration tests
+└── tests/                                  # 74 unit & integration tests
 ```
 
 ---

@@ -20,7 +20,7 @@ import sqlite3
 import threading
 import time
 import uuid
-from typing import Any, Callable, Dict, Iterator, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 
 MAX_SPAWN_DEPTH = 2
@@ -90,6 +90,8 @@ class SubAgentSessionBus:
         self._sema = threading.BoundedSemaphore(self.max_workers)
         self._threads: Dict[str, threading.Thread] = {}
         self._db_lock = threading.Lock()
+        self._debounce_lock = threading.Lock()
+        self._debounce_buffer: Dict[str, List[Dict[str, Any]]] = {}
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
@@ -351,6 +353,7 @@ class SubAgentSessionBus:
                 "id": req_id,
                 "result": {
                     "id": sid,
+                    "turn_id": f"turn-{uuid.uuid4().hex[:10]}",
                     "status": {"state": str(sess.get("status", "RUNNING")).lower()},
                     "session": sess,
                 },
@@ -391,31 +394,120 @@ class SubAgentSessionBus:
         event: Dict[str, Any],
         *,
         executor_fn: Optional[Callable[[str, str, Path], Dict[str, Any]]] = None,
+        debounce_window_s: float = 0.0,
     ) -> Dict[str, Any]:
-        """OpenClaw-style unified channel gateway: normalize Discord/Telegram/Slack/WhatsApp/Webhook events into A2A tasks."""
+        """Unified channel gateway with optional burst-message coalescing (`inbound_debounce`)."""
         channel = str(event.get("channel", "cli")).strip().lower()
         sender = str(event.get("sender") or event.get("user_id") or "anonymous").strip()
         text = str(event.get("text") or event.get("content") or event.get("message") or "").strip()
         if not text:
             return {"ok": False, "error": "empty channel message"}
+        role = str(event.get("role", "general_engineer"))
+        wait = bool(event.get("wait", False))
+
+        if float(debounce_window_s) > 0.0:
+            key = f"{channel}:{sender}"
+            now = time.time()
+            with self._debounce_lock:
+                bucket = self._debounce_buffer.setdefault(key, [])
+                bucket.append({
+                    "channel": channel,
+                    "sender": sender,
+                    "text": text,
+                    "role": role,
+                    "wait": wait,
+                    "window_s": float(debounce_window_s),
+                    "timestamp": now,
+                })
+                count = len(bucket)
+            return {
+                "ok": True,
+                "debounced": True,
+                "channel": channel,
+                "sender": sender,
+                "buffered_count": count,
+                "debounce_window_s": float(debounce_window_s),
+            }
+
+        return self._dispatch_channel_batch(channel, sender, text, role=role, wait=wait, coalesced_count=1, executor_fn=executor_fn)
+
+    def _dispatch_channel_batch(
+        self,
+        channel: str,
+        sender: str,
+        text: str,
+        *,
+        role: str,
+        wait: bool,
+        coalesced_count: int,
+        executor_fn: Optional[Callable[[str, str, Path], Dict[str, Any]]],
+    ) -> Dict[str, Any]:
         rpc_req = {
             "jsonrpc": "2.0",
             "id": f"oc-{channel}-{uuid.uuid4().hex[:8]}",
             "method": "tasks/send",
             "params": {
-                "role": str(event.get("role", "general_engineer")),
-                "wait": bool(event.get("wait", False)),
+                "role": role,
+                "wait": wait,
                 "message": {"role": "user", "parts": [{"type": "text", "text": f"[{channel}:{sender}] {text}"}]},
             },
         }
         resp = self.handle_a2a_rpc(rpc_req, executor_fn=executor_fn)
         return {
             "ok": "result" in resp,
+            "debounced": False,
+            "coalesced_count": coalesced_count,
+            "combined_text": text,
             "channel": channel,
             "sender": sender,
             "task_id": resp.get("result", {}).get("id"),
+            "turn_id": resp.get("result", {}).get("turn_id"),
             "a2a_response": resp,
         }
+
+    def flush_channel_debounce(
+        self,
+        *,
+        channel: Optional[str] = None,
+        sender: Optional[str] = None,
+        only_expired: bool = False,
+        executor_fn: Optional[Callable[[str, str, Path], Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Flush buffered inbound channel messages into coalesced A2A tasks."""
+        now = time.time()
+        to_dispatch: List[Tuple[str, List[Dict[str, Any]]]] = []
+        with self._debounce_lock:
+            keys = list(self._debounce_buffer.keys())
+            for k in keys:
+                bucket = self._debounce_buffer.get(k, [])
+                if not bucket:
+                    self._debounce_buffer.pop(k, None)
+                    continue
+                b_chan = bucket[0]["channel"]
+                b_send = bucket[0]["sender"]
+                if channel and b_chan != channel.strip().lower():
+                    continue
+                if sender and b_send != sender.strip():
+                    continue
+                if only_expired and (now - bucket[-1]["timestamp"]) < bucket[-1]["window_s"]:
+                    continue
+                to_dispatch.append((k, self._debounce_buffer.pop(k)))
+
+        dispatched: List[Dict[str, Any]] = []
+        for _, entries in to_dispatch:
+            combined = "\n".join(e["text"] for e in entries)
+            dispatched.append(
+                self._dispatch_channel_batch(
+                    entries[0]["channel"],
+                    entries[0]["sender"],
+                    combined,
+                    role=entries[-1]["role"],
+                    wait=any(e["wait"] for e in entries),
+                    coalesced_count=len(entries),
+                    executor_fn=executor_fn,
+                )
+            )
+        return dispatched
 
     # ------------------------------------------------------------------
     # Ruflo + ECC + gstack Dynamic Team & Executive Hierarchy Orchestrator

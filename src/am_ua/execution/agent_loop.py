@@ -15,6 +15,7 @@ from collections import deque
 import difflib
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -164,7 +165,19 @@ class WorkspaceTools:
         self.seal_guard.assert_write_allowed(self.ws / ".am_probe", actor="agent_loop")
 
     def resolve(self, rel: str) -> Path:
-        p = (self.ws / rel).resolve() if not Path(rel).is_absolute() else Path(rel).resolve()
+        raw_req = Path(rel)
+        raw_p = (self.ws / raw_req) if not raw_req.is_absolute() else raw_req
+        if not raw_req.is_absolute():
+            cur = self.ws
+            for part in raw_req.parts:
+                if part in ("", "."):
+                    continue
+                cur = cur / part
+                if cur.is_symlink():
+                    raise ConstitutionalViolationError(f"Symlink escapes workspace boundary check: {rel}")
+        if raw_p.is_symlink():
+            raise ConstitutionalViolationError(f"Symlink escapes workspace boundary check: {rel}")
+        p = raw_p.resolve()
         if p != self.ws and self.ws not in p.parents:
             raise ConstitutionalViolationError(f"Path escapes workspace: {rel}")
         return p
@@ -574,7 +587,178 @@ class WorkspaceTools:
         return snap
 
 
-SYSTEM_PROMPT = """You are the execution core of AetherMind Universal Agent, a careful senior software engineer and PC automation specialist.
+TOOL_FAMILIES: Dict[str, Tuple[str, ...]] = {
+    "core_code": (
+        "list_dir", "read_file", "search", "write_file", "replace_in_file",
+        "run", "repo_map", "knowledge_query", "checkpoint", "restore_checkpoint",
+        "request_human", "finish",
+    ),
+    "readonly_audit": (
+        "list_dir", "read_file", "search", "run", "repo_map", "knowledge_query", "finish",
+    ),
+    "browser_web": (
+        "browser_observe", "browser_act", "browser_extract", "web_fetch",
+    ),
+    "desktop_rpa": (
+        "pc_observe", "pc_ground_vlm", "pc_act", "pc_window", "pc_clipboard", "pc_process",
+    ),
+    "orchestration_mcp": (
+        "spawn_agent", "spawn_team", "send_agent", "await_agents",
+        "mcp_call", "skill_forge", "skill_run",
+    ),
+}
+
+ROLE_TOOL_SCOPES: Dict[str, frozenset[str]] = {
+    "strict_auditor": frozenset(TOOL_FAMILIES["readonly_audit"]) | {"request_human"},
+    "security_auditor": frozenset(TOOL_FAMILIES["readonly_audit"]) | {"mcp_call", "request_human"},
+    "security_reverse_engineer": frozenset(TOOL_FAMILIES["readonly_audit"]) | {"skill_run", "request_human"},
+    "product_ceo": frozenset({
+        "list_dir", "read_file", "search", "repo_map", "knowledge_query",
+        "spawn_team", "spawn_agent", "send_agent", "await_agents", "finish",
+    }),
+    "systems_architect": frozenset(TOOL_FAMILIES["readonly_audit"]) | {
+        "spawn_agent", "send_agent", "await_agents",
+    },
+    "eng_supervisor": frozenset(TOOL_FAMILIES["readonly_audit"]) | {
+        "replace_in_file", "spawn_agent", "send_agent", "await_agents",
+    },
+}
+
+_TOOL_KEYWORDS: Dict[str, Tuple[str, ...]] = {
+    "list_dir": ("dir", "directory", "folder", "files", "tree", "layout", "workspace"),
+    "read_file": ("read", "file", "inspect", "view", "code", "source", "bug", "module"),
+    "search": ("search", "grep", "find", "pattern", "regex", "symbol", "reference"),
+    "write_file": ("create", "new", "write", "file", "script", "generate"),
+    "replace_in_file": ("fix", "edit", "update", "modify", "patch", "replace", "refactor", "rename", "bug"),
+    "run": ("run", "test", "pytest", "verify", "exec", "command", "build", "compile", "lint"),
+    "repo_map": ("architecture", "map", "repomap", "symbols", "overview", "dependencies"),
+    "knowledge_query": ("docs", "schema", "sql", "architecture", "index", "knowledge", "query"),
+    "checkpoint": ("checkpoint", "snapshot", "backup", "save"),
+    "restore_checkpoint": ("restore", "rollback", "revert", "undo"),
+    "browser_observe": ("browser", "playwright", "cdp", "http", "https", "url", "webpage", "website", "site", "dom"),
+    "browser_act": ("click", "fill", "submit", "button", "form", "login", "navigate", "browser", "checkout"),
+    "browser_extract": ("extract", "scrape", "text", "table", "dom", "html"),
+    "web_fetch": ("fetch", "http", "https", "url", "markdown", "web", "html", "page"),
+    "pc_observe": ("desktop", "screen", "window", "gui", "ocr", "screenshot", "ui", "app"),
+    "pc_ground_vlm": ("visual", "vlm", "icon", "button", "ground", "desktop", "screen"),
+    "pc_act": ("click", "type", "hotkey", "press", "mouse", "keyboard", "scroll", "desktop"),
+    "pc_window": ("window", "focus", "minimize", "maximize", "launch", "close", "app"),
+    "pc_clipboard": ("clipboard", "copy", "paste"),
+    "pc_process": ("process", "pid", "port", "kill", "listening"),
+    "spawn_agent": ("subagent", "spawn", "delegate", "parallel", "worker"),
+    "spawn_team": ("team", "squad", "swarm", "fleet", "hierarchy", "orchestrate", "ceo", "architect"),
+    "send_agent": ("message", "send", "coordinate", "inbox"),
+    "await_agents": ("await", "wait", "collect", "join"),
+    "mcp_call": ("mcp", "server", "federation", "stdio"),
+    "skill_forge": ("skill", "forge", "wrap", "cli"),
+    "skill_run": ("skill", "run", "search", "invoke"),
+    "request_human": ("human", "approval", "wheel", "captcha", "2fa", "mfa", "payment"),
+    "finish": ("finish", "done", "complete", "summary", "verify"),
+}
+
+_FAMILY_KEYWORDS: Dict[str, Tuple[str, ...]] = {
+    "core_code": ("code", "bug", "fix", "edit", "file", "test", "pytest", "refactor", "python", "repo", "build"),
+    "browser_web": ("browser", "http", "https", "url", "dom", "playwright", "cdp", "webpage", "site", "click", "scrape"),
+    "desktop_rpa": ("desktop", "window", "gui", "ocr", "screenshot", "hotkey", "clipboard", "process", "port", "mouse"),
+    "orchestration_mcp": ("mcp", "swarm", "team", "squad", "subagent", "spawn", "skill", "parallel", "fleet"),
+}
+
+
+def rank_tools_for_objective(
+    objective: str,
+    *,
+    role: str = "general_engineer",
+    strategy: str = "family_then_decide",
+    min_probability: float = 0.05,
+    max_families: int = 2,
+    retrieval_k: int = 20,
+) -> Dict[str, Any]:
+    """Two-stage BM25 + calibrated Softmax tool/skill selector (`FamilyThenDecide` & `RetrieveThenDecide`)."""
+    low = (objective or "").strip().lower()
+    tokens = set(re.findall(r"[a-z0-9_]+", low))
+    norm_role = (role or "general_engineer").strip().lower()
+    allowed_role_tools = ROLE_TOOL_SCOPES.get(norm_role)
+
+    # Noul check: estimate probability that the request needs workspace tool calls vs pure chat/math answer.
+    action_signals = {
+        "fix", "edit", "write", "read", "run", "test", "pytest", "open", "click", "build",
+        "refactor", "inspect", "audit", "search", "map", "fetch", "spawn", "deploy", "check",
+        "create", "update", "delete", "browser", "desktop", "window", "file", "module",
+    }
+    signal_hits = len(tokens & action_signals) + (1 if re.search(r"(\.py|\.ts|\.js|https?://|\\|/)", low) else 0)
+    needs_tools_prob = round(min(0.99, 0.25 + 0.30 * min(3, signal_hits) if signal_hits else 0.22), 4)
+
+    all_tools = list(_TOOL_KEYWORDS.keys())
+    if allowed_role_tools is not None:
+        all_tools = [t for t in all_tools if t in allowed_role_tools]
+
+    norm_strategy = (strategy or "family_then_decide").strip().lower()
+    selected_families: List[str] = []
+
+    if norm_strategy == "family_then_decide":
+        actionable_families = ("core_code", "browser_web", "desktop_rpa", "orchestration_mcp")
+        fam_scores: List[Tuple[float, str]] = []
+        for fam in actionable_families:
+            kws = _FAMILY_KEYWORDS[fam]
+            hits = sum(1.0 for kw in kws if kw in tokens or kw in low)
+            # Small prior boost for core_code when not strictly web/desktop only
+            prior = 0.35 if fam == "core_code" else 0.0
+            fam_scores.append((hits + prior, fam))
+        fam_scores.sort(key=lambda pair: pair[0], reverse=True)
+        chosen = [fam for sc, fam in fam_scores if sc > 0.3][:max(1, int(max_families))]
+        if not chosen:
+            chosen = ["core_code"]
+        elif "core_code" not in chosen and fam_scores[0][0] < 2.0:
+            chosen.append("core_code")
+        selected_families = chosen[:max(1, int(max_families))]
+        pool_set = set()
+        for fam in selected_families:
+            pool_set.update(TOOL_FAMILIES.get(fam, ()))
+        candidates = [t for t in all_tools if t in pool_set]
+    else:
+        norm_strategy = "retrieve_then_decide"
+        scored_pre: List[Tuple[float, str]] = []
+        for t in all_tools:
+            kws = _TOOL_KEYWORDS.get(t, ())
+            overlap = sum(1.0 for kw in kws if kw in tokens or kw in low)
+            bonus = 0.25 if t in ("read_file", "replace_in_file", "run", "finish") else 0.0
+            scored_pre.append((overlap + bonus, t))
+        scored_pre.sort(key=lambda pair: pair[0], reverse=True)
+        candidates = [t for _, t in scored_pre[:max(1, int(retrieval_k))]]
+        selected_families = ["all_shortlisted"]
+
+    if "finish" in all_tools and "finish" not in candidates:
+        candidates.append("finish")
+
+    # Compute BM25-like relevance logits and calibrated Softmax distribution over candidates.
+    logits: Dict[str, float] = {}
+    for t in candidates:
+        kws = _TOOL_KEYWORDS.get(t, ())
+        tf = sum(1.0 for kw in kws if kw in tokens or kw in low)
+        base = 0.8 if t == "finish" else (0.45 if t in ("read_file", "run", "replace_in_file") else 0.1)
+        logits[t] = (tf * 1.4) + base
+
+    max_logit = max(logits.values(), default=0.0)
+    exp_scores = {t: math.exp(val - max_logit) for t, val in logits.items()}
+    denom = sum(exp_scores.values()) or 1.0
+    probs = sorted(
+        ({"tool": t, "probability": round(exp_scores[t] / denom, 4)} for t in candidates),
+        key=lambda item: item["probability"],
+        reverse=True,
+    )
+    floor = max(0.0, float(min_probability))
+    filtered = [item for item in probs if item["probability"] >= floor or item["tool"] == "finish"]
+    return {
+        "strategy": norm_strategy,
+        "role": norm_role,
+        "needs_tools_prob": needs_tools_prob,
+        "selected_families": selected_families,
+        "ranked_tools": filtered,
+        "selected_tools": [item["tool"] for item in filtered],
+    }
+
+
+SYSTEM_PROMPT = """You are the execution core of OmniExecutor Agent, a careful senior software engineer and PC automation specialist.
 You work inside ONE workspace directory and act ONLY through tools. Respond with EXACTLY ONE JSON object per turn:
 {"thought": "<short reasoning>", "tool": "<tool name>", "args": {...}}
 
@@ -824,13 +1008,16 @@ class AgentLoop:
                 return p
         return "?"
 
+    rank_tools_for_objective = staticmethod(rank_tools_for_objective)
+
     @staticmethod
-    def _compose_system_prompt(base_prompt: str, objective: str) -> str:
-        """Progressive tool-surface pruning (Caveman/OmO) + Karpathy/Superpowers surgical discipline."""
+    def _compose_system_prompt(base_prompt: str, objective: str, *, role: str = "general_engineer") -> str:
+        """Progressive tool-surface pruning (`HostOnly` role scopes + family relevance) + surgical discipline."""
         low = (objective or "").lower()
         need_browser = any(k in low for k in ("browser", "http://", "https://", "file://", ".html", "cdp", "playwright", "click", "url", "dom", "webpage", "website", "site"))
         need_desktop = any(k in low for k in ("desktop", "window", "gui", "screen", "ocr", "hotkey", "clipboard", "process", "port", "mouse", "dialog", "app"))
         need_swarm_mcp = len(low) > 450 or any(k in low for k in ("mcp", "swarm", "subagent", "spawn", "skill", "cli", "parallel", "pipeline", "audit"))
+        role_scope = ROLE_TOOL_SCOPES.get((role or "general_engineer").strip().lower())
 
         kept: List[str] = []
         in_tools = False
@@ -845,6 +1032,9 @@ class AgentLoop:
                 continue
             if in_tools and ln.startswith("- "):
                 tname = ln[2:].split(" ", 1)[0].strip()
+                if role_scope is not None and tname not in role_scope:
+                    if not ((need_browser and tname.startswith("browser_")) or (need_desktop and tname.startswith("pc_"))):
+                        continue
                 if tname.startswith("browser_") or tname == "web_fetch":
                     if not need_browser:
                         continue
@@ -1014,7 +1204,7 @@ class AgentLoop:
         # SPARC vs ReAct base prompt selection, tool-surface pruning & Persona contract injection
         role = self.auto_select_role(objective, role)
         base_prompt = SPARC_SYSTEM_PROMPT if (workflow or "").lower() == "sparc" else SYSTEM_PROMPT
-        base_prompt = self._compose_system_prompt(base_prompt, objective)
+        base_prompt = self._compose_system_prompt(base_prompt, objective, role=role)
         system_prompt = self.persona_mgr.inject_persona(base_prompt, role)
 
         # ReasoningBank trajectory grounding (few-shot experience replay)
