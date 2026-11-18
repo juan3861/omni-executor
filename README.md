@@ -66,22 +66,22 @@ OmniExecutor Agent treats every one of those failure modes as a systems-engineer
 
 ```mermaid
 flowchart TB
-    subgraph Entry["Entry Points & External Protocols"]
+    subgraph Entry["Entry Points and External Protocols"]
         CLI["CLI: omni-executor.cmd (14 commands)"]
         PY["Python API: OmniExecutorAgent"]
         MCP["MCP Server / Client Hub (JSON-RPC 2.0 stdio)"]
-        A2A["A2A v0.3 Router & Multi-Channel Gateway"]
+        A2A["A2A v0.3 Router and Multi-Channel Gateway"]
         AGUI["AG-UI Live Stream (127.0.0.1 SSE)"]
     end
 
-    subgraph Gov["Governance & Security"]
+    subgraph Gov["Governance and Security"]
         SEAL["ConstitutionSealGuard (SHA-256 manifest)"]
-        SHIELD["AgentShieldAuditor (15 static & SAST rules)"]
+        SHIELD["AgentShieldAuditor (15 static and SAST rules)"]
         HOOKS["DeterministicHookEngine (Pre-write secret guard + Post-edit AST)"]
         HOMEO["HomeostasisGovernor (RAM, disk, token, stagnation caps)"]
     end
 
-    subgraph Cog["Cognition, Memory & Perception"]
+    subgraph Cog["Cognition, Memory and Perception"]
         LLM["LLMClient (failover chain + circuit breaker + independent judge)"]
         PERSONA["PersonaManager (10 engineering roles)"]
         REPOMAP["PolyglotRepoMapper (AST + weighted PageRank)"]
@@ -94,20 +94,12 @@ flowchart TB
         AGENT_LOOP["AgentLoop (ReAct / SPARC / Hierarchical + 6x batching)"]
         COMPRESS["ToolOutputCompressor (+ disk spill log)"]
         TEAM["SubAgentSessionBus (wave orchestrator + GUI lock)"]
-        BROWSER["CDPIndexedBrowser (self-healing DOM [1..N])"]
+        BROWSER["CDPIndexedBrowser (self-healing indexed DOM)"]
         DESKTOP["PCAutomationEngine (Win32 UIA + SoM + OCR)"]
         SKILLS["AdaptiveSkillForge (AST gate + SHA-256 skills + CLI wrappers)"]
     end
 
-    Entry --> Gov
-    Gov --> Cog
-    Cog --> Exec
-    AGENT_LOOP --> DURABLE
-    AGENT_LOOP --> COMPRESS
-    AGENT_LOOP --> TEAM
-    AGENT_LOOP --> BROWSER
-    AGENT_LOOP --> DESKTOP
-    AGENT_LOOP --> SKILLS
+    Entry --> Gov --> Cog --> Exec
 ```
 
 ### End-to-End Mission Sequence
