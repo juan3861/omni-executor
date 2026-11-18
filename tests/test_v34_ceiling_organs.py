@@ -311,7 +311,7 @@ def test_mcp_server_and_federation_hub_roundtrip(tmp_path: Path) -> None:
 
     init_resp = srv.handle_jsonrpc_message({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
     assert init_resp is not None
-    assert init_resp["result"]["serverInfo"]["name"] == "aethermind-universal-agent-mcp"
+    assert init_resp["result"]["serverInfo"]["name"] == "omni-executor-mcp"
 
     list_resp = srv.handle_jsonrpc_message({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
     assert list_resp is not None

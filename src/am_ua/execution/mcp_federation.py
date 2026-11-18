@@ -235,7 +235,7 @@ class AetherMindMCPServer:
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
                     "serverInfo": {
-                        "name": "aethermind-universal-agent-mcp",
+                        "name": "omni-executor-mcp",
                         "version": "3.4.0",
                     },
                 },

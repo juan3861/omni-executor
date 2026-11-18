@@ -33,7 +33,7 @@ def fix_mangled_string(s: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="aether-ua",
-        description="AetherMind Universal Agent (Super-Union v3.1) Sovereign CLI",
+        description="OmniExecutor Agent CLI: autonomous coding, browser and desktop automation harness",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
     p_skills.add_argument("--name", default=None, help="Skill name to run")
     p_skills.add_argument("--kwargs", default="{}", help="JSON kwargs for skill execution")
 
-    sub.add_parser("mcp-serve", help="Start AetherMind Sovereign MCP Server over stdio (JSON-RPC 2.0)")
+    sub.add_parser("mcp-serve", help="Start the OmniExecutor MCP server over stdio (JSON-RPC 2.0)")
 
     p_bench = sub.add_parser("bench", help="Real-LLM Benchmark (AM-Bench) runner & comparison")
     p_bench.add_argument("action", choices=["run", "report"], help="Benchmark action")

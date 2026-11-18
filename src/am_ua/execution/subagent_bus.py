@@ -296,11 +296,11 @@ class SubAgentSessionBus:
     # A2A (Agent2Agent Protocol v0.3) + OpenClaw Multi-Channel Gateway
     # ------------------------------------------------------------------
     def get_agent_card(self) -> Dict[str, Any]:
-        """Return official A2A AgentCard (/.well-known/agent.json) for AetherMind Universal Agent."""
+        """Return official A2A AgentCard (/.well-known/agent.json) for OmniExecutor Agent."""
         return {
             "schema": "A2A_AGENT_CARD/v1",
-            "name": "AetherMind Universal Agent",
-            "version": "4.0.0",
+            "name": "OmniExecutor Agent",
+            "version": "4.1.0",
             "protocolVersion": "0.3.0",
             "description": "Constitutional neuro-symbolic coding, browser (CDP), and Win32 desktop agent.",
             "capabilities": {

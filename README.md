@@ -1,335 +1,310 @@
-# OmniExecutor (`AetherMind Universal Agent v4.1`)
+# OmniExecutor Agent
 
-**Autonomous Coding Agent, Hierarchical Team Orchestrator, CDP Browser Engine & MCP/A2A Harness**
+**An autonomous coding agent with a hierarchical team orchestrator, a self-healing browser engine and an MCP / A2A harness — built around durable execution, verifiable results and strict safety gates.**
 
-[![Tests](https://img.shields.io/badge/pytest-73%2F73_passed-2ea44f?style=flat-square)](tests/)
-[![AM-Bench](https://img.shields.io/badge/AM--Bench_Real--LLM-20%2F20_(100%25)-2ea44f?style=flat-square)](eval/am_bench/)
-[![Security](https://img.shields.io/badge/AgentShield_SAST-Grade_A_(0_risk)-0969da?style=flat-square)](src/am_ua/security/agent_shield.py)
-[![Protocols](https://img.shields.io/badge/Protocols-MCP_%7C_A2A_v0.3_%7C_AG--UI-8250df?style=flat-square)](src/am_ua/execution/subagent_bus.py)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?style=flat-square)](pyproject.toml)
+[![Tests](https://img.shields.io/badge/pytest-73%20passed-2ea44f?style=flat-square)](tests/)
+[![Benchmark](https://img.shields.io/badge/bundled%20benchmark-20%2F20%20(self--reported)-2ea44f?style=flat-square)](#benchmarks-and-honest-caveats)
+[![Static analysis](https://img.shields.io/badge/built--in%20SAST-grade%20A-0969da?style=flat-square)](src/am_ua/security/agent_shield.py)
+[![Protocols](https://img.shields.io/badge/protocols-MCP%20%7C%20A2A%20v0.3%20%7C%20AG--UI-8250df?style=flat-square)](src/am_ua/execution/subagent_bus.py)
+[![Python](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square)](pyproject.toml)
 
-> **Idioma / Language:** [Português (Brasil)](#-visão-geral-português) · [Fundamentos Matemáticos](#-fundamentos-matemáticos-e-aplicação-em-outros-projetos) · [Manual Didático de Uso](#-manual-didático-de-instruções-passo-a-passo) · [English Overview](#-english-overview--quick-reference)
-
----
-
-## Visão Geral (Português)
-
-Quem trabalha com engenharia de software em produção sabe onde os agentes comuns falham: eles tentam adivinhar o conteúdo de arquivos sem ler, reescrevem módulos inteiros destruindo código adjacente, perdem o estado dinâmico de páginas web ao recarregar URLs, estouram a janela de contexto com logs inúteis e dizem que uma tarefa "funcionou" sem rodar um único teste real.
-
-O **OmniExecutor** (`AetherMind Universal Agent`) foi construído do zero para resolver esses problemas com rigor de sistemas distribuídos. Em vez de depender de um único loop de prompt frágil, ele opera sobre um **motor de execução durável em SQLite WAL**, governado por contratos formais, poda dinâmica de contexto, validação estática via árvore sintática (AST) e orquestração hierárquica de equipes (**CEO → Arquiteto → Engenheiros → Supervisor → Auditores TDD/SAST**).
-
-### O Que o Projeto Faz na Prática
-
-1. **Engenharia de Código Cirúrgica (`AgentLoop` + `RAPID v3.9`):**
-   - Injeta automaticamente o inventário do projeto e o mapa de símbolos (`RepoMap` via PageRank) já no **Turno 0**, eliminando chamadas cegas de `list_dir`.
-   - Executa até **6 ferramentas independentes em um único turno** (`actions` em lote), reduzindo em **42,6%** a latência de parede e em **38,7%** o consumo de tokens.
-   - Valida cada edição Python via AST antes e depois da escrita (`DeterministicHookEngine`), detectando erros de sintaxe, nomes não definidos e vazamento de chaves de API antes mesmo de chamar o `pytest`.
-2. **Orquestração Hierárquica de Equipes (`SubAgentSessionBus`):**
-   - Avalia automaticamente a severidade da missão (`0..10`) e decide se trabalha sozinho (**Modo Solo**), se monta um **Dev Squad de 4 agentes** ou se escala uma **Frota Executiva de 9 a 16 agentes em 4 ondas topológicas** (`product_ceo`, `systems_architect`, `general_engineer`, `build_error_resolver`, `performance_sre`, `eng_supervisor`, `security_auditor`, `tdd_enforcer`, `strict_auditor`).
-   - Escala o número de trabalhadores paralelos (`2` a `8` threads simultâneas) medindo em tempo real a memória RAM livre do sistema operacional.
-3. **Automação Web Determinística com Auto-Cura (`CDPIndexedBrowser`):**
-   - Controla o Chromium via Playwright/CDP indexando elementos interativos como `[1..N]`.
-   - Se um seletor CSS mudar ou quebrar, recupera o elemento automaticamente por similaridade semântica de texto, `id`, `name` ou `placeholder`.
-   - Mantém **idempotência de navegação**: observar a mesma URL nunca recarrega a página acidentalmente, preservando estados de formulários e SPAs.
-4. **Automação Desktop Win32 Fechada (`PCAutomationEngine`):**
-   - Opera janelas nativas do Windows combinando **Set-of-Mark (SoM)** visual, árvore de acessibilidade UIA e OCR antes de qualquer clique ou atalho de teclado, protegido por trava de exclusão mútua (`GUIExclusiveLock`).
-5. **Interoperabilidade Universal (`MCP` + `A2A v0.3` + `OpenClaw Gateway` + `CLI-Anything`):**
-   - Atua como servidor e cliente **MCP (Model Context Protocol)** via JSON-RPC 2.0.
-   - Expõe o protocolo **Agent2Agent (A2A v0.3)** (`agent/card`, `tasks/send`, `tasks/get`, `tasks/cancel`) e normaliza eventos vindos de WhatsApp, Discord, Telegram, Slack, Teams ou Webhooks.
-   - Transforma qualquer utilitário de linha de comando instalado na máquina em uma skill estruturada com saída JSON e documentação `SKILL.md` (`wrap_cli_tool`).
+**Contents:** [Why](#why-this-project-exists) · [What it does](#what-it-does) · [Architecture](#architecture) · [Quick start](#quick-start) · [CLI reference](#cli-reference) · [Python recipes](#python-recipes) · [Team orchestration](#team-orchestration-how-and-when-agents-are-created) · [Mathematical foundations](#mathematical-foundations) · [Benchmarks and caveats](#benchmarks-and-honest-caveats) · [Limitations](#known-limitations) · [Repository layout](#repository-layout)
 
 ---
 
-## Arquitetura do Sistema
+## Why this project exists
+
+Most coding agents fail in the same predictable ways: they edit files they never read, rewrite whole modules to change one line, flood the context window with log noise, lose page state by reloading a URL they already had open, and report "done" without running a single test.
+
+OmniExecutor Agent treats those failures as engineering problems:
+
+- **Results are verified, not declared.** A mission is marked `VERIFIED` only if your acceptance command (for example `pytest -q`) exits with code `0`.
+- **Execution is durable.** Every tool call is routed through an SQLite-WAL execution engine with an effect taxonomy and lease fencing, so retries cannot silently double-apply a side effect.
+- **Context is budgeted.** A workspace inventory is injected on turn 0, tool outputs are compressed (with the full output spilled to disk), and the prompt only advertises tools relevant to the task.
+- **Safety is enforced in code.** Writes are checked against a sealed constitution (SHA-256 manifest), a static analyzer scans for secrets and unsafe patterns, and a resource governor stops runaway cost.
+
+## What it does
+
+| Area | Capability | Main module |
+| :--- | :--- | :--- |
+| **Coding loop** | Turn-0 workspace inventory, up to 6 tool calls batched per turn (`actions`), surgical `replace_in_file`, checkpoint/restore, AST pre/post-write hooks, adaptive best-of-N escalation with a failure post-mortem | `execution/agent_loop.py` |
+| **Team orchestration** | Severity-scored topology: solo agent, 4-agent dev squad, or 9-agent executive fleet in 4 dependency waves; RAM-aware parallelism | `execution/subagent_bus.py` |
+| **Code intelligence** | Cross-language symbol map ranked with PageRank; vectorless hierarchical index over `.md/.sql/.json/.yaml/.py` with incremental SHA-256 delta sync and Mermaid export | `perception/` |
+| **Browser** | Playwright/CDP with `[1..N]` indexed DOM, selector self-healing, same-URL navigation idempotence, lightweight `web_fetch` | `gui/cdp_browser.py` |
+| **Desktop (Windows)** | Set-of-Mark grounding + UI Automation + OCR before any click or keystroke, with a global GUI lock | `execution/pc_automation.py` |
+| **Interoperability** | MCP server/client (JSON-RPC 2.0 over stdio), A2A v0.3 agent card and task methods, multi-channel event ingestion, CLI-to-skill wrapper | `execution/mcp_federation.py`, `execution/subagent_bus.py`, `execution/adaptive_skills.py` |
+| **Safety** | Constitution seal guard, static analyzer (secrets, MCP config, hooks, unsafe code patterns), Windows DPAPI envelopes, resource governor | `governance/`, `security/` |
+| **Memory and learning** | Three-layer memory, trajectory replay, pitfall warnings, Brier-score calibration, UCB1 + Pareto-gated self-evolution | `memory/`, `cognition/`, `evolution/` |
+
+## Architecture
 
 ```mermaid
 flowchart TB
-    subgraph Entrada["Canais de Entrada & Protocolos"]
-        CLI["CLI: omni-executor.cmd / aether-ua.cmd"]
-        MCP["MCP JSON-RPC 2.0 Server/Client"]
-        A2A["Protocolo A2A v0.3 & Gateway Multicanal"]
+    subgraph Entry["Entry points"]
+        CLI["CLI: omni-executor.cmd"]
+        MCP["MCP server (stdio, JSON-RPC 2.0)"]
+        A2A["A2A v0.3 + channel gateway"]
     end
 
-    subgraph Governanca["Núcleo de Governança & Segurança"]
-        KERNEL["AetherMindUniversalAgent (Single State Owner)"]
-        SEAL["ConstitutionSealGuard (SHA-256 Anti-Tamper)"]
-        HOMEO["HomeostasisGovernor (RAM / Disco / Stop-Loss)"]
-        SHIELD["AgentShieldAuditor (SAST + Segredos + Hooks)"]
+    subgraph Governance["Governance and safety"]
+        KERNEL["Kernel (single state owner)"]
+        SEAL["Constitution seal guard (SHA-256)"]
+        HOMEO["Resource governor (RAM, disk, stagnation)"]
+        SHIELD["Static analyzer (secrets, MCP, SAST)"]
     end
 
-    subgraph Cognicao["Cognição, Percepção & Memória"]
-        ROUTER["LLMClient Multi-Provedor + Circuit Breaker"]
-        REPOMAP["PolyglotRepoMap (AST + PageRank)"]
-        KG["HierarchicalKnowledgeIndex (Auto-Sync + Mermaid)"]
-        TRIAD["Memória Tríplice (Letta RAM + Mnemos + MSEA)"]
+    subgraph Cognition["Cognition and perception"]
+        LLM["Multi-provider LLM client + circuit breaker"]
+        MAP["Symbol map (AST + PageRank)"]
+        KG["Hierarchical index (delta sync + Mermaid)"]
+        MEM["Three-layer memory"]
     end
 
-    subgraph Execucao["Motor RAPID & Orquestração de Equipes"]
-        LOOP["AgentLoop v3.9 (Batch Actions + Turn-0 Inventory)"]
-        COMP["ToolOutputCompressor (Headroom/RTK + Spill-to-Disk)"]
-        SQUAD["SubAgentSessionBus (CEO -> Arquiteto -> Devs -> Supervisor -> TDD)"]
-        BROWSER["CDPIndexedBrowser (Auto-Cura + Idempotência)"]
-        DESKTOP["PCAutomationEngine (Set-of-Mark + UIA + OCR)"]
+    subgraph Execution["Execution"]
+        LOOP["Agent loop (batching, turn-0 inventory)"]
+        COMP["Output compressor (+ spill to disk)"]
+        TEAM["Team orchestrator (waves, roles)"]
+        BROWSER["Indexed browser (self-healing)"]
+        DESKTOP["Desktop automation (Windows)"]
     end
 
-    Entrada --> Governanca
-    Governanca --> Cognicao
-    Cognicao --> Execucao
+    Entry --> Governance --> Cognition --> Execution
 ```
 
----
+## Quick start
 
-## Fundamentos Matemáticos e Aplicação em Outros Projetos
-
-Os modelos matemáticos implementados no código do **OmniExecutor** foram desenhados de forma desacoplada para que você possa reutilizá-los em outros sistemas (compiladores, microsserviços financeiros, plataformas de observabilidade, recomendadores ou motores de jogos). Para detalhes extras de implementação, consulte também o [Manual de Engenharia e Fundamentos Matemáticos](docs/MANUAL_ENGENHARIA_E_FUNDAMENTOS_MATEMATICOS.md).
-
-### 1. Calibração Epistêmica pelo Escore de Brier (`src/am_ua/contracts/calibration.py`)
-
-Todo agente ou modelo preditivo sofre de excesso de confiança. Para medir se a confiança declarada $p_i \in [0, 1]$ corresponde à realidade empírica $o_i \in \{0, 1\}$ (onde $1$ significa que os testes reais passaram e $0$ que falharam), utilizamos o **Brier Score** acumulado por domínio:
-
-$$\text{BS} = \frac{1}{N} \sum_{i=1}^{N} (p_i - o_i)^2$$
-
-A autonomia efetiva permitida ao sistema é ajustada dinamicamente penalizando desvios de calibração:
-
-$$\text{Autonomia}_{\text{efetiva}} = \text{clip}\left(\text{Autonomia}_{\text{base}} \cdot (1 - \gamma \cdot \text{BS}),\; 0.1,\; 1.0\right)$$
-
-- **Onde aplicar em outros projetos:**
-  - **Sistemas de Crédito e Antifraude (FinTech):** ponderar automaticamente se uma transação pode ser aprovada sem revisão humana quando o modelo mantém $\text{BS} < 0.08$ nas últimas 500 decisões.
-  - **Pipelines de Deploy Contínuo (CI/CD):** exigir aprovação manual de PRs sempre que o índice de calibração do gerador de código cair em determinado microsserviço.
-
-### 2. Centralidade PageRank sobre Grafo AST de Dependências (`src/am_ua/perception/polyglot_repomap.py`)
-
-Em repositórios grandes, enviar todos os arquivos para o LLM é inviável, e a busca vetorial comum (embeddings) perde a relação estrutural de quem importa ou chama quem. Construímos um grafo direcionado $G = (V, E)$ extraindo definições e referências via AST e calculamos a importância estrutural de cada arquivo $u \in V$:
-
-$$PR(u) = \frac{1 - d}{|V|} + d \sum_{v \in B_u} \frac{PR(v)}{L(v)}$$
-
-onde $d = 0.85$ é o fator de amortecimento, $B_u$ é o conjunto de módulos que dependem de $u$ e $L(v)$ é o grau de saída de $v$.
-
-- **Onde aplicar em outros projetos:**
-  - **Análise de Impacto em Monorepos:** identificar os 5% de arquivos centrais cujo *refactor* exige bateria completa de testes de integração.
-  - **Priorização de Auditoria de Segurança:** auditar primeiro os módulos com maior $PR(u)$ expostos a entrada externa.
-
-### 3. Potencial de Repulsão de Casimir e Escalonamento Adaptativo de Workers (`src/am_ua/governance/homeostasis.py` & `subagent_bus.py`)
-
-Para evitar que múltiplos agentes ou processos estourem a memória física da máquina hospedeira, modelamos uma força repulsiva de barreira inspirada no efeito Casimir conforme o recurso livre $r$ (RAM ou espaço em disco) se aproxima do piso crítico $r_{\min}$:
-
-$$F_{\text{casimir}}(r) = \frac{\alpha}{\max(\epsilon,\; r - r_{\min})^4}$$
-
-Em paralelo, o teto de trabalhadores simultâneos $W_{\max}$ na orquestração de equipes é determinado em tempo real pela função degrau de segurança:
-
-$$W_{\max} = \min\left(8,\; \max\left(2,\; 2 + \left\lfloor \frac{\text{RAM}_{\text{livre\_MB}} - 2560}{1536} \right\rfloor\right)\right)$$
-
-- **Onde aplicar em outros projetos:**
-  - **Consumidores de Filas (RabbitMQ / Kafka / Celery):** ajustar o *pool* de threads ou processos dinamicamente sem sofrer *OOM-Kill* do kernel.
-  - **Servidores de Inferência Local (Ollama / vLLM / ONNX):** reduzir o *batch size* antes que a paginação em disco degrade a latência P99.
-
-### 4. Seleção Evolutiva via UCB1 e Fronteira de Pareto (`src/am_ua/evolution/constitutional_evolver.py`)
-
-Quando o sistema busca otimizar código ou hiperparâmetros em loop fechado (estilo *Autoresearch*), ele equilibra explotação (usar a melhor variante conhecida) e exploração (testar novas mutações) através do limite superior de confiança **UCB1**:
-
-$$\text{UCB1}_i = \bar{x}_i + c \sqrt{\frac{\ln N}{n_i}}$$
-
-onde $\bar{x}_i$ é a recompensa média da variante $i$, $n_i$ é o número de avaliações da variante $i$, $N = \sum n_j$ é o total de rodadas e $c = \sqrt{2}$. Uma candidata $A$ só é promovida sobre a linha de base $B$ se satisfizer a **dominância estrita de Pareto** no vetor de métricas $\mathbf{m} = (\text{taxa\_acerto}, -\text{latência}, -\text{tokens}, -\text{risco})$:
-
-$$\forall k:\; m_k(A) \ge m_k(B) \quad \land \quad \exists k:\; m_k(A) > m_k(B)$$
-
-- **Onde aplicar em outros projetos:**
-  - **Testes A/B e Otimização de Conversão:** substituir algoritmos estáticos por *Multi-Armed Bandits* que convergem rápido sem desperdiçar tráfego em variantes ruins.
-  - **Otimização de Queries SQL e Compiladores:** aceitar automaticamente reescritas de queries apenas quando melhoram o tempo de execução sem aumentar o uso de memória ou alterar a cardinalidade do resultado.
-
-### 5. Curva de Retenção Bi-Temporal FSRS / ACT-R (`src/am_ua/memory/mnemos_connector.py`)
-
-Para decidir quais memórias técnicas de longo prazo devem ser injetadas no prompt e quais devem decair ou ser consolidadas, combinamos a ativação de base **ACT-R** com a curva de esquecimento **FSRS** em função do tempo decorrido $t$ e da estabilidade $S$:
-
-$$R(t, S) = \left(1 + \kappa \cdot \frac{t}{S}\right)^{-\beta}, \qquad A_i = \ln \left(\sum_{j=1}^{m} t_j^{-d}\right) + \sum_{k} w_k S_{ki}$$
-
-- **Onde aplicar em outros projetos:**
-  - **Sistemas de Recomendação e Assistentes Corporativos:** priorizar documentos e decisões arquiteturais recentes e frequentemente validados, evitando poluir o contexto com regras obsoletas.
-  - **Plataformas de Educação e Treinamento Adaptativo:** agendar revisões exatamente no ponto onde a probabilidade de retenção $R(t, S)$ atinge $0.90$.
-
----
-
-## Manual Didático de Instruções (Passo a Passo)
-
-### 1. Pré-requisitos e Instalação Rápida
-
-1. **Python 3.11+** instalado no sistema.
-2. Clone o repositório e instale as dependências em modo editável:
+> **Platform note.** The project is currently **Windows-first** (UI Automation, DPAPI, PowerShell acceptance commands) and expects a writable *safe temp root* configured in `constitution/IMMUTABLE_CONSTITUTION.json` (`safe_temp_root`). See [Known limitations](#known-limitations).
 
 ```powershell
 git clone https://github.com/juan3861/omni-executor.git
 cd omni-executor
 pip install -e .
+
+# Optional extras, only for the features that use them:
+pip install playwright pytesseract pillow numpy uiautomation
+playwright install chromium
 ```
 
-3. Configure pelo menos uma chave de provedor LLM no ambiente (o cliente faz *failover* automático entre provedores locais e em nuvem):
+Configure at least one LLM provider. The client tries providers in order and fails over automatically:
 
 ```powershell
-$env:GROQ_API_KEY="sua-chave-groq"
-$env:OPENROUTER_API_KEY="sua-chave-openrouter"
-# Opcional: $env:OPENAI_API_KEY="sua-chave-openai"
+$env:GROQ_API_KEY       = "<your-key>"
+$env:OPENROUTER_API_KEY = "<your-key>"
+# optional: $env:OPENAI_API_KEY = "<your-key>"
+# optional: $env:AM_UA_PROVIDERS = "groq,openrouter,openai"   # provider order
 ```
 
----
+Sanity checks:
 
-### 2. Comandos Principais de Terminal (`omni-executor.cmd`)
+```powershell
+.\omni-executor.cmd doctor     # readiness: database, seal, resources, organs
+.\omni-executor.cmd shield .   # static analysis of the current directory
+pytest tests -q                # 73 tests
+```
 
-| Objetivo | Comando | O Que Ele Faz |
-| :--- | :--- | :--- |
-| **Diagnóstico Completo** | `.\omni-executor.cmd doctor` | Verifica integridade do banco SQLite WAL, RAM livre, espaço em disco, selo SHA-256 e disponibilidade dos 16 módulos nucleares. |
-| **Auditoria de Segurança (SAST)** | `.\omni-executor.cmd shield .` | Escaneia o repositório em busca de segredos expostos, configurações MCP inseguras e padrões vulneráveis (`pickle`, `yaml.load`, `shell=True`), gerando nota de `A` a `F`. |
-| **Executar Missão de Engenharia** | `.\omni-executor.cmd agent "Corrija o bug de arredondamento em money.py" --workspace .\meu_app --verify "pytest -q"` | Executa o loop autônomo no diretório indicado e só encerra quando o comando `--verify` retornar código `0`. |
-| **Servidor MCP Nativo** | `.\omni-executor.cmd mcp-serve` | Inicia o servidor Model Context Protocol via `stdio` (JSON-RPC 2.0) para integração com Claude Code, Cursor, Codex ou Antigravity. |
-| **Status do Roadmap Selado** | `.\aether-compass.cmd status` | Exibe o estado criptográfico das 27 subfases arquiteturais e verifica se houve desvio (*drift*) em arquivos críticos. |
+## CLI reference
 
----
+All commands run through `omni-executor.cmd` (`.\omni-executor.cmd <command> ...`).
 
-### 3. Como Usar em Diferentes Tipos de Projetos e Processos
+| Command | Purpose |
+| :--- | :--- |
+| `doctor` | Full readiness check (state owner, seal, topology, memory, resource headroom). |
+| `shield <dir>` | Static analysis: secrets, unsafe MCP configs, risky hooks, unsafe code patterns. Prints a grade `A`–`F`. |
+| `mission "<objective>" --workspace <dir> --verify "<cmd>"` | Run the autonomous agent. Marked `VERIFIED` only if `<cmd>` exits `0`. Useful flags: `--workflow react\|sparc\|hierarchical`, `--best-of-n N`, `--role <persona>`, `--max-turns N`. |
+| `repomap <dir>` | Build the PageRank-ranked symbol map. |
+| `browser observe\|act\|extract --url <url>` | Drive the indexed browser (`--index`, `--selector`, `--act-type`). |
+| `pc probe\|windows\|observe\|find\|clipboard\|processes\|port` | Windows desktop automation primitives. |
+| `skills list\|search\|run` | Manage self-forged, AST-validated, hash-sealed Python skills. |
+| `mcp-serve` | Start the MCP server over stdio for MCP-capable clients. |
+| `bench run\|report` | Run or summarize the bundled benchmark. |
 
-#### Caso A: Desenvolvimento e Refatoração de Projetos Existentes (Python, Node, Rust, Go)
-Use o `AetherMindUniversalAgent` via Python ou CLI apontando para a pasta do seu projeto e fornecendo o comando de teste da sua stack (`pytest`, `npm test`, `cargo test`, `go test ./...`):
+Example:
+
+```powershell
+.\omni-executor.cmd mission "Fix the rounding bug in money.py" `
+    --workspace .\sandbox\my_app `
+    --verify "python -m pytest -q" `
+    --workflow hierarchical --best-of-n 2
+```
+
+`--workspace` must resolve **inside the project directory or the configured safe temp root** (see limitations).
+
+## Python recipes
+
+### 1. Run a verified engineering mission
 
 ```python
-from am_ua.agent_kernel import AetherMindUniversalAgent
+from am_ua import OmniExecutorAgent
 
-agent = AetherMindUniversalAgent()
-resultado = agent.run_agent_mission(
-    objective="Renomeie calc_total para compute_total em todos os módulos e atualize os imports",
-    workspace="C:/projetos/meu_servico",
-    verify_cmd="pytest -q",
+agent = OmniExecutorAgent()
+result = agent.run_agent_mission(
+    "Rename calc_total to compute_total in every module and fix the imports",
+    workspace="sandbox/my_app",          # inside the project directory
+    verify_cmd="python -m pytest -q",    # exit code 0 == VERIFIED
     workflow="hierarchical",
-    adaptive_best_of_n=2,
+    adaptive_best_of_n=2,                # escalate with a failure post-mortem if the first try fails
 )
-print(resultado["status"], resultado["changed_files"])
+print(result["status"], result["turns"], result["changed_files"])
 ```
 
-#### Caso B: Criação e Gerenciamento de uma Equipe Completa de Devs (`CEO → Arquiteto → Devs → Supervisor`)
-Quando você tem um projeto complexo ou de programação severa e quer que uma equipe estruturada planeje a arquitetura, implemente em paralelo, supervisione os diffs e audite os testes:
+### 2. Let the orchestrator decide how big a team the task needs
 
 ```python
 from am_ua.execution.subagent_bus import SubAgentSessionBus
 
 bus = SubAgentSessionBus()
-
-# 1. Inspecionar como o cérebro classifica a missão e quem assumirá cada cargo:
-plano = bus.assess_team_topology(
-    "Arquitetura severa full-stack com API backend, dashboard web, auditoria de segurança SAST e bateria TDD",
+plan = bus.assess_team_topology(
+    "Severe enterprise refactor: backend API, web dashboard, security audit, latency work, TDD",
     workspace_file_count=18,
 )
-print("Modo selecionado:", plano["mode"])          # executive_enterprise_fleet
-print("Hierarquia:", plano["hierarchy"])           # CEO: product_ceo | Arquiteto: systems_architect | Supervisor: eng_supervisor
+print(plan["mode"], plan["severity_score"], plan["hierarchy"])
 
-# 2. Disparar as 4 ondas completas (CEO + Arquiteto -> Devs/SRE -> Supervisor/Security -> TDD/Auditor):
-relatorio = bus.orchestrate_team(
-    "Implementar módulo de autenticação JWT com proteção anti-replay e testes de borda",
-    workspace_file_count=18,
-)
-print(f"Agentes acionados: {relatorio['total_agents_spawned']} em {relatorio['waves_executed']} ondas")
+report = bus.orchestrate_team("Implement JWT auth with replay protection and edge-case tests",
+                              workspace_file_count=18)
+print(report["total_agents_spawned"], "agents in", report["waves_executed"], "waves")
 ```
 
-#### Caso C: Indexação de Repositórios e Geração Automática de Diagramas de Arquitetura
-Para mapear rapidamente um repositório desconhecido (código Python, schemas `.sql`, configurações `.json`/`.yaml` e docs `.md`) e gerar um diagrama Mermaid das dependências reais:
+> Without a custom `worker_fn`, `orchestrate_team` uses a stub worker that only records the role objective. Pass your own `worker_fn(session_id, objective, workspace)` to run real agents.
+
+### 3. Index a repository and export an architecture diagram
 
 ```python
 from am_ua.perception.knowledge_index import HierarchicalKnowledgeIndex
 
-idx = HierarchicalKnowledgeIndex("C:/projetos/meu_monorepo")
-
-# Busca estrutural sem precisar de banco vetorial externo:
-res = idx.query("tabela de sessões e autenticação")
-print(res["hits"])
-
-# Sincronização incremental instantânea após editar arquivos:
-delta = idx.sync_changes()
-print("Arquivos atualizados:", delta["updated"])
-
-# Exportar diagrama Mermaid pronto para colocar na documentação:
-print(idx.export_mermaid_graph())
+idx = HierarchicalKnowledgeIndex("path/to/repo")
+print(idx.query("session table and authentication")["hits"])
+print(idx.sync_changes())           # incremental re-index after edits (SHA-256 delta)
+print(idx.export_mermaid_graph())   # paste into any Markdown file
 ```
 
-#### Caso D: Transformar Qualquer Programa ou Script em Ferramenta Nativa de Agente (`CLI-Anything`)
-Se você tem uma ferramenta interna de linha de comando (por exemplo, `git`, `docker`, `ffmpeg` ou um script da sua empresa) e quer que o agente a utilize com saída JSON validada por AST:
+### 4. Turn any CLI tool into a structured agent skill
 
 ```python
 import sys
 from am_ua.execution.adaptive_skills import AdaptiveSkillForge
 
 forge = AdaptiveSkillForge()
-skill = forge.wrap_cli_tool(sys.executable, skill_name="cli_python_diag", help_args=["--help"])
-print("Manual gerado em:", skill["skill_md_path"])
-
-execucao = forge.run_skill("cli_python_diag", {"argv": ["-c", "import json; print(json.dumps({'ok': True}))"]})
-print("JSON parseado:", execucao["result"]["parsed_json"])
+skill = forge.wrap_cli_tool(sys.executable, skill_name="cli_python_diag")
+out = forge.run_skill("cli_python_diag",
+                      {"argv": ["-c", "import json; print(json.dumps({'ok': True}))"]})
+print(out["result"]["parsed_json"])   # {'ok': True}
 ```
 
-#### Caso E: Automação Web Resiliente e Testes E2E (`CDPIndexedBrowser`)
-Para extrair dados ou testar aplicações web dinâmicas sem quebrar quando um botão muda de classe CSS:
+### 5. Resilient browser automation
 
 ```python
 from am_ua.gui.cdp_browser import CDPIndexedBrowser
 
 browser = CDPIndexedBrowser(headless=True)
-obs = browser.observe("https://exemplo.local/login")
-browser.act("fill", target="#usuario", text="admin")
-browser.act("click", target="Confirmar Acesso")  # Auto-cura por texto se o ID não existir
-dados = browser.extract("#painel_status")
+browser.observe("https://example.com/login")
+browser.act("fill", target="#username", text="admin")
+browser.act("click", target="Sign in")      # falls back to text/semantic match if the selector breaks
+print(browser.extract("#status"))
 browser.close()
 ```
 
----
+## Team orchestration: how and when agents are created
 
-## Resultados Empíricos e Benchmarks (`AM-Bench`)
+The orchestrator scores each mission from `0` to `10`, then picks a topology.
 
-Todos os testes abaixo foram executados contra provedores de LLM reais (zero mocks no benchmark) sob fiscalização do `ConstitutionSealGuard`:
+| Score | Mode | Agents | Roles (waves) |
+| :--- | :--- | :---: | :--- |
+| `0–2` | Solo specialist | 1 | `general_engineer` |
+| `3–5` | Dev squad | 4 | `systems_architect` → `general_engineer` → `eng_supervisor` + `tdd_enforcer` |
+| `6–10` | Executive fleet | 9 | `product_ceo` + `systems_architect` → `general_engineer` + `build_error_resolver` + `performance_sre` → `eng_supervisor` + `security_auditor` → `tdd_enforcer` + `strict_auditor` |
 
-| Bateria / Métrica | Resultado Verificado | Arquivo de Prova no Repositório |
+**Limits (all in `subagent_bus.py`):** parallel workers adapt to free RAM between `2` and `8`; at most `16` agents per mission; spawn depth is capped at `2`; only one agent may hold the physical mouse and keyboard at a time. These are deliberate guard rails — an unbounded agent count would be a fork-bomb risk.
+
+Each wave receives a brief of the previous wave's summaries through the message bus, so the architect's contracts reach the implementers and the supervisor sees what was built.
+
+## Mathematical foundations
+
+Formulas below match the implementation. Full derivations, constants and ways to reuse each idea in other systems are in the **[Engineering and Mathematics Manual](docs/ENGINEERING_AND_MATH_MANUAL.md)**.
+
+**Calibration (Brier score).** For predicted success probability $p_i$ and observed outcome $y_i \in \{0,1\}$ (the acceptance command's result):
+
+```math
+\mathrm{BS} = \frac{1}{N}\sum_{i=1}^{N}\left(p_i - y_i\right)^2
+```
+
+**Code centrality (PageRank, damping $d=0.85$).** For a symbol-reference graph with $n$ files and edge weights $w_{vu}$:
+
+```math
+PR(u) = \frac{1-d}{n} + d\sum_{v \to u} PR(v)\,\frac{w_{vu}}{\sum_{z} w_{vz}}
+```
+
+**Worker scaling from free RAM.**
+
+```math
+W = \min\!\left(8,\ \max\!\left(2,\ 2 + \left\lfloor \frac{\mathrm{RAM}_{\mathrm{free}}[\mathrm{MB}] - 2560}{1536} \right\rfloor\right)\right)
+```
+
+**Storage-pressure signal (Casimir-style).** With normalized free gap $d = \mathrm{free}/\mathrm{total}$:
+
+```math
+F_c(d) = -\frac{\pi^2}{240\, d^{4}}
+```
+
+**Evolution parent selection (UCB1, $c = 1.414$).**
+
+```math
+\mathrm{UCB}_i = \bar{x}_i + c\sqrt{\frac{\ln(N+1)}{n_i}}
+```
+
+## Benchmarks and honest caveats
+
+The repository ships its own sealed benchmark (`eval/am_bench/`, "AM-Bench"): tasks run against real LLM providers; a task passes only if hidden tests pass **and** the visible tests are byte-identical (anti-tamper).
+
+| Run | Result | Evidence |
 | :--- | :--- | :--- |
-| **AM-Bench Código (15 Cenários Python)** | **15 / 15 aprovados (`100.0%`)** | [am_bench_v39_rapid_full20_20261117_011748.json](.proof/am_bench_v39_rapid_full20_20261117_011748.json) |
-| **AM-Bench Browser/CDP (5 Cenários Web)** | **5 / 5 aprovados (`100.0%`)** | [am_bench_v39_browser_all5_20261117_161109.json](.proof/am_bench_v39_browser_all5_20261117_161109.json) |
-| **Redução de Latência (Motor RAPID v3.9)** | **-42,6% no tempo total** (`2.323s` → `1.334s`) | [output_compressor.py](src/am_ua/execution/output_compressor.py) |
-| **Economia de Tokens (Motor RAPID v3.9)** | **-38,7% de tokens** (`1,78M` → `1,09M` tokens) | [agent_loop.py](src/am_ua/execution/agent_loop.py) |
-| **Paridade contra Top-100 + 12 Pioneiros do GitHub** | **16 / 16 eixos AST verificados (`100.0%`)** | [top100_github_parity_audit.json](.proof/top100_github_parity_audit.json) |
-| **Suíte de Testes Unitários e de Integração** | **73 / 73 aprovados (`100.0%`)** | [tests/](tests/) |
-| **Auditoria Estática de Segurança (`AgentShield`)** | **Grau A (`risk_score: 0` em 63 arquivos)** | [agent_shield.py](src/am_ua/security/agent_shield.py) |
+| Code tasks (15) | 15 / 15 passed | [`am_bench_v39_rapid_full20_20261117_011748.json`](.proof/am_bench_v39_rapid_full20_20261117_011748.json) |
+| Browser tasks (5) | 5 / 5 passed (re-run after a navigation fix) | [`am_bench_v39_browser_all5_20261117_161109.json`](.proof/am_bench_v39_browser_all5_20261117_161109.json) |
+| Unit and integration tests | 73 passed | [`tests/`](tests/) |
+| Static analysis of this repo | grade A, 0 findings | `omni-executor.cmd shield .` |
 
----
+Please read these numbers with care:
 
-## Mapa de Diretórios do Projeto
+- It is a **small, self-authored, self-reported benchmark** (20 tasks), not an independent leaderboard result.
+- The first full 20-task run had 19/20 passing; the 5/5 browser result comes from a **separate re-run after fixing the failing case**.
+- The efficiency gain reported during development (about -38.7 % tokens, -42.6 % wall time) compares **two single runs on free-tier providers on different days**; treat it as indicative, not as a controlled measurement.
+- Several browser tasks finish with status `COMPLETED_UNVERIFIED` (no in-loop acceptance command); the pass/fail verdict comes from the benchmark's hidden test.
+- A parity audit against popular open-source agent projects is included ([`top100_github_parity_audit.json`](.proof/top100_github_parity_audit.json)); it is a **keyword-and-file-presence check**, not a feature-by-feature quality comparison.
+
+## Known limitations
+
+- **Windows-first.** Desktop automation (UI Automation, OCR), DPAPI envelopes and PowerShell verification commands are Windows-specific. Browser, code and orchestration features are mostly portable but are only tested on Windows.
+- **Fixed safe temp root.** Several defaults point at a drive-letter path configured as `safe_temp_root` in the constitution. Changing it means editing a sealed file and re-sealing the manifest.
+- **Workspace restriction.** The seal guard only allows writes inside the project directory or the safe temp root (outside the protected `eval/` and `constitution/` zones).
+- **No automatic dependency install.** `pyproject.toml` declares no dependencies; install the optional extras listed in [Quick start](#quick-start) for the features you use.
+- **LLM required.** The agent needs at least one reachable provider; quality depends on the model behind it.
+- **Orchestration workers.** `orchestrate_team` needs a real `worker_fn` to run real agents (the default is a recording stub).
+- **Desktop benchmark tasks** need an interactive Windows session with desktop composition and are not part of the headless results above.
+
+## Repository layout
 
 ```text
 omni-executor/
-├── omni-executor.cmd              # Atalho principal da CLI (Windows)
-├── aether-ua.cmd                  # CLI do kernel AetherMind Universal Agent
-├── aether-compass.cmd             # Verificador criptográfico de fases (Project Compass)
-├── constitution/                  # Regras constitucionais imutáveis e manifesto SHA-256
-├── docs/                          # Documentação técnica e manual matemático detalhado
+├── omni-executor.cmd            # CLI entry point (Windows)
+├── constitution/                # sealed rules and SHA-256 manifest
+├── docs/ENGINEERING_AND_MATH_MANUAL.md
 ├── eval/
-│   ├── am_bench/                  # Benchmark selado de 25 tarefas (Código, Browser, Desktop)
-│   ├── audit_top100_github.py     # Auditor AST de paridade contra Top-100 + 12 repos de nicho
-│   └── test_empirical_v34_ceiling.py
+│   ├── am_bench/                # bundled sealed benchmark
+│   └── audit_top100_github.py   # repository parity audit script
 ├── src/am_ua/
-│   ├── agent_kernel.py            # Fachada unificada e telemetria OpenTelemetry
-│   ├── cognition/                 # LLMClient, Planner DAG, Personas, SONA, ReasoningBank, URE
-│   ├── contracts/                 # Envelopes cognitivos, taint R16 e Calibração de Brier
-│   ├── evolution/                 # Evolução constitucional UCB1 / MAP-Elites Pareto
-│   ├── execution/                 # AgentLoop RAPID, DurableEngine, SubAgentSessionBus (A2A/Squads)
-│   ├── governance/                # HomeostasisGovernor, SealGuard SHA-256, Alpha-C13
-│   ├── gui/                       # CDPIndexedBrowser e VerifiedBrowserAdapter
-│   ├── memory/                    # TriadMemoryProvider (Letta Core + Mnemos + MSEA)
-│   ├── perception/                # PolyglotRepoMap (PageRank) e HierarchicalKnowledgeIndex
-│   ├── routing/                   # UniversalCognitiveRouter (OmniRoute / RTK)
-│   └── security/                  # AgentShieldAuditor (SAST) e envelope Windows DPAPI
-└── tests/                         # 73 testes automatizados (unitários, caos e estresse de equipe)
+│   ├── agent_kernel.py          # facade and telemetry
+│   ├── cognition/               # LLM client, planner, personas, memory of trajectories
+│   ├── contracts/               # envelopes, taint tracking, calibration
+│   ├── evolution/               # UCB1 + Pareto-gated evolution
+│   ├── execution/               # agent loop, durable engine, team bus, MCP, skills
+│   ├── governance/              # seal guard, resource governor
+│   ├── gui/                     # indexed browser, verified adapter
+│   ├── memory/                  # three-layer memory
+│   ├── perception/              # symbol map, hierarchical index
+│   ├── routing/                 # provider/endpoint router
+│   └── security/                # static analyzer, DPAPI envelopes
+└── tests/                       # 73 automated tests
 ```
 
----
+## License
 
-## English Overview & Quick Reference
-
-**OmniExecutor** (`AetherMind Universal Agent v4.1`) is a production-grade autonomous software engineering harness, hierarchical multi-agent orchestrator, and verified browser/desktop automation engine written in Python.
-
-### Key Engineering Capabilities
-- **Surgical Code Execution (`RAPID v3.9`):** Pre-seeds Turn-0 workspace file inventories and AST PageRank symbol maps (`PolyglotRepoMap`), batches up to 6 independent tool calls per turn, compresses noisy tool outputs with automatic spill-to-disk recovery (`ToolOutputCompressor`), and enforces pre/post-write AST & secret hooks (`DeterministicHookEngine`).
-- **Executive & Dev Squad Governance (`SubAgentSessionBus`):** Dynamically evaluates mission severity (`0..10`) to scale from a single specialist up to a 4-wave **Executive Enterprise Fleet** (`product_ceo` → `systems_architect` → parallel `general_engineer` / `build_error_resolver` / `performance_sre` → `eng_supervisor` / `security_auditor` → `tdd_enforcer` / `strict_auditor`), scaling worker concurrency (`2..8` threads) from live host RAM.
-- **Open Interoperability (`MCP` + `A2A v0.3` + `OpenClaw Gateway`):** Native stdio MCP server (`omni-executor.cmd mcp-serve`), Agent2Agent (A2A v0.3) JSON-RPC 2.0 endpoint (`agent/card`, `tasks/send`, `tasks/get`, `tasks/cancel`), and unified channel event ingestion.
-- **Self-Healing Browser & Closed-Loop Desktop RPA:** Indexed DOM `[1..N]` Playwright/CDP browser with selector self-healing and same-URL navigation idempotence, paired with Set-of-Mark + UIA + OCR Windows desktop automation.
+MIT (see `pyproject.toml`).

@@ -1,3 +1,3 @@
 @echo off
-REM OmniExecutor Agent (AetherMind Universal Agent Runtime Entrypoint)
+REM OmniExecutor Agent - command line entrypoint (forwards all arguments to the CLI)
 "%~dp0aether-ua.cmd" %*

@@ -166,7 +166,7 @@ class LLMClient:
         return body
 
     def _post(self, spec: ProviderSpec, body: Dict[str, Any]) -> Dict[str, Any]:
-        headers = {"Content-Type": "application/json", "User-Agent": "aethermind-ua/3.2"}
+        headers = {"Content-Type": "application/json", "User-Agent": "omni-executor/4.1"}
         key = spec.api_key()
         if key:
             headers["Authorization"] = f"Bearer {key}"

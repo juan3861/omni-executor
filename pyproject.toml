@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aethermind-universal-agent"
-version = "1.0.0"
-description = "AetherMind Universal Ceiling-Level Engineering & General Agent (Super-Union v3.1)"
+name = "omni-executor"
+version = "4.1.0"
+description = "OmniExecutor Agent: autonomous coding agent, hierarchical team orchestrator, self-healing browser and MCP/A2A harness"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = []
