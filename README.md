@@ -91,7 +91,7 @@ flowchart TB
 
     subgraph Exec["Durable Execution Engines"]
         DURABLE["DurableExecutionEngine (SQLite-WAL + EffectClass + LeaseFencer)"]
-        LOOP["AgentLoop (ReAct / SPARC / Hierarchical + 6x batching)"]
+        AGENT_LOOP["AgentLoop (ReAct / SPARC / Hierarchical + 6x batching)"]
         COMPRESS["ToolOutputCompressor (+ disk spill log)"]
         TEAM["SubAgentSessionBus (wave orchestrator + GUI lock)"]
         BROWSER["CDPIndexedBrowser (self-healing DOM [1..N])"]
@@ -102,12 +102,12 @@ flowchart TB
     Entry --> Gov
     Gov --> Cog
     Cog --> Exec
-    LOOP --> DURABLE
-    LOOP --> COMPRESS
-    LOOP --> TEAM
-    LOOP --> BROWSER
-    LOOP --> DESKTOP
-    LOOP --> SKILLS
+    AGENT_LOOP --> DURABLE
+    AGENT_LOOP --> COMPRESS
+    AGENT_LOOP --> TEAM
+    AGENT_LOOP --> BROWSER
+    AGENT_LOOP --> DESKTOP
+    AGENT_LOOP --> SKILLS
 ```
 
 ### End-to-End Mission Sequence
@@ -116,30 +116,30 @@ flowchart TB
 sequenceDiagram
     actor User
     participant CLI as OmniExecutor Agent
-    participant Hook as Hooks & SealGuard
-    participant LLM as Actor LLM / Judge LLM
-    participant Loop as AgentLoop + DurableEngine
+    participant Guard as Hooks and SealGuard
+    participant LLM as Actor and Judge LLMs
+    participant Core as AgentLoop and DurableEngine
     participant Oracle as Acceptance Command (--verify)
 
     User->>CLI: Run mission (objective, workspace, verify_cmd, workflow)
-    CLI->>Loop: Inject Turn-0 workspace inventory + pruned toolset + persona
-    loop Turns 1..N (max 6 actions/turn)
-        Loop->>LLM: Structured prompt (condensed history + compressed observations)
-        LLM-->>Loop: JSON action or actions[1..6]
-        Loop->>Hook: PreToolUse check (workspace boundary, secret guard, lease epoch)
-        Hook-->>Loop: Allow or block
-        Loop->>Loop: Execute via DurableExecutionEngine (SQLite-WAL checkpoint)
-        Loop->>Hook: PostToolUse AST syntax & scope check (.py edits)
-        Loop->>Loop: Compress output (dedup + clip; spill raw log to disk)
+    CLI->>Core: Inject Turn-0 workspace inventory, pruned tools, persona
+    loop Turns 1 to N (up to 6 actions per turn)
+        Core->>LLM: Structured prompt (condensed history + compressed observations)
+        LLM-->>Core: JSON action or actions batch
+        Core->>Guard: PreToolUse check (workspace boundary, secret guard, lease epoch)
+        Guard-->>Core: Allow or block
+        Core->>Core: Execute via DurableExecutionEngine (SQLite-WAL checkpoint)
+        Core->>Guard: PostToolUse AST syntax and scope check (.py edits)
+        Core->>Core: Compress output (dedup and clip, spill full log to disk)
     end
-    LLM->>Loop: finish (summary, calibrated confidence p)
-    Loop->>Oracle: Execute verify_cmd (exit code == 0?)
+    LLM->>Core: finish (summary, calibrated confidence p)
+    Core->>Oracle: Execute verify_cmd (check exit code 0)
     alt verify_cmd fails before max_turns
-        Oracle-->>Loop: Exit code != 0 (finish rejected back into loop)
+        Oracle-->>Core: Non-zero exit code (finish rejected back into loop)
     else verify_cmd exits 0
-        Oracle-->>CLI: PASSED -> EpistemicTag = PROVADO
-        CLI->>LLM: Independent reviewer LLM on separate provider (anti-shortcut diff check)
-        CLI->>CLI: Update Brier calibration + save ReasoningBank trajectory + emit AG-UI RUN_FINISHED
+        Oracle-->>CLI: PASSED (EpistemicTag PROVADO)
+        CLI->>LLM: Independent reviewer LLM on separate provider (diff check)
+        CLI->>CLI: Update Brier calibration, save trajectory, emit AG-UI RUN_FINISHED
         CLI-->>User: VERIFIED JSON report + unified diff
     end
 ```
