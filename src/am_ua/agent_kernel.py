@@ -557,6 +557,9 @@ class AetherMindUniversalAgent:
             codex_inv = self.codex_muscle.inventory()
             with self.omh_bridge.bind_request_browser_identity(session_id="doctor_probe") as bcap:
                 omh_browser_ok = bool(bcap.get("supported"))
+            from am_ua.execution.hermetic_sandbox_bridge import HermeticSandboxBridge
+
+            hs_status = HermeticSandboxBridge().status()
             report = {
                 "single_state_owner": self.SINGLE_STATE_OWNER,
                 "homeostasis_healthy": homeo.healthy,
@@ -578,6 +581,8 @@ class AetherMindUniversalAgent:
                 "adaptive_skills_count": len(self.skill_forge.list_skills()),
                 "v34_ceiling_organs_ready": True,
                 "mcp_tools_count": len(self.mcp_server._tools),
+                "hermetic_sandbox_installed": hs_status["installed"],
+                "hermetic_sandbox_runtime_ready": hs_status["runtime_ready"],
             }
             sp["attributes"]["healthy"] = all(
                 [

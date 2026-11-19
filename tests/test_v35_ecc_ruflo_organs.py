@@ -1242,6 +1242,55 @@ def test_v44_ssrf_domain_guard_timetravel_guardrails_spill_schema_handoff_dag_ot
         assert pr_r is not None and pr_r["result"]["result"]["echo"] == "hello acp"
         can_r = acp.handle_request({"jsonrpc": "2.0", "id": 4, "method": "session/cancel", "params": {"sessionId": sid}})
         assert can_r is not None and can_r["result"]["cancelled"] is True
+
+        # 11. Hermetic MicroVM Sandbox Bridge + LLMClient.chat_stream SSE
+        from am_ua.cognition.llm_client import LLMClient, ProviderSpec
+        from am_ua.execution.hermetic_sandbox_bridge import HermeticSandboxBridge
+
+        hsb = HermeticSandboxBridge()
+        hs_st = hsb.status()
+        assert hs_st["installed"] is True
+        if hs_st["runtime_ready"]:
+            s_res = hsb.run_command("echo HERMETIC_OK", timeout_s=30)
+            assert s_res["ok"] is True and "HERMETIC_OK" in s_res["output"]
+            assert s_res["sandbox"] == "hermetic_microvm"
+
+        stream_deltas: list[str] = []
+
+        class _SSEHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                _ = self.rfile.read(length)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+                for chunk in (
+                    b'data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n',
+                    b'data: {"choices":[{"delta":{"content":"lo"}}],"usage":{"prompt_tokens":4,"completion_tokens":2}}\n\n',
+                    b"data: [DONE]\n\n",
+                ):
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+
+            def log_message(self, *args: Any) -> None:
+                return
+
+        sse_srv = ThreadingHTTPServer(("127.0.0.1", 0), _SSEHandler)
+        sse_port = sse_srv.server_address[1]
+        sse_th = _threading.Thread(target=sse_srv.serve_forever, daemon=True)
+        sse_th.start()
+        try:
+            spec = ProviderSpec("local_sse", f"http://127.0.0.1:{sse_port}/v1", "PATH", "gpt-4o-mini", local=True)
+            s_client = LLMClient(providers=[spec])
+            s_resp = s_client.chat_stream(
+                [{"role": "user", "content": "hi"}],
+                on_delta=stream_deltas.append,
+            )
+            assert s_resp.text == "Hello" and stream_deltas == ["Hel", "lo"]
+            assert s_client.total_cost_usd > 0.0
+        finally:
+            sse_srv.shutdown()
+            sse_srv.server_close()
     finally:
         import shutil
         shutil.rmtree(ws_dir, ignore_errors=True)

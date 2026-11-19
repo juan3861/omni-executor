@@ -406,6 +406,88 @@ class LLMClient:
                 json_mode=json_mode,
             )
 
+    def chat_stream(
+        self,
+        messages: Sequence[Dict[str, str]],
+        *,
+        max_tokens: int = 2048,
+        temperature: float = 0.2,
+        json_mode: bool = False,
+        prefer: Optional[str] = None,
+        on_delta: Optional[Callable[[str], None]] = None,
+    ) -> LLMResponse:
+        """Stream OpenAI-compatible SSE token deltas (`on_delta`), falling back cleanly to `chat()`."""
+        ordered = (
+            [p for p in self.providers if p.name == prefer] + [p for p in self.providers if p.name != prefer]
+            if prefer
+            else list(self.providers)
+        )
+        if not ordered:
+            raise LLMUnavailableError("No LLM providers configured/available")
+
+        spec = ordered[0]
+        payload = self._payload(spec, list(messages), max_tokens, temperature, json_mode)
+        payload["stream"] = True
+        headers = {"Content-Type": "application/json", "Accept": "text/event-stream", "User-Agent": "omni-executor/4.4"}
+        key = spec.api_key()
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+        req = urllib.request.Request(
+            f"{spec.base_url.rstrip('/')}/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        t0 = time.perf_counter()
+        chunks: List[str] = []
+        pt, ct = 0, 0
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+                ctype = (resp.headers.get("Content-Type") or "").lower()
+                if "text/event-stream" not in ctype:
+                    raw = resp.read().decode("utf-8", errors="replace")
+                    data = json.loads(raw)
+                    text = ((data.get("choices") or [{}])[0].get("message") or {}).get("content", "")
+                    if text and on_delta is not None:
+                        on_delta(text)
+                    usage = data.get("usage") or {}
+                    pt = int(usage.get("prompt_tokens") or 0)
+                    ct = int(usage.get("completion_tokens") or 0)
+                    cost = estimate_cost_usd(data.get("model", spec.model), pt, ct)
+                    with self._lock:
+                        self.total_prompt_tokens += pt
+                        self.total_completion_tokens += ct
+                        self.total_cost_usd = round(self.total_cost_usd + cost, 8)
+                        self.calls += 1
+                    return LLMResponse(text, spec.name, data.get("model", spec.model), pt, ct, round((time.perf_counter() - t0) * 1000, 1), cost_usd=cost)
+
+                for raw_line in resp:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    data_str = line[5:].strip()
+                    if data_str == "[DONE]":
+                        break
+                    ev = json.loads(data_str)
+                    delta = (((ev.get("choices") or [{}])[0]).get("delta") or {}).get("content")
+                    if delta:
+                        chunks.append(delta)
+                        if on_delta is not None:
+                            on_delta(delta)
+                    if ev.get("usage"):
+                        pt = int(ev["usage"].get("prompt_tokens") or pt)
+                        ct = int(ev["usage"].get("completion_tokens") or ct)
+            full_text = "".join(chunks)
+            cost = estimate_cost_usd(spec.model, pt, ct)
+            with self._lock:
+                self.total_prompt_tokens += pt
+                self.total_completion_tokens += ct
+                self.total_cost_usd = round(self.total_cost_usd + cost, 8)
+                self.calls += 1
+            return LLMResponse(full_text, spec.name, spec.model, pt, ct, round((time.perf_counter() - t0) * 1000, 1), cost_usd=cost)
+        except Exception:
+            return self.chat(messages, max_tokens=max_tokens, temperature=temperature, json_mode=json_mode, prefer=prefer)
+
 
 def extract_json_object(text: str) -> Dict[str, Any]:
     """Extract the first balanced top-level JSON object from model output (tolerates fences/prose)."""

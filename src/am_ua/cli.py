@@ -63,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     p_mission.add_argument("--best-of-n", type=int, default=1, help="Behavior Best-of-N parallel candidate rollouts (Agent-S3 bBoN)")
     p_mission.add_argument("--wheel-timeout", type=float, default=0.0, help="Human intervention timeout in seconds (0 = disabled/autonomous)")
     p_mission.add_argument("--agui-port", type=int, default=None, help="Local loopback port to serve live AG-UI SSE stream (127.0.0.1)")
+    p_mission.add_argument("--output-schema", default=None, help="JSON Schema string or .json file path for typed structured output")
     p_mission.add_argument("--domain", default="software_engineering")
     p_mission.add_argument("--scan-dir", default=None)
     p_mission.add_argument("--repomap-dir", default=None)
@@ -234,6 +235,15 @@ def main(argv: list[str] | None = None) -> int:
         def progress(ev: dict) -> None:
             print(f"[turn {ev.get('turn')}] {ev.get('provider')} -> {ev.get('tool')}: {ev.get('thought', '')}", file=sys.stderr, flush=True)
 
+        parsed_schema = None
+        if getattr(args, "output_schema", None):
+            raw_schema = str(args.output_schema).strip()
+            schema_path = Path(raw_schema)
+            if schema_path.is_file():
+                parsed_schema = json.loads(schema_path.read_text(encoding="utf-8"))
+            else:
+                parsed_schema = json.loads(raw_schema)
+
         try:
             out = agent.run_agent_mission(
                 obj, ws, verify_cmd=args.verify, mission_id=args.mission_id,
@@ -243,6 +253,7 @@ def main(argv: list[str] | None = None) -> int:
                 wheel_timeout_s=getattr(args, "wheel_timeout", 0.0),
                 agui_port=getattr(args, "agui_port", None),
                 best_of_n=getattr(args, "best_of_n", 1),
+                output_schema=parsed_schema,
             )
         except PermissionError as exc:
             print(json.dumps({"status": "BLOCKED", "error": str(exc)}, ensure_ascii=False))

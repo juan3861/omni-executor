@@ -327,14 +327,23 @@ class WorkspaceTools:
         cmd = str(args["command"]).strip()
         if DANGEROUS_CMD_RE.search(cmd):
             raise ConstitutionalViolationError(f"Command blocked by agent denylist: {cmd[:120]}")
-        # In PowerShell, invoking a quoted path requires the call operator '&'
-        if cmd.startswith(('"', "'")) and not cmd.startswith("&"):
-            cmd = f"& {cmd}"
         timeout = min(float(args.get("timeout_s", self.cmd_timeout_s)), 600.0)
+        sandbox_mode = str(args.get("sandbox") or ("hermetic" if args.get("hermetic") else "")).strip().lower()
+        if sandbox_mode == "hermetic":
+            from am_ua.execution.hermetic_sandbox_bridge import HermeticSandboxBridge
+
+            return HermeticSandboxBridge().run_command(cmd, timeout_s=timeout)
+        # In PowerShell, invoking a quoted path requires the call operator '&'
+        if os.name == "nt":
+            if cmd.startswith(('"', "'")) and not cmd.startswith("&"):
+                cmd = f"& {cmd}"
+            argv = ["pwsh", "-NoProfile", "-NonInteractive", "-Command", cmd]
+        else:
+            argv = ["bash", "-lc", cmd]
         t0 = time.perf_counter()
         try:
             proc = subprocess.run(
-                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", cmd],
+                argv,
                 cwd=str(self.ws), env=scrubbed_env(), capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=timeout,
             )
