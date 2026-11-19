@@ -45,7 +45,10 @@ import unicodedata
 from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError:  # optional desktop visual extra (`pillow`)
+    Image = ImageDraw = ImageFont = None  # type: ignore[assignment]
 
 from am_ua.governance.seal_guard import ConstitutionalViolationError
 
