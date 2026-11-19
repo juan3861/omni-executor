@@ -120,8 +120,15 @@ jobs:
               rb = ReasoningBank(traces_dir=tmp / "rb")
               assert rb.sleeptime_consolidate()["ok"] is True
 
-              # 5. v4.4 portable invariants (SSRF, DomainGuard, OutputGuardrails, TimeTravel, DAG, Cost/Cache, PolicyProver, ACP)
+              # 5. v4.4 portable invariants (SSRF, DomainGuard, OutputGuardrails, TimeTravel, DAG, Cost/Cache/OTLP, PolicyProver, ACP, OmniExecutorAgent)
+              from am_ua import OmniExecutorAgent
+              from am_ua.agent_kernel import TelemetrySpanLedger
               from am_ua.cognition.llm_client import check_cache_health, estimate_cost_usd
+              assert OmniExecutorAgent is not None
+              ledger = TelemetrySpanLedger(log_path=tmp / "otel.jsonl")
+              with ledger.start_span("ci.span") as sp:
+                  sp["tokens_used"] = 7
+              assert len(ledger.export_otlp_payload()["resourceSpans"][0]["scopeSpans"][0]["spans"]) == 1
               from am_ua.execution.acp_adapter import OmniACPServer
               from am_ua.execution.agent_loop import WorkspaceTools
               from am_ua.execution.hook_engine import OutputGuardrailDecision

@@ -49,7 +49,7 @@ class PersonaContract:
 class PersonaManager:
     """Manages the discovery, loading, and injection of engineering personas."""
 
-    DEFAULT_PERSONAS_DIR = Path("F:/AetherMind_Universal_Agent/constitution/personas")
+    DEFAULT_PERSONAS_DIR = Path(__file__).resolve().parents[3] / "constitution" / "personas"
 
     def __init__(self, personas_dir: Optional[Path] = None) -> None:
         self.personas_dir = Path(personas_dir or self.DEFAULT_PERSONAS_DIR).resolve()

@@ -38,7 +38,7 @@ def jaccard_similarity(set_a: Set[str], set_b: Set[str]) -> float:
 class ReasoningBank:
     """Indexes and retrieves past successful mission execution trajectories."""
 
-    DEFAULT_TRACES_DIR = Path("F:/AetherMind_Universal_Agent/data/agent_traces")
+    DEFAULT_TRACES_DIR = Path(__file__).resolve().parents[3] / "data" / "agent_traces"
 
     def __init__(self, traces_dir: Optional[Path] = None) -> None:
         self.traces_dir = Path(traces_dir or self.DEFAULT_TRACES_DIR).resolve()

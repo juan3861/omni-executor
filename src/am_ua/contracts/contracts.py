@@ -305,3 +305,26 @@ class HypothesisRecord:
         else:
             self.status = "SUPPORTED"
         return self.status
+
+
+def default_repo_root() -> "Path":
+    """Resolve the repository root portably across Windows/Linux/macOS."""
+    from pathlib import Path
+
+    return Path(__file__).resolve().parents[3]
+
+
+def default_temp_dir(subdir: Optional[str] = None) -> "Path":
+    """Resolve a portable writable temp directory (honors AM_UA_TEMP_DIR and F:\\AetherMind_Temp when present)."""
+    import os
+    import tempfile
+    from pathlib import Path
+
+    env_dir = os.environ.get("AM_UA_TEMP_DIR", "").strip()
+    if env_dir:
+        base = Path(env_dir)
+    elif os.name == "nt" and Path("F:/").exists():
+        base = Path(r"F:\AetherMind_Temp")
+    else:
+        base = Path(tempfile.gettempdir()) / "omni_executor_tmp"
+    return (base / subdir) if subdir else base

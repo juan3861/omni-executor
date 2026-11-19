@@ -22,8 +22,10 @@ class ToolOutputCompressor:
     """Loss-minimizing compressor for tool observations entering AgentLoop messages."""
 
     def __init__(self, *, max_obs_chars: int = 12_000, spill_dir: Optional[Path | str] = None) -> None:
+        from am_ua.contracts.contracts import default_temp_dir
+
         self.max_obs_chars = max_obs_chars
-        self.spill_dir = Path(spill_dir or r"F:\AetherMind_Temp\tool_spill")
+        self.spill_dir = Path(spill_dir or default_temp_dir("tool_spill"))
         self.total_chars_before = 0
         self.total_chars_after = 0
         self.spill_files: List[str] = []

@@ -103,14 +103,24 @@ class HomeostasisGovernor:
     def __init__(
         self,
         *,
-        safe_temp_dir: str = r"F:\AetherMind_Temp",
+        safe_temp_dir: Optional[str] = None,
         min_free_f_bytes: int = 1 * 1024**3,      # 1.0 GB hard floor on F:
         min_avail_ram_mb: float = 384.0,          # 384 MB hard floor
         max_tokens_budget: int = 500_000,
         max_wall_seconds: float = 3600.0,
         max_stagnant_turns: int = 4,
     ) -> None:
-        self.safe_temp_dir = safe_temp_dir
+        import tempfile
+
+        env_tmp = os.environ.get("AM_UA_TEMP_DIR", "").strip()
+        if safe_temp_dir:
+            self.safe_temp_dir = safe_temp_dir
+        elif env_tmp:
+            self.safe_temp_dir = env_tmp
+        elif os.name == "nt" and Path("F:/").exists():
+            self.safe_temp_dir = r"F:\AetherMind_Temp"
+        else:
+            self.safe_temp_dir = str(Path(tempfile.gettempdir()) / "omni_executor_tmp")
         self.min_free_f_bytes = min_free_f_bytes
         self.min_avail_ram_mb = min_avail_ram_mb
         self.max_tokens_budget = max_tokens_budget

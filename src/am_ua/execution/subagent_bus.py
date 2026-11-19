@@ -95,8 +95,10 @@ class SubAgentSessionBus:
         max_depth: int = MAX_SPAWN_DEPTH,
         max_workers: int = MAX_CONCURRENT_WORKERS,
     ) -> None:
+        from am_ua.contracts.contracts import default_temp_dir
+
         self.db_path = Path(
-            db_path or r"F:\AetherMind_Temp\subagent_bus.db"
+            db_path or default_temp_dir("subagent_bus.db")
         ).resolve()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.max_depth = max(1, int(max_depth))
@@ -163,9 +165,11 @@ class SubAgentSessionBus:
                 f"Sub-agent spawn depth {next_depth} exceeds MAX_SPAWN_DEPTH={self.max_depth}"
             )
 
+        from am_ua.contracts.contracts import default_temp_dir
+
         sid = f"sub-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
         ws_path = Path(
-            workspace or (Path(r"F:\AetherMind_Temp\subagent_workspaces") / sid)
+            workspace or default_temp_dir(f"subagent_workspaces/{sid}")
         ).resolve()
         ws_path.mkdir(parents=True, exist_ok=True)
         now = time.time()

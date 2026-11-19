@@ -9,9 +9,13 @@ using an isolated database at `F:\\AetherMind_Universal_Agent\\data\\mnemos_ua.d
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import dataclass
+import json
+import sqlite3
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
@@ -24,7 +28,157 @@ MNEMOS_SRC = Path(r"F:\Mnemos\src")
 if MNEMOS_SRC.is_dir() and str(MNEMOS_SRC) not in sys.path:
     sys.path.insert(0, str(MNEMOS_SRC))
 
-from mnemos.core.engine import MemoryEngine  # type: ignore[import-untyped]
+try:
+    from mnemos.core.engine import MemoryEngine  # type: ignore[import-untyped]
+    MNEMOS_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    MemoryEngine = None  # type: ignore[assignment,misc]
+    MNEMOS_AVAILABLE = False
+
+
+@dataclass
+class _PortableRecord:
+    id: str
+    content: str
+    memory_type: str
+    importance: float
+    valid_from: float
+    valid_to: Optional[float]
+    invalidated_at: Optional[float]
+    metadata: Dict[str, Any]
+
+
+class _PortableMeta:
+    def __init__(self, confidence: float, should_abstain: bool, reason: str) -> None:
+        self.confidence = confidence
+        self.should_abstain = should_abstain
+        self.reason = reason
+
+
+class _PortableRetrieveResult(list):
+    def __init__(self, items: List[Dict[str, Any]], metamemory: _PortableMeta) -> None:
+        super().__init__(items)
+        self.metamemory = metamemory
+        self.draft_clues: List[Any] = []
+        self.reflections: List[Any] = []
+        self.reminders: List[Any] = []
+
+
+class _PortableSQLiteMemoryEngine:
+    """Self-contained SQLite WAL bi-temporal fallback when external `mnemos` package is absent."""
+
+    def __init__(self, db_path: str, embedding_dim: int = 256) -> None:
+        _ = embedding_dim
+        self.db_path = db_path
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS memories (
+                    id TEXT PRIMARY KEY,
+                    content TEXT NOT NULL,
+                    memory_type TEXT NOT NULL,
+                    importance REAL NOT NULL,
+                    valid_from REAL NOT NULL,
+                    valid_to REAL,
+                    invalidated_at REAL,
+                    metadata_json TEXT NOT NULL
+                )
+                """
+            )
+
+    def write(
+        self,
+        *,
+        content: str,
+        memory_type: str = "semantic",
+        importance: float = 0.6,
+        valid_from: Optional[float] = None,
+        valid_to: Optional[float] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        links_to: Optional[List[str]] = None,
+        auto_invalidate_conflicts: bool = False,
+        sanitize_pii: bool = False,
+    ) -> _PortableRecord:
+        _ = links_to, auto_invalidate_conflicts, sanitize_pii
+        now = time.time()
+        vf = float(valid_from if valid_from is not None else now)
+        mid = f"mem-{uuid.uuid4().hex[:12]}"
+        meta = dict(metadata or {})
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+            conn.execute(
+                "INSERT INTO memories VALUES (?, ?, ?, ?, ?, ?, NULL, ?)",
+                (mid, content, memory_type, float(importance), vf, valid_to, json.dumps(meta, ensure_ascii=False)),
+            )
+        return _PortableRecord(mid, content, memory_type, float(importance), vf, valid_to, None, meta)
+
+    def retrieve(
+        self,
+        *,
+        query: str,
+        context: Optional[str] = None,
+        limit: int = 5,
+        as_of_time: Optional[float] = None,
+        include_invalidated: bool = False,
+        memory_type: Optional[str] = None,
+    ) -> _PortableRetrieveResult:
+        _ = context
+        q_tokens = {w for w in (query or "").lower().split() if len(w) > 1}
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+            rows = conn.execute(
+                "SELECT id, content, memory_type, importance, valid_from, valid_to, invalidated_at, metadata_json FROM memories"
+            ).fetchall()
+        scored: List[Dict[str, Any]] = []
+        for mid, content, mtype, imp, vf, vt, inv, mjson in rows:
+            if not include_invalidated and inv is not None:
+                continue
+            if memory_type and mtype != memory_type:
+                continue
+            if as_of_time is not None and vf > as_of_time:
+                continue
+            c_tokens = {w for w in content.lower().split() if len(w) > 1}
+            overlap = len(q_tokens & c_tokens) / max(1, len(q_tokens)) if q_tokens else 0.5
+            score = round(0.7 * overlap + 0.3 * float(imp), 4)
+            scored.append(
+                {
+                    "id": mid,
+                    "content": content,
+                    "memory_type": mtype,
+                    "importance": imp,
+                    "score": score,
+                    "valid_from": vf,
+                    "valid_to": vt,
+                    "invalidated_at": inv,
+                    "metadata": json.loads(mjson),
+                }
+            )
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        top = scored[: max(1, int(limit))]
+        conf = top[0]["score"] if top else 0.0
+        return _PortableRetrieveResult(top, _PortableMeta(conf, not bool(top), "portable_sqlite"))
+
+    def update(
+        self,
+        *,
+        memory_id: str,
+        new_content: str,
+        reason: str = "evidence_revision",
+        as_of_time: Optional[float] = None,
+    ) -> Optional[_PortableRecord]:
+        now = float(as_of_time if as_of_time is not None else time.time())
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+            row = conn.execute(
+                "SELECT memory_type, importance, metadata_json FROM memories WHERE id = ?",
+                (memory_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            mtype, imp, mjson = row
+            conn.execute("UPDATE memories SET invalidated_at = ? WHERE id = ?", (now, memory_id))
+        meta = json.loads(mjson)
+        meta["supersedes"] = memory_id
+        meta["revision_reason"] = reason
+        return self.write(content=new_content, memory_type=mtype, importance=imp, valid_from=now, metadata=meta)
 
 
 class MnemosBiTemporalAdapter:
@@ -38,7 +192,8 @@ class MnemosBiTemporalAdapter:
         self._lock = threading.RLock()
         self._lock_path = resolved_db.with_suffix(".lock")
         with self._exclusive_db_lock():
-            self.engine = MemoryEngine(db_path=str(resolved_db), embedding_dim=embedding_dim)
+            engine_cls = MemoryEngine if MemoryEngine is not None else _PortableSQLiteMemoryEngine
+            self.engine = engine_cls(db_path=str(resolved_db), embedding_dim=embedding_dim)
 
     @contextmanager
     def _exclusive_db_lock(self) -> Iterator[None]:

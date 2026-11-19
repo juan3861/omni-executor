@@ -4,11 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omni-executor"
-version = "4.1.0"
-description = "OmniExecutor Agent: autonomous coding agent, hierarchical team orchestrator, self-healing browser and MCP/A2A harness"
+version = "4.4.0"
+description = "OmniExecutor Agent: autonomous coding agent, hierarchical team orchestrator, self-healing browser and MCP/A2A/ACP harness"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "numpy"]
+browser = ["playwright"]
+desktop = ["pywinauto", "Pillow"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"
@@ -24,4 +29,4 @@ norecursedirs = [
     "__pycache__",
     "HANDOFF_PACK",
 ]
-addopts = "-ra --strict-markers --basetemp=F:/AetherMind_Temp/pytest_basetemp"
+addopts = "-ra --strict-markers"

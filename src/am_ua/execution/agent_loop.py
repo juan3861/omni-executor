@@ -42,7 +42,7 @@ from am_ua.cognition.hierarchical_planner import ProactiveHierarchicalPlanner
 from am_ua.cognition.llm_client import LLMClient, LLMUnavailableError, extract_json_object
 from am_ua.cognition.personas import PersonaManager
 from am_ua.cognition.reasoning_bank import ReasoningBank
-from am_ua.contracts.contracts import CognitiveEnvelope, EpistemicTag, TrustLevel
+from am_ua.contracts.contracts import CognitiveEnvelope, EpistemicTag, TrustLevel, default_temp_dir
 from am_ua.execution.adaptive_skills import AdaptiveSkillForge
 from am_ua.execution.durable_engine import DurableExecutionEngine, EffectClass, ToolContract
 from am_ua.execution.hook_engine import DeterministicHookEngine, ToolGuardrailTripwireError
@@ -120,7 +120,8 @@ MAX_OBS_CHARS = 6000
 
 def scrubbed_env() -> Dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not SECRET_ENV_RE.search(k)}
-    env["TMP"] = env["TEMP"] = r"F:\AetherMind_Temp"
+    tmp_dir = str(default_temp_dir())
+    env["TMP"] = env["TEMP"] = tmp_dir
     env["PYTHONIOENCODING"] = "utf-8"
     for k in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS"):
         env[k] = "1"
@@ -1184,7 +1185,7 @@ class AgentLoop:
         self.event_bus = event_bus
         self.wheel_gate = wheel_gate or HumanWheelGate()
         self.wheel_timeout_s = max(0.0, float(wheel_timeout_s))
-        self.agui_ledger_dir = Path(agui_ledger_dir or "F:/AetherMind_Universal_Agent/data/agui_events").resolve()
+        self.agui_ledger_dir = Path(agui_ledger_dir or (Path(__file__).resolve().parents[3] / "data" / "agui_events")).resolve()
         self.pc_engine = pc_engine or PCAutomationEngine()
         self.skill_forge = skill_forge or AdaptiveSkillForge()
         self.hierarchical_planner = hierarchical_planner or ProactiveHierarchicalPlanner(llm=self.llm)
