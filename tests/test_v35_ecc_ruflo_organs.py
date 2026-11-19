@@ -1183,6 +1183,37 @@ def test_v44_ssrf_domain_guard_timetravel_guardrails_spill_schema_handoff_dag_ot
         otlp = ledger.export_otlp_payload()
         assert len(otlp["resourceSpans"][0]["scopeSpans"][0]["spans"]) == 1
 
+        # Real loopback HTTP OTLP collector round-trip for push_otlp_http
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        import threading as _threading
+
+        received_otlp: list[dict[str, Any]] = []
+
+        class _OTLPHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                received_otlp.append(_json.loads(body))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"partialSuccess":{}}')
+
+            def log_message(self, *args: Any) -> None:
+                return
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), _OTLPHandler)
+        port = srv.server_address[1]
+        th = _threading.Thread(target=srv.serve_forever, daemon=True)
+        th.start()
+        try:
+            push_res = ledger.push_otlp_http(f"http://127.0.0.1:{port}/v1/traces", timeout_s=3.0)
+            assert push_res["ok"] is True and push_res["status"] == 200 and push_res["spans_exported"] == 1
+            assert len(received_otlp) == 1
+            assert received_otlp[0]["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["name"] == "v44.test"
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
         # 9. In-memory AST code_sandbox
         sb_ok = wt.code_sandbox({"code": "total = sum(x * x for x in range(1, 6))\ntotal"})
         assert sb_ok["ok"] is True and sb_ok["result"] == 55
