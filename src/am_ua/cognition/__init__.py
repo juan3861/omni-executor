@@ -25,7 +25,11 @@ from .llm_client import (
 )
 from .personas import PersonaContract, PersonaManager
 from .reasoning_bank import ReasoningBank
-from .ure_bridge import URENeuroSymbolicBridge
+
+try:
+    from .ure_bridge import URENeuroSymbolicBridge
+except ImportError:  # optional external URE engine (clean CI / minimal pip install)
+    URENeuroSymbolicBridge = None  # type: ignore[misc, assignment]
 
 __all__ = [
     "URENeuroSymbolicBridge",
