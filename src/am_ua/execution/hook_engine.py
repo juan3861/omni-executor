@@ -330,8 +330,20 @@ class HookDecision:
     annotations: Dict[str, Any] = field(default_factory=dict)
 
 
+class ToolGuardrailTripwireError(PermissionError):
+    """Raised immediately when an output/input guardrail triggers a fatal tripwire."""
+
+
+@dataclass
+class OutputGuardrailDecision:
+    behavior: str = "allow"  # "allow" | "reject_content" | "raise_exception"
+    reason: str = ""
+    redacted_obs: Optional[Dict[str, Any]] = None
+
+
 PreHookFn = Callable[[str, Dict[str, Any], Path], HookDecision]
 PostHookFn = Callable[[str, Dict[str, Any], Dict[str, Any], Path], Dict[str, Any]]
+OutputGuardrailFn = Callable[[str, Dict[str, Any], Dict[str, Any], Path], OutputGuardrailDecision]
 
 _SECRET_RX = re.compile(
     r"\b(?:sk-[A-Za-z0-9_-]{20,}|gsk_[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z\-_]{25,})\b"
@@ -476,17 +488,60 @@ def pre_run_command_classifier(tool: str, args: Dict[str, Any], workspace: Path)
     return HookDecision(allowed=True, annotations=notes)
 
 
+def _redact_secret_obj(val: Any) -> Tuple[Any, bool]:
+    if isinstance(val, str):
+        redacted, n = _SECRET_RX.subn("[REDACTED_TOKEN]", val)
+        return redacted, n > 0
+    if isinstance(val, dict):
+        changed = False
+        out: Dict[str, Any] = {}
+        for k, v in val.items():
+            nv, ch = _redact_secret_obj(v)
+            out[k] = nv
+            changed = changed or ch
+        return out, changed
+    if isinstance(val, list):
+        changed = False
+        out_l: List[Any] = []
+        for item in val:
+            nv, ch = _redact_secret_obj(item)
+            out_l.append(nv)
+            changed = changed or ch
+        return out_l, changed
+    return val, False
+
+
+def post_output_secret_redactor(
+    tool: str,
+    args: Dict[str, Any],
+    obs: Dict[str, Any],
+    workspace: Path,
+) -> OutputGuardrailDecision:
+    """Redact accidental API key/token leaks in tool outputs before they enter LLM context."""
+    _ = tool, args, workspace
+    redacted, changed = _redact_secret_obj(obs)
+    if changed and isinstance(redacted, dict):
+        return OutputGuardrailDecision(
+            behavior="allow",
+            reason="Redacted secret token pattern from tool output",
+            redacted_obs=redacted,
+        )
+    return OutputGuardrailDecision(behavior="allow")
+
+
 class DeterministicHookEngine:
-    """Registry and runner for deterministic PreToolUse and PostToolUse hooks."""
+    """Registry and runner for deterministic PreToolUse, PostToolUse, and OutputGuardrails."""
 
     def __init__(self, *, enable_defaults: bool = True) -> None:
         self._pre_hooks: List[Tuple[str, PreHookFn]] = []
         self._post_hooks: List[Tuple[str, PostHookFn]] = []
+        self._output_guardrails: List[Tuple[str, OutputGuardrailFn]] = []
         if enable_defaults:
             self.register_pre("pre_write_secret_guard", pre_write_secret_guard)
             self.register_pre("pre_write_test_tamper_guard", pre_write_test_tamper_guard)
             self.register_pre("pre_run_command_classifier", pre_run_command_classifier)
             self.register_post("post_python_syntax_check", post_python_syntax_check)
+            self.register_output_guardrail("post_output_secret_redactor", post_output_secret_redactor)
 
     @staticmethod
     def classify_command(command: str) -> Dict[str, Any]:
@@ -559,6 +614,39 @@ class DeterministicHookEngine:
 
     def register_post(self, name: str, fn: PostHookFn) -> None:
         self._post_hooks.append((name, fn))
+
+    def register_output_guardrail(self, name: str, fn: OutputGuardrailFn) -> None:
+        self._output_guardrails.append((name, fn))
+
+    def run_output_guardrails(
+        self,
+        tool: str,
+        args: Dict[str, Any],
+        obs: Dict[str, Any],
+        workspace: Path,
+    ) -> OutputGuardrailDecision:
+        """Run tool output guardrails (`allow` | `reject_content` | `raise_exception` tripwire)."""
+        current = dict(obs)
+        redacted_any = False
+        for name, fn in self._output_guardrails:
+            dec = fn(tool, args, current, workspace)
+            if dec.redacted_obs is not None:
+                current = dict(dec.redacted_obs)
+                redacted_any = True
+            if dec.behavior == "raise_exception":
+                raise ToolGuardrailTripwireError(
+                    dec.reason or f"ToolOutputGuardrail tripwire '{name}' triggered on '{tool}'"
+                )
+            if dec.behavior == "reject_content":
+                return OutputGuardrailDecision(
+                    behavior="reject_content",
+                    reason=dec.reason or f"Output rejected by guardrail '{name}'",
+                    redacted_obs={"error": dec.reason or f"Output rejected by guardrail '{name}'", "rejected_by_guardrail": name},
+                )
+        return OutputGuardrailDecision(
+            behavior="allow",
+            redacted_obs=current if redacted_any else None,
+        )
 
     def run_pre(self, tool: str, args: Dict[str, Any], workspace: Path) -> HookDecision:
         merged_notes: Dict[str, Any] = {}

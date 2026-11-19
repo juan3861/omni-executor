@@ -48,6 +48,83 @@ class ProviderSpec:
         return self.local or bool(self.api_key())
 
 
+MODEL_PRICING_PER_1M: Dict[str, tuple[float, float]] = {
+    "gpt-4o-mini": (0.15, 0.60),
+    "gpt-4o": (2.50, 10.00),
+    "gpt-4.1": (2.00, 8.00),
+    "gpt-4.1-mini": (0.40, 1.60),
+    "gpt-5": (1.25, 10.00),
+    "o3-mini": (1.10, 4.40),
+    "claude-3-5-sonnet": (3.00, 15.00),
+    "claude-sonnet-4": (3.00, 15.00),
+    "claude-haiku-4": (0.80, 4.00),
+    "gemini-2.5-flash": (0.15, 0.60),
+    "gemini-2.5-pro": (1.25, 10.00),
+    "deepseek-chat": (0.27, 1.10),
+    "deepseek-reasoner": (0.55, 2.19),
+    "llama-3.3-70b": (0.59, 0.79),
+    "qwen-2.5-72b": (0.40, 1.20),
+}
+
+
+def estimate_cost_usd(
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    *,
+    cache_read_tokens: int = 0,
+) -> float:
+    """Estimate USD inference cost from model name and token counts."""
+    m = (model or "").lower().strip()
+    in_rate, out_rate = (0.0, 0.0)
+    # Match longest prefix first so gpt-4o-mini beats gpt-4o
+    for key in sorted(MODEL_PRICING_PER_1M.keys(), key=len, reverse=True):
+        if key in m:
+            in_rate, out_rate = MODEL_PRICING_PER_1M[key]
+            break
+    if in_rate == 0.0 and out_rate == 0.0:
+        return 0.0
+    cached = max(0, min(int(cache_read_tokens or 0), int(prompt_tokens or 0)))
+    uncached_prompt = max(0, int(prompt_tokens or 0) - cached)
+    cost = (
+        (uncached_prompt * in_rate)
+        + (cached * in_rate * 0.25)
+        + (max(0, int(completion_tokens or 0)) * out_rate)
+    ) / 1_000_000.0
+    return round(cost, 8)
+
+
+def check_cache_health(
+    established_prefix_tokens: int,
+    current_cached_tokens: Optional[int],
+    *,
+    compacted: bool = False,
+) -> Dict[str, Any]:
+    """Classify prompt-cache stability across turns."""
+    if current_cached_tokens is None:
+        return {
+            "status": "unreported",
+            "established_prefix_tokens": int(established_prefix_tokens),
+            "current_cached_tokens": None,
+            "retention_ratio": None,
+        }
+    est = max(0, int(established_prefix_tokens))
+    cur = max(0, int(current_cached_tokens))
+    ratio = round(cur / est, 4) if est > 0 else 1.0
+    if compacted:
+        status = "compacted"
+    elif est >= 1024 and cur < int(est * 0.5):
+        status = "unexpected_collapse"
+    else:
+        status = "healthy"
+    return {
+        "status": status,
+        "established_prefix_tokens": est,
+        "current_cached_tokens": cur,
+        "retention_ratio": ratio,
+    }
+
+
 @dataclass
 class LLMResponse:
     text: str
@@ -57,6 +134,8 @@ class LLMResponse:
     completion_tokens: int
     latency_ms: float
     attempts: List[Dict[str, Any]] = field(default_factory=list)
+    cache_read_tokens: int = 0
+    cost_usd: float = 0.0
 
     @property
     def total_tokens(self) -> int:
@@ -131,6 +210,8 @@ class LLMClient:
         self._lock = threading.Lock()
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
+        self.total_cache_read_tokens = 0
+        self.total_cost_usd = 0.0
         self.calls = 0
 
     # ------------------------------------------------------------------ helpers
@@ -219,16 +300,29 @@ class LLMClient:
                         usage = data.get("usage") or {}
                         pt = int(usage.get("prompt_tokens") or 0)
                         ct = int(usage.get("completion_tokens") or 0)
+                        pt_details = usage.get("prompt_tokens_details") or {}
+                        cached_tok = int(
+                            pt_details.get("cached_tokens")
+                            or usage.get("cache_read_input_tokens")
+                            or 0
+                        )
+                        actual_model = data.get("model", cand_model)
+                        call_cost = estimate_cost_usd(
+                            actual_model, pt, ct, cache_read_tokens=cached_tok
+                        )
                         with self._lock:
                             self._failures[spec.name] = 0
                             self._cooldown_until.pop(spec.name, None)
                             self.total_prompt_tokens += pt
                             self.total_completion_tokens += ct
+                            self.total_cache_read_tokens += cached_tok
+                            self.total_cost_usd = round(self.total_cost_usd + call_cost, 8)
                             self.calls += 1
                         if not text.strip():
                             raise ValueError("empty completion")
-                        return LLMResponse(text, spec.name, data.get("model", cand_model), pt, ct,
-                                           round((time.perf_counter() - t0) * 1000, 1), attempts)
+                        return LLMResponse(text, spec.name, actual_model, pt, ct,
+                                           round((time.perf_counter() - t0) * 1000, 1), attempts,
+                                           cache_read_tokens=cached_tok, cost_usd=call_cost)
                     except urllib.error.HTTPError as exc:
                         detail = exc.read()[:300].decode("utf-8", "replace")
                         attempts.append({"provider": spec.name, "model": cand_model, "http": exc.code, "detail": detail, "json_mode": use_json})

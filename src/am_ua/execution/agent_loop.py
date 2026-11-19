@@ -12,14 +12,19 @@ Fixes bottlenecks B1 + B3 + B5:
 from __future__ import annotations
 
 from collections import deque
+import ast
 import difflib
+import gzip
 import hashlib
+import ipaddress
 import json
 import math
 import os
 import re
+import socket
 import subprocess
 import time
+import urllib.parse
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -40,7 +45,7 @@ from am_ua.cognition.reasoning_bank import ReasoningBank
 from am_ua.contracts.contracts import CognitiveEnvelope, EpistemicTag, TrustLevel
 from am_ua.execution.adaptive_skills import AdaptiveSkillForge
 from am_ua.execution.durable_engine import DurableExecutionEngine, EffectClass, ToolContract
-from am_ua.execution.hook_engine import DeterministicHookEngine
+from am_ua.execution.hook_engine import DeterministicHookEngine, ToolGuardrailTripwireError
 from am_ua.execution.human_wheel import HumanWheelGate, WheelOutcome
 from am_ua.execution.mcp_federation import MCPFederationHub
 from am_ua.execution.modality_router import HybridModalityRouter
@@ -574,21 +579,93 @@ class WorkspaceTools:
         idx = self._knowledge_factory(self.ws)
         return idx.query(question, top_k=top_k)
 
+    @staticmethod
+    def _validate_ssrf_url(url: str) -> Optional[str]:
+        """Return an error string if `url` targets loopback/private/metadata IPs, else None."""
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme == "file":
+            return None
+        if parsed.scheme not in ("http", "https"):
+            return "Only http://, https://, or file:// URLs are permitted"
+        host = (parsed.hostname or "").strip().lower()
+        if not host:
+            return "Missing hostname in URL"
+        if host in ("localhost", "metadata.google.internal", "metadata"):
+            return f"Host '{host}' blocked (SSRF protection)"
+
+        def _is_blocked_ip(ip_obj: ipaddress._BaseAddress) -> bool:
+            if isinstance(ip_obj, ipaddress.IPv6Address) and ip_obj.ipv4_mapped is not None:
+                ip_obj = ip_obj.ipv4_mapped
+            if (
+                ip_obj.is_private
+                or ip_obj.is_loopback
+                or ip_obj.is_link_local
+                or ip_obj.is_multicast
+                or ip_obj.is_reserved
+                or ip_obj.is_unspecified
+            ):
+                return True
+            if isinstance(ip_obj, ipaddress.IPv4Address):
+                # Carrier-grade NAT 100.64.0.0/10 & AWS/cloud metadata 169.254.0.0/16
+                if ip_obj in ipaddress.IPv4Network("100.64.0.0/10"):
+                    return True
+                if ip_obj in ipaddress.IPv4Network("169.254.0.0/16"):
+                    return True
+            return False
+
+        try:
+            literal_ip = ipaddress.ip_address(host)
+            if _is_blocked_ip(literal_ip):
+                return f"IP '{host}' blocked (SSRF protection)"
+            return None
+        except ValueError:
+            pass
+
+        try:
+            infos = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)
+        except OSError:
+            return None  # Let urlopen raise/report DNS error normally if unresolvable
+
+        for info in infos:
+            sockaddr = info[4]
+            if not sockaddr:
+                continue
+            addr_str = str(sockaddr[0]).split("%")[0]
+            try:
+                resolved_ip = ipaddress.ip_address(addr_str)
+                if _is_blocked_ip(resolved_ip):
+                    return f"Resolved IP '{addr_str}' for '{host}' blocked (SSRF protection)"
+            except ValueError:
+                continue
+        return None
+
     def web_fetch(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Lightweight HTML/Text-to-Markdown fetcher (Crawl4AI/Agent-Reach style, R16 tainted)."""
         import html as _html
         import urllib.request
 
         url = str(args.get("url", "")).strip()
-        if not url.startswith(("http://", "https://", "file://")):
-            return {"ok": False, "error": "Only http://, https://, or file:// URLs are permitted"}
-        if url.startswith(("http://localhost", "http://127.0.0.1", "https://localhost")):
-            return {"ok": False, "error": "Loopback web_fetch blocked (SSRF protection)"}
+        ssrf_err = self._validate_ssrf_url(url)
+        if ssrf_err:
+            return {"ok": False, "url": url, "error": ssrf_err}
         max_chars = min(int(args.get("max_chars", 6000)), 20_000)
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "AetherMind-WebFetch/3.8"})
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "OmniExecutor-WebFetch/4.4",
+                    "Accept-Encoding": "identity, gzip",
+                },
+            )
             with urllib.request.urlopen(req, timeout=15) as resp:
-                raw = resp.read(256_000).decode("utf-8", errors="replace")
+                raw_bytes = resp.read(256_000)
+                enc = (resp.headers.get("Content-Encoding") or "").lower()
+                if "gzip" in enc:
+                    try:
+                        raw_bytes = gzip.decompress(raw_bytes)
+                    except OSError:
+                        pass
+                raw = raw_bytes.decode("utf-8", errors="replace")
             cleaned = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", raw)
             cleaned = re.sub(r"(?is)<h([1-4])[^>]*>(.*?)</h\1>", lambda m: f"\n{'#' * int(m.group(1))} {re.sub(r'<[^>]+>', '', m.group(2)).strip()}\n", cleaned)
             cleaned = re.sub(r"(?is)<[^>]+>", " ", cleaned)
@@ -601,6 +678,81 @@ class WorkspaceTools:
             }
         except Exception as exc:
             return {"ok": False, "url": url, "error": f"{type(exc).__name__}: {str(exc)[:300]}"}
+
+    def spill_query(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Query or slice a spilled large tool output file on disk."""
+        from am_ua.execution.output_compressor import ToolOutputCompressor
+
+        spill_path = str(args.get("spill_path", "")).strip()
+        if not spill_path:
+            return {"ok": False, "error": "missing required 'spill_path'"}
+        pattern = args.get("pattern")
+        start_line = int(args.get("start_line", 1))
+        max_lines = min(int(args.get("max_lines", 80)), 200)
+        return ToolOutputCompressor().query_spill(
+            spill_path,
+            pattern=str(pattern) if pattern else None,
+            start_line=start_line,
+            max_lines=max_lines,
+        )
+
+    def code_sandbox(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Pure-Python restricted AST evaluator for deterministic math, JSON, and assertions (~1 ms)."""
+        code = str(args.get("code", "")).strip()
+        if not code:
+            return {"ok": False, "error": "missing required 'code'"}
+        if len(code) > 8000:
+            return {"ok": False, "error": "code exceeds 8000 char sandbox limit"}
+
+        allowed_builtins: Dict[str, Any] = {
+            "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
+            "enumerate": enumerate, "float": float, "int": int, "len": len,
+            "list": list, "max": max, "min": min, "pow": pow, "range": range,
+            "round": round, "set": set, "sorted": sorted, "str": str,
+            "sum": sum, "tuple": tuple, "zip": zip, "True": True, "False": False, "None": None,
+        }
+        allowed_modules: Dict[str, Any] = {"math": math, "json": json}
+
+        try:
+            tree = ast.parse(code, mode="exec")
+        except SyntaxError as exc:
+            return {"ok": False, "error": f"SyntaxError: {exc}"}
+
+        forbidden_nodes = (ast.Import, ast.ImportFrom, ast.Global, ast.Nonlocal, ast.With, ast.AsyncWith, ast.Try, ast.Raise, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.While)
+        for node in ast.walk(tree):
+            if isinstance(node, forbidden_nodes):
+                return {"ok": False, "error": f"Forbidden AST construct: {type(node).__name__}"}
+            if isinstance(node, ast.Name) and node.id.startswith("__"):
+                return {"ok": False, "error": f"Forbidden dunder name: {node.id}"}
+            if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
+                return {"ok": False, "error": f"Forbidden private attribute: {node.attr}"}
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if node.func.id in ("open", "eval", "exec", "compile", "__import__", "getattr", "setattr", "delattr", "globals", "locals"):
+                    return {"ok": False, "error": f"Forbidden call: {node.func.id}"}
+
+        # Execute with restricted __builtins__ and bounded range size
+        def _safe_range(*r_args: int) -> range:
+            r = range(*r_args)
+            if len(r) > 5000:
+                raise ValueError("range exceeds 5000 step sandbox limit")
+            return r
+
+        env_globals: Dict[str, Any] = {
+            "__builtins__": {**allowed_builtins, "range": _safe_range},
+            **allowed_modules,
+        }
+        env_locals: Dict[str, Any] = {}
+        try:
+            # If last statement is an Expr, capture its value as `result`
+            last_expr = None
+            if tree.body and isinstance(tree.body[-1], ast.Expr):
+                last_expr = ast.Expression(body=tree.body.pop().value)
+            if tree.body:
+                exec(compile(tree, "<code_sandbox>", "exec"), env_globals, env_locals)
+            val = eval(compile(last_expr, "<code_sandbox>", "eval"), env_globals, env_locals) if last_expr is not None else env_locals.get("result")
+            return {"ok": True, "result": val, "locals": {k: v for k, v in env_locals.items() if not k.startswith("_")}}
+        except Exception as exc:
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
     def restore_checkpoint(self, args: Dict[str, Any]) -> Dict[str, Any]:
         name = str(args.get("name", "default")).strip() or "default"
@@ -650,6 +802,7 @@ TOOL_FAMILIES: Dict[str, Tuple[str, ...]] = {
     "core_code": (
         "list_dir", "read_file", "search", "write_file", "replace_in_file",
         "run", "repo_map", "knowledge_query", "task_tracker",
+        "spill_query", "code_sandbox",
         "checkpoint", "restore_checkpoint", "request_human", "finish",
     ),
     "readonly_audit": (
@@ -847,9 +1000,12 @@ Tools:
 - repo_map {"max_chars": 3000}   (PageRank + AST symbol overview of repository)
 - knowledge_query {"question": "...", "top_k": 5}   (Graphify/PageIndex tree query over docs, SQL schemas, configs, code)
 - web_fetch {"url": "https://...|file:///...", "max_chars": 6000}   (lightweight HTML-to-Markdown reader without launching Chromium)
+- spill_query {"spill_path": "...", "pattern": "...", "start_line": 1, "max_lines": 80}   (search or slice a spilled large tool output on disk)
+- code_sandbox {"code": "sum(x*x for x in range(10))"}   (fast pure-Python AST evaluator for math, JSON, and assertions)
 - task_tracker {"command": "view|plan", "task_list": [{"title": "...", "status": "todo|in_progress|done", "notes": "..."}]}
 - checkpoint {"name": "pre_edit"}   (save lightweight workspace snapshot before risky edits)
 - restore_checkpoint {"name": "pre_edit"}   (rollback workspace files to named checkpoint)
+- handoff_agent {"target_role": "security_auditor|tdd_enforcer|...", "reason": "...", "context_note": "..."}   (dynamically switch specialist role mid-mission)
 - request_human {"reason": "<why human intervention is required>", "instructions": "<what the human must do>"}
 - finish {"summary": "<what you did and the evidence>", "confidence": <0..1 probability the acceptance check passes>}
 
@@ -901,9 +1057,12 @@ Tools:
 - repo_map {"max_chars": 3000}   (PageRank + AST symbol overview of repository)
 - knowledge_query {"question": "...", "top_k": 5}   (Graphify/PageIndex tree query over docs, SQL schemas, configs, code)
 - web_fetch {"url": "https://...|file:///...", "max_chars": 6000}   (lightweight HTML-to-Markdown reader without launching Chromium)
+- spill_query {"spill_path": "...", "pattern": "...", "start_line": 1, "max_lines": 80}   (search or slice a spilled large tool output on disk)
+- code_sandbox {"code": "sum(x*x for x in range(10))"}   (fast pure-Python AST evaluator for math, JSON, and assertions)
 - task_tracker {"command": "view|plan", "task_list": [{"title": "...", "status": "todo|in_progress|done", "notes": "..."}]}
 - checkpoint {"name": "pre_edit"}   (save lightweight workspace snapshot before risky edits)
 - restore_checkpoint {"name": "pre_edit"}   (rollback workspace files to named checkpoint)
+- handoff_agent {"target_role": "security_auditor|tdd_enforcer|...", "reason": "...", "context_note": "..."}   (dynamically switch specialist role mid-mission)
 - request_human {"reason": "<why human intervention is required>", "instructions": "<what the human must do>"}
 - finish {"summary": "<what you did and the evidence>", "confidence": <0..1 probability the acceptance check passes>}
 
@@ -951,6 +1110,7 @@ class AgentRunResult:
     workflow: str = "react"
     event_ledger_path: Optional[str] = None
     pre_critic: Optional[Dict[str, Any]] = None
+    structured_output: Optional[Any] = None
 
 
 class AgentLoop:
@@ -981,6 +1141,8 @@ class AgentLoop:
         "repo_map": EffectClass.PURE_READ,
         "knowledge_query": EffectClass.PURE_READ,
         "web_fetch": EffectClass.PURE_READ,
+        "spill_query": EffectClass.PURE_READ,
+        "code_sandbox": EffectClass.PURE_READ,
         "checkpoint": EffectClass.PURE_READ,
         "restore_checkpoint": EffectClass.COMPENSATABLE_MUTATION,
     }
@@ -1239,6 +1401,7 @@ class AgentLoop:
         workflow: str = "react",
         wheel_timeout_s: Optional[float] = None,
         event_bus: Optional[AGUIEventBus] = None,
+        output_schema: Optional[Dict[str, Any]] = None,
     ) -> AgentRunResult:
         mission_id = mission_id or f"agent-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
         ws = WorkspaceTools(
@@ -1350,6 +1513,8 @@ class AgentLoop:
         parse_failures, turn = 0, 0
         human_requests_count = 0
         pre_verification: Optional[Dict[str, Any]] = None
+        structured_output: Optional[Any] = None
+        active_role = role
         compressor = ToolOutputCompressor()
         for turn in range(1, max_turns + 1):
             messages = self._condense(messages)
@@ -1426,6 +1591,22 @@ class AgentLoop:
                             "output_tail": v_pre["output"][-2500:],
                         }
                     summary = str(args.get("summary", ""))
+                    if output_schema is not None:
+                        candidate_out = args.get("output")
+                        if candidate_out is None and summary.strip().startswith(("{", "[")):
+                            try:
+                                candidate_out = json.loads(summary)
+                            except Exception:
+                                candidate_out = None
+                        schema_err = self._validate_output_schema(candidate_out, output_schema)
+                        if schema_err and turn < max_turns:
+                            reject_finish_msg = (
+                                f"FINISH REJECTED (ModelRetry): output_schema validation failed: {schema_err}. "
+                                "Include a valid JSON object under args['output'] matching the required schema."
+                            )
+                            break
+                        if not schema_err:
+                            structured_output = candidate_out
                     try:
                         c = float(args.get("confidence"))
                         confidence = c if 0.0 <= c <= 1.0 else None
@@ -1434,6 +1615,39 @@ class AgentLoop:
                     stop_reason = "finish"
                     should_break_loop = True
                     break
+
+                if tool == "handoff_agent":
+                    target_role = str(args.get("target_role", "")).strip()
+                    reason = str(args.get("reason", "specialist handoff")).strip()
+                    context_note = str(args.get("context_note", "")).strip()
+                    if target_role not in ROLE_TOOL_SCOPES:
+                        ok, obs = False, {"error": f"Unknown target_role '{target_role}'. Valid: {sorted(ROLE_TOOL_SCOPES)}"}
+                    else:
+                        prev_role = active_role
+                        active_role = target_role
+                        new_base = SPARC_SYSTEM_PROMPT if (workflow or "").lower() == "sparc" else SYSTEM_PROMPT
+                        new_base = self._compose_system_prompt(new_base, objective, role=active_role)
+                        messages[0]["content"] = self.persona_mgr.inject_persona(new_base, active_role)
+                        bus.emit(
+                            AGUIEventType.CUSTOM,
+                            name="AGENT_HANDOFF",
+                            from_role=prev_role,
+                            to_role=active_role,
+                            reason=reason,
+                            turn=turn,
+                        )
+                        ok = True
+                        obs = {
+                            "ok": True,
+                            "handoff": {"from_role": prev_role, "to_role": active_role, "reason": reason},
+                            "note": f"[HANDOFF_CONTEXT] Switched from {prev_role} to {active_role}: {context_note or reason}",
+                        }
+                    turn_tools_executed += 1
+                    if ok:
+                        turn_progress = True
+                    tool_log.append({"turn": turn, "tool": tool, "args": args, "ok": ok})
+                    turn_obs_chunks.append(clip(json.dumps(obs, ensure_ascii=False, default=str)))
+                    continue
 
                 # --- Take the Wheel: Human Intervention Gate ---
                 if tool == "request_human":
@@ -1520,10 +1734,19 @@ class AgentLoop:
                                 post_notes = self.hook_engine.run_post(tool, call_args, obs, ws.ws)
                                 if post_notes:
                                     obs["hook_annotations"] = post_notes
+                                guard_dec = self.hook_engine.run_output_guardrails(tool, call_args, obs, ws.ws)
+                                if guard_dec.redacted_obs is not None:
+                                    obs = guard_dec.redacted_obs
+                                if guard_dec.behavior == "reject_content":
+                                    ok = False
+                                    if not isinstance(obs, dict) or "error" not in obs:
+                                        obs = {"error": f"Output guardrail rejected tool output: {guard_dec.reason}"}
                             if tool == "run" and isinstance(obs, dict) and obs.get("exit_code") not in (0, None):
                                 ok = True  # a failing command is still valid information
                     except RepeatToolLoopError as exc:
                         ok, obs = False, {"error": f"{exc}. Change strategy."}
+                    except ToolGuardrailTripwireError:
+                        raise
                     except Exception as exc:  # gate violations, bad args, IO errors -> feed back to the model
                         ok, obs = False, {"error": f"{type(exc).__name__}: {str(exc)[:500]}"}
 
@@ -1647,9 +1870,10 @@ class AgentLoop:
             tokens={"prompt": self.llm.total_prompt_tokens - pt0, "completion": self.llm.total_completion_tokens - ct0},
             llm_calls=self.llm.calls - calls0, elapsed_s=round(time.perf_counter() - t_start, 2), stop_reason=stop_reason,
             brier_score=None if brier is None else round(brier, 5),
-            role=role, workflow=workflow,
+            role=active_role, workflow=workflow,
             event_ledger_path=ledger_path_str,
             pre_critic=pre_critic,
+            structured_output=structured_output,
         )
         if self.trace_dir is not None:
             self.trace_dir.mkdir(parents=True, exist_ok=True)
@@ -1665,6 +1889,44 @@ class AgentLoop:
         return result
 
     # ------------------------------------------------------------------ helpers
+    @staticmethod
+    def _validate_output_schema(value: Any, schema: Dict[str, Any]) -> Optional[str]:
+        """Lightweight JSON-Schema validator (type, required, properties, items). Returns error or None."""
+        if value is None:
+            return "missing structured 'output' payload"
+        expected_type = schema.get("type")
+        type_map = {
+            "object": dict,
+            "array": list,
+            "string": str,
+            "integer": int,
+            "number": (int, float),
+            "boolean": bool,
+        }
+        if expected_type in type_map:
+            if expected_type == "integer" and isinstance(value, bool):
+                return "expected integer, got bool"
+            if not isinstance(value, type_map[expected_type]):
+                return f"expected {expected_type}, got {type(value).__name__}"
+        if isinstance(value, dict):
+            for req_key in schema.get("required") or ():
+                if req_key not in value:
+                    return f"missing required property '{req_key}'"
+            props = schema.get("properties") or {}
+            for k, sub_schema in props.items():
+                if k in value and isinstance(sub_schema, dict):
+                    err = AgentLoop._validate_output_schema(value[k], sub_schema)
+                    if err:
+                        return f"property '{k}': {err}"
+        elif isinstance(value, list):
+            item_schema = schema.get("items")
+            if isinstance(item_schema, dict):
+                for idx, elem in enumerate(value):
+                    err = AgentLoop._validate_output_schema(elem, item_schema)
+                    if err:
+                        return f"item[{idx}]: {err}"
+        return None
+
     @staticmethod
     def evaluate_pre_critic(
         *,

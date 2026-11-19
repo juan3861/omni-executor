@@ -550,6 +550,54 @@ class DurableExecutionEngine:
         )
         return self.get_step_checkpoint(run_id, step_id)  # type: ignore[return-value]
 
+    def fork_run_from_step(
+        self,
+        run_id: str,
+        *,
+        up_to_step_index: int,
+        new_run_id: Optional[str] = None,
+        override_args: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Time-Travel checkpoint fork: branch a new run from `run_id` reusing completed steps <= `up_to_step_index`."""
+        target_run = new_run_id or f"{run_id}-fork-{int(time.time() * 1000)}"
+        source_cps = self.list_run_checkpoints(run_id)
+        if not source_cps:
+            raise KeyError(f"No checkpoints found for run_id={run_id!r}")
+
+        new_epoch = self.fencer.acquire_lease(target_run, "time_travel_fork")
+        copied: List[str] = []
+        overrides = override_args or {}
+
+        for cp in source_cps:
+            if int(cp["step_index"]) > int(up_to_step_index):
+                continue
+            if cp["status"] != StepStatus.COMPLETED.value:
+                continue
+            step_id = str(cp["step_id"])
+            args = dict(overrides.get(step_id, cp["args"]))
+            self._save_checkpoint(
+                run_id=target_run,
+                step_id=step_id,
+                step_index=int(cp["step_index"]),
+                tool_name=str(cp["tool_name"]),
+                effect_class=EffectClass(cp["effect_class"]),
+                status=StepStatus.COMPLETED,
+                args=args,
+                output=cp["output"],
+                state=dict(cp["state"]),
+                lease_epoch=new_epoch,
+            )
+            copied.append(step_id)
+
+        return {
+            "ok": True,
+            "source_run_id": run_id,
+            "forked_run_id": target_run,
+            "lease_epoch": new_epoch,
+            "up_to_step_index": int(up_to_step_index),
+            "copied_steps": copied,
+        }
+
     def reconcile_step(self, run_id: str, step_id: str, *, lease_epoch: int) -> Dict[str, Any]:
         """Reconcile an OUTCOME_UNKNOWN step by inspecting real world/disk state (R08)."""
         self.fencer.assert_fence_valid(run_id, lease_epoch)
@@ -596,3 +644,51 @@ class DurableExecutionEngine:
                 error_text=f"Reconciled absent ({obs.evidence}); safe to retry",
             )
         return self.get_step_checkpoint(run_id, step_id)  # type: ignore[return-value]
+
+    def fork_run_from_step(
+        self,
+        run_id: str,
+        *,
+        up_to_step_index: int,
+        new_run_id: Optional[str] = None,
+        override_args: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Time-Travel checkpoint fork: branch a new run from `run_id` reusing completed steps <= `up_to_step_index`."""
+        target_run = new_run_id or f"{run_id}-fork-{int(time.time() * 1000)}"
+        source_cps = self.list_run_checkpoints(run_id)
+        if not source_cps:
+            raise KeyError(f"No checkpoints found for run_id={run_id!r}")
+
+        new_epoch = self.fencer.acquire_lease(target_run, "time_travel_fork")
+        copied: List[str] = []
+        overrides = override_args or {}
+
+        for cp in source_cps:
+            if int(cp["step_index"]) > int(up_to_step_index):
+                continue
+            if cp["status"] != StepStatus.COMPLETED.value:
+                continue
+            step_id = str(cp["step_id"])
+            args = dict(overrides.get(step_id, cp["args"]))
+            self._save_checkpoint(
+                run_id=target_run,
+                step_id=step_id,
+                step_index=int(cp["step_index"]),
+                tool_name=str(cp["tool_name"]),
+                effect_class=EffectClass(cp["effect_class"]),
+                status=StepStatus.COMPLETED,
+                args=args,
+                output=cp["output"],
+                state=dict(cp["state"]),
+                lease_epoch=new_epoch,
+            )
+            copied.append(step_id)
+
+        return {
+            "ok": True,
+            "source_run_id": run_id,
+            "forked_run_id": target_run,
+            "lease_epoch": new_epoch,
+            "up_to_step_index": int(up_to_step_index),
+            "copied_steps": copied,
+        }

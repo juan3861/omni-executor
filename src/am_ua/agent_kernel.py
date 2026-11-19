@@ -169,6 +169,86 @@ class TelemetrySpanLedger:
                 out.append(item)
         return out
 
+    def export_otlp_payload(
+        self,
+        *,
+        trace_id: Optional[str] = None,
+        service_name: str = "omni-executor",
+    ) -> Dict[str, Any]:
+        """Export recorded spans in OTLP/JSON `resourceSpans` format."""
+        spans = self.read_spans(trace_id=trace_id)
+        otlp_spans: List[Dict[str, Any]] = []
+        for sp in spans:
+            raw_tid = str(sp.get("trace_id") or "").ljust(32, "0")[:32]
+            raw_sid = str(sp.get("span_id") or "").ljust(16, "0")[:16]
+            start_ns = int(float(sp.get("start_ts", 0.0)) * 1_000_000_000)
+            end_ns = int(float(sp.get("end_ts", 0.0)) * 1_000_000_000)
+            attrs = [
+                {"key": str(k), "value": {"stringValue": str(v)}}
+                for k, v in (sp.get("attributes") or {}).items()
+            ]
+            attrs.append(
+                {
+                    "key": "llm.tokens_used",
+                    "value": {"intValue": str(int(sp.get("tokens_used", 0)))},
+                }
+            )
+            otlp_spans.append(
+                {
+                    "traceId": raw_tid,
+                    "spanId": raw_sid,
+                    "name": str(sp.get("name") or "span"),
+                    "kind": 1,
+                    "startTimeUnixNano": str(start_ns),
+                    "endTimeUnixNano": str(end_ns),
+                    "attributes": attrs,
+                    "status": {"code": 2 if sp.get("status") == "error" else 1},
+                }
+            )
+        return {
+            "resourceSpans": [
+                {
+                    "resource": {
+                        "attributes": [
+                            {"key": "service.name", "value": {"stringValue": service_name}}
+                        ]
+                    },
+                    "scopeSpans": [
+                        {
+                            "scope": {"name": "omni_executor.telemetry", "version": "4.4"},
+                            "spans": otlp_spans,
+                        }
+                    ],
+                }
+            ]
+        }
+
+    def push_otlp_http(
+        self,
+        endpoint: str,
+        *,
+        trace_id: Optional[str] = None,
+        timeout_s: float = 5.0,
+        service_name: str = "omni-executor",
+    ) -> Dict[str, Any]:
+        """POST OTLP/JSON spans to an OpenTelemetry collector HTTP endpoint."""
+        import urllib.request
+
+        payload = self.export_otlp_payload(trace_id=trace_id, service_name=service_name)
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(
+            endpoint,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=float(timeout_s)) as resp:
+            return {
+                "ok": 200 <= int(resp.status) < 300,
+                "status": int(resp.status),
+                "spans_exported": len(payload["resourceSpans"][0]["scopeSpans"][0]["spans"]),
+            }
+
 
 class AutonomousTriggerScheduler:
     """Durable Cron/Interval & Event Trigger Scheduler governed by R09 Homeostasis (Sonnet S5)."""
@@ -691,6 +771,7 @@ class AetherMindUniversalAgent:
         agui_port: Optional[int] = None,
         best_of_n: int = 1,
         adaptive_best_of_n: int = 1,
+        output_schema: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """REAL agent mission: LLM plans and acts via tools; VERIFIED only if `verify_cmd` exits 0."""
         mc = MissionContract(
@@ -720,6 +801,7 @@ class AetherMindUniversalAgent:
                     role=role,
                     workflow=workflow,
                     wheel_timeout_s=wheel_timeout_s,
+                    output_schema=output_schema,
                 )
                 d = asdict(r)
                 raw_runs[f"cand_{cand_idx}"] = d
@@ -765,7 +847,7 @@ class AetherMindUniversalAgent:
                 res = loop.run(
                     objective, workspace, verify_cmd=verify_cmd, mission_id=mc.mission_id,
                     max_turns=max_turns, actor_provider=actor_provider, role=role, workflow=workflow,
-                    wheel_timeout_s=wheel_timeout_s, event_bus=event_bus,
+                    wheel_timeout_s=wheel_timeout_s, event_bus=event_bus, output_schema=output_schema,
                 )
                 sp["tokens_used"] = res.tokens["prompt"] + res.tokens["completion"]
                 sp["attributes"]["status"] = res.status
@@ -793,6 +875,7 @@ class AetherMindUniversalAgent:
                         actor_provider=actor_provider,
                         role=role_alt,
                         workflow=wf_alt,
+                        output_schema=output_schema,
                         wheel_timeout_s=wheel_timeout_s,
                     )
                     d2 = asdict(r2)

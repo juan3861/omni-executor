@@ -71,6 +71,20 @@ class SubAgentSessionRecord:
         return d
 
 
+ROLE_PROVIDER_PROFILES: Dict[str, Dict[str, Any]] = {
+    "architect": {"preferred_providers": ("anthropic", "openai", "deepseek"), "temperature": 0.2},
+    "planner": {"preferred_providers": ("anthropic", "openai", "deepseek"), "temperature": 0.2},
+    "security_reviewer": {"preferred_providers": ("anthropic", "openai", "gemini"), "temperature": 0.0},
+    "code_reviewer": {"preferred_providers": ("anthropic", "openai", "deepseek"), "temperature": 0.1},
+    "tdd_enforcer": {"preferred_providers": ("deepseek", "openai", "groq"), "temperature": 0.1},
+    "coder": {"preferred_providers": ("deepseek", "openai", "openrouter"), "temperature": 0.15},
+    "build_error_resolver": {"preferred_providers": ("groq", "deepseek", "openai"), "temperature": 0.0},
+    "explorer": {"preferred_providers": ("gemini", "groq", "deepseek"), "temperature": 0.2},
+    "researcher": {"preferred_providers": ("gemini", "openai", "openrouter"), "temperature": 0.3},
+    "worker": {"preferred_providers": ("deepseek", "groq", "openai"), "temperature": 0.2},
+}
+
+
 class SubAgentSessionBus:
     """OpenClaw-style Sub-Agent Spawner & Cross-Agent Messaging Bus backed by SQLite WAL."""
 
@@ -701,4 +715,107 @@ class SubAgentSessionBus:
             "total_agents_spawned": len(all_session_ids),
             "waves_executed": len(wave_reports),
             "waves": wave_reports,
+        }
+
+    def execute_dag(
+        self,
+        tasks: Sequence[Dict[str, Any]],
+        worker_fn: Optional[Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]]] = None,
+        *,
+        timeout_s: float = 120.0,
+        parent_id: str = "dag-coordinator",
+        workspace: Optional[Path | str] = None,
+    ) -> Dict[str, Any]:
+        """Execute a dependency-aware DAG of sub-agent tasks in topological waves."""
+        by_id: Dict[str, Dict[str, Any]] = {}
+        order: List[str] = []
+        for idx, raw in enumerate(tasks):
+            tid = str(raw.get("id") or f"task-{idx + 1}")
+            if tid in by_id:
+                raise ValueError(f"Duplicate DAG task id: {tid!r}")
+            deps = [str(d) for d in (raw.get("depends_on") or [])]
+            role = str(raw.get("role") or "worker")
+            profile = ROLE_PROVIDER_PROFILES.get(role, ROLE_PROVIDER_PROFILES["worker"])
+            by_id[tid] = {
+                **dict(raw),
+                "id": tid,
+                "role": role,
+                "depends_on": deps,
+                "provider_profile": dict(profile),
+            }
+            order.append(tid)
+
+        for tid, t in by_id.items():
+            for d in t["depends_on"]:
+                if d not in by_id:
+                    raise ValueError(f"DAG task {tid!r} depends on unknown task {d!r}")
+
+        # Kahn topological wave grouping with cycle detection
+        remaining = set(order)
+        completed: Dict[str, Dict[str, Any]] = {}
+        waves: List[List[str]] = []
+        while remaining:
+            ready = [
+                tid
+                for tid in order
+                if tid in remaining and all(d in completed for d in by_id[tid]["depends_on"])
+            ]
+            if not ready:
+                raise ValueError(f"Cycle detected in DAG tasks: {sorted(remaining)}")
+            waves.append(ready)
+            for tid in ready:
+                remaining.remove(tid)
+                completed[tid] = {}
+
+        results: Dict[str, Dict[str, Any]] = {}
+        wave_reports: List[Dict[str, Any]] = []
+        all_ok = True
+
+        for w_idx, wave_ids in enumerate(waves, start=1):
+            sid_to_tid: Dict[str, str] = {}
+            for tid in wave_ids:
+                task_spec = by_id[tid]
+                upstream = {d: results[d] for d in task_spec["depends_on"]}
+
+                def _make_worker(ts: Dict[str, Any], up: Dict[str, Any]) -> Callable[[str, str, Path], Dict[str, Any]]:
+                    def _w(sid: str, obj: str, ws: Path) -> Dict[str, Any]:
+                        if worker_fn is not None:
+                            return worker_fn(ts, up)
+                        return {
+                            "ok": True,
+                            "task_id": ts["id"],
+                            "role": ts["role"],
+                            "provider_profile": ts["provider_profile"],
+                            "upstream_ids": sorted(up.keys()),
+                            "summary": obj[:160],
+                        }
+                    return _w
+
+                spawned = self.spawn_session(
+                    str(task_spec.get("objective") or task_spec["id"]),
+                    _make_worker(task_spec, upstream),
+                    parent_id=parent_id,
+                    role=task_spec["role"],
+                    workspace=workspace,
+                    run_async=True,
+                )
+                sid_to_tid[spawned["session_id"]] = tid
+
+            awaited = self.await_sessions(list(sid_to_tid.keys()), timeout_s=timeout_s)
+            wave_ok = bool(awaited.get("ok"))
+            if not wave_ok:
+                all_ok = False
+            for sid, tid in sid_to_tid.items():
+                s_info = awaited["sessions"].get(sid, {})
+                res_obj = s_info.get("result") or {"ok": False, "status": s_info.get("status")}
+                results[tid] = res_obj
+                if not res_obj.get("ok", True):
+                    all_ok = False
+            wave_reports.append({"wave": w_idx, "task_ids": wave_ids, "ok": wave_ok})
+
+        return {
+            "ok": all_ok,
+            "waves": wave_reports,
+            "results": results,
+            "total_tasks": len(order),
         }

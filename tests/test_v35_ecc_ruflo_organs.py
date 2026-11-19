@@ -1022,3 +1022,195 @@ def test_v43_openhands_inspired_rails_critic_task_tracker_multihunk_and_tom(tmp_
     assert Path(cons["profile_path"]).is_file()
     tom = rb.consult_tom("Fix rounding precision in billing")
     assert tom["ok"] is True and "sparc" in tom["suggestions"] and tom["confidence"] >= 0.65
+
+
+def test_v44_ssrf_domain_guard_timetravel_guardrails_spill_schema_handoff_dag_otlp_prover_acp(tmp_path: Path) -> None:
+    """Verify all 10 v4.4 gears: SSRF guard, browser domain guard, output guardrails + tripwire, spill_query, time-travel fork, output_schema + handoff_agent, DAG + role profiles, USD cost + cache health + OTLP, code_sandbox, PolicyProver + ACP."""
+    import json as _json
+    from am_ua.agent_kernel import TelemetrySpanLedger
+    from am_ua.cognition.llm_client import check_cache_health, estimate_cost_usd
+    from am_ua.contracts.contracts import CognitiveEnvelope
+    from am_ua.execution.acp_adapter import OmniACPServer
+    from am_ua.execution.agent_loop import AgentLoop, WorkspaceTools
+    from am_ua.execution.durable_engine import DurableExecutionEngine, EffectClass, ToolContract
+    from am_ua.execution.hook_engine import (
+        DeterministicHookEngine,
+        OutputGuardrailDecision,
+        ToolGuardrailTripwireError,
+        post_output_secret_redactor,
+    )
+    from am_ua.execution.output_compressor import ToolOutputCompressor
+    from am_ua.execution.subagent_bus import ROLE_PROVIDER_PROFILES, SubAgentSessionBus
+    from am_ua.governance.seal_guard import ConstitutionSealGuard
+    from am_ua.gui.cdp_browser import CDPIndexedBrowser
+    from am_ua.security.agent_shield import AgentShieldAuditor
+
+    ws_dir = Path("F:/AetherMind_Temp") / f"v44_ws_{tmp_path.name}"
+    ws_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        wt = WorkspaceTools(ws_dir, ConstitutionSealGuard(r"F:\AetherMind_Universal_Agent"))
+
+        # 1. Real SSRF guard in web_fetch
+        assert wt.web_fetch({"url": "http://169.254.169.254/latest/meta-data/"})["ok"] is False
+        assert wt.web_fetch({"url": "http://10.0.0.1/admin"})["ok"] is False
+        assert wt.web_fetch({"url": "http://192.168.1.1/"})["ok"] is False
+        assert wt.web_fetch({"url": "http://[::ffff:127.0.0.1]/"})["ok"] is False
+        local_html = ws_dir / "page.html"
+        local_html.write_text("<h1>Hello v4.4</h1><p>Local file ok</p>", encoding="utf-8")
+        f_res = wt.web_fetch({"url": local_html.as_uri()})
+        assert f_res["ok"] is True and "Hello v4.4" in f_res["content"]
+
+        # 2. Browser Domain Guard
+        br = CDPIndexedBrowser(
+            artifact_dir=tmp_path / "cdp_dom",
+            allowed_domains=["example.com", "*.docs.example.org"],
+            prohibited_domains=["evil.example.com"],
+            block_ip_addresses=True,
+        )
+        assert br.is_url_allowed("https://example.com/home")[0] is True
+        assert br.is_url_allowed("https://api.docs.example.org/v1")[0] is True
+        assert br.is_url_allowed("https://evil.example.com/login")[0] is False
+        assert br.is_url_allowed("https://192.168.1.50/")[0] is False
+        assert br.is_url_allowed("https://other.org/")[0] is False
+        blocked_goto = br.act("goto", url="https://10.0.0.5/")
+        assert blocked_goto["ok"] is False and blocked_goto["blocked_by_domain_guard"] is True
+
+        # 3. ToolOutputGuardrail + Tripwires + post_output_secret_redactor
+        hk = DeterministicHookEngine()
+        fake_tok = "sk-" + ("Z" * 24)
+        sample_obs = {"stdout": f"token={fake_tok}", "nested": {"k": fake_tok}}
+        d_ok = hk.run_output_guardrails("run", {"command": "echo hi"}, sample_obs, ws_dir)
+        assert d_ok.behavior == "allow" and d_ok.redacted_obs is not None
+        assert fake_tok not in d_ok.redacted_obs["stdout"] and "[REDACTED_TOKEN]" in d_ok.redacted_obs["nested"]["k"]
+
+        hk.register_output_guardrail(
+            "block_forbidden",
+            lambda t, a, o, w: OutputGuardrailDecision(behavior="reject_content", reason="contains forbidden"),
+        )
+        d_rej = hk.run_output_guardrails("run", {}, {"out": "x"}, ws_dir)
+        assert d_rej.behavior == "reject_content"
+
+        hk_trip = DeterministicHookEngine()
+        hk_trip.register_output_guardrail(
+            "tripwire_test",
+            lambda t, a, o, w: OutputGuardrailDecision(behavior="raise_exception", reason="hard stop"),
+        )
+        with pytest.raises(ToolGuardrailTripwireError):
+            hk_trip.run_output_guardrails("run", {}, {}, ws_dir)
+
+        # 4. spill_query tool
+        comp = ToolOutputCompressor(max_obs_chars=200)
+        big_lines = "\n".join(f"line {i}: {'MATCH_ME' if i == 42 else 'filler'}" for i in range(1, 100))
+        _ = comp.compress_tool_payload("run", {"stdout": big_lines})
+        sp_path = comp.spill_files[-1]
+        q_hit = wt.spill_query({"spill_path": sp_path, "pattern": "MATCH_ME"})
+        assert q_hit["ok"] is True and q_hit["match_count"] >= 1
+        q_slice = wt.spill_query({"spill_path": sp_path, "start_line": 1, "max_lines": 5})
+        assert q_slice["ok"] is True and len(q_slice["lines"]) >= 1
+
+        # 5. Time-Travel fork_run_from_step
+        eng = DurableExecutionEngine(db_path=tmp_path / "tt_durable.db")
+        eng.register_tool(ToolContract(name="echo_tool", effect_class=EffectClass.PURE_READ, execute_fn=lambda args: {"val": args["x"]}))
+        epoch_tt = eng.fencer.acquire_lease("run-orig", "a1")
+        eng.execute_step(run_id="run-orig", step_id="s1", step_index=1, tool_name="echo_tool", args={"x": 10}, state={}, lease_epoch=epoch_tt)
+        eng.execute_step(run_id="run-orig", step_id="s2", step_index=2, tool_name="echo_tool", args={"x": 20}, state={}, lease_epoch=epoch_tt)
+        forked = eng.fork_run_from_step("run-orig", up_to_step_index=1, new_run_id="run-fork", override_args={"s1": {"x": 99}})
+        assert forked["ok"] is True and forked["copied_steps"] == ["s1"]
+        assert eng.get_step_checkpoint("run-fork", "s1")["args"] == {"x": 99}
+
+        # 6. Typed output_schema validation + handoff_agent + AgentLoop output guardrail integration
+        schema = {
+            "type": "object",
+            "required": ["status", "count"],
+            "properties": {"status": {"type": "string"}, "count": {"type": "integer"}},
+        }
+        assert AgentLoop._validate_output_schema({"status": "ok", "count": 3}, schema) is None
+        assert AgentLoop._validate_output_schema({"status": "ok", "count": "bad"}, schema) is not None
+
+        class _StubResp:
+            def __init__(self, text: str) -> None:
+                self.text = text
+                self.provider = "stub"
+                self.model = "gpt-4o-mini"
+                self.prompt_tokens = 10
+                self.completion_tokens = 10
+                self.total_tokens = 20
+
+        class _StubLLM:
+            total_prompt_tokens = 0
+            total_completion_tokens = 0
+            calls = 0
+
+            def __init__(self) -> None:
+                self._i = 0
+
+            def chat(self, *a: Any, **kw: Any) -> _StubResp:
+                self._i += 1
+                self.calls += 1
+                if self._i == 1:
+                    return _StubResp(_json.dumps({"thought": "handoff", "tool": "handoff_agent", "args": {"target_role": "security_auditor", "reason": "audit"}}))
+                if self._i == 2:
+                    return _StubResp(_json.dumps({"thought": "bad finish", "tool": "finish", "args": {"summary": "done", "confidence": 0.9, "output": {"status": "ok"}}}))
+                return _StubResp(_json.dumps({"thought": "good finish", "tool": "finish", "args": {"summary": "done", "confidence": 0.9, "output": {"status": "ok", "count": 2}}}))
+
+        loop = AgentLoop(engine=eng, seal_guard=ConstitutionSealGuard(r"F:\AetherMind_Universal_Agent"), llm=_StubLLM())  # type: ignore[arg-type]
+        loop_res = loop.run("Check handoff and schema", ws_dir, max_turns=5, use_judge=False, output_schema=schema)
+        assert loop_res.role == "security_auditor"
+        assert loop_res.structured_output == {"status": "ok", "count": 2}
+        assert loop_res.turns == 3
+
+        # 7. ROLE_PROVIDER_PROFILES + execute_dag
+        assert "security_reviewer" in ROLE_PROVIDER_PROFILES
+        dag_bus = SubAgentSessionBus(db_path=tmp_path / "dag_bus.db")
+        dag_out = dag_bus.execute_dag(
+            [
+                {"id": "plan", "role": "planner", "objective": "Design module"},
+                {"id": "code", "role": "coder", "objective": "Implement", "depends_on": ["plan"]},
+                {"id": "audit", "role": "security_reviewer", "objective": "Audit", "depends_on": ["code"]},
+            ]
+        )
+        assert dag_out["ok"] is True and len(dag_out["waves"]) == 3
+        assert dag_out["results"]["audit"]["upstream_ids"] == ["code"]
+
+        # 8. USD cost + cache health + OTLP export
+        cost = estimate_cost_usd("gpt-4o-mini", 1_000_000, 1_000_000, cache_read_tokens=500_000)
+        assert 0.65 < cost < 0.75
+        assert check_cache_health(2048, 200)["status"] == "unexpected_collapse"
+        assert check_cache_health(2048, 1900)["status"] == "healthy"
+        ledger = TelemetrySpanLedger(log_path=tmp_path / "otel.jsonl")
+        with ledger.start_span("v44.test", attributes={"k": "v"}) as sp:
+            sp["tokens_used"] = 42
+        otlp = ledger.export_otlp_payload()
+        assert len(otlp["resourceSpans"][0]["scopeSpans"][0]["spans"]) == 1
+
+        # 9. In-memory AST code_sandbox
+        sb_ok = wt.code_sandbox({"code": "total = sum(x * x for x in range(1, 6))\ntotal"})
+        assert sb_ok["ok"] is True and sb_ok["result"] == 55
+        sb_bad = wt.code_sandbox({"code": "import os"})
+        assert sb_bad["ok"] is False and "Forbidden" in sb_bad["error"]
+
+        # 10. PolicyProver + ACP Server
+        base_pol = {
+            "self_modification_forbidden_prefixes": ["constitution/", "eval/"],
+            "untouchable_external_paths": ["C:\\Windows"],
+            "forbidden_cli_flags": ["--no-verify"],
+            "allow_remote_git_push": False,
+            "allow_blind_rpa": False,
+            "actor_cannot_be_own_judge": True,
+        }
+        assert AgentShieldAuditor.prove_policy_containment(base_pol, dict(base_pol))["contained"] is True
+        weak_pol = {**base_pol, "allow_remote_git_push": True}
+        assert AgentShieldAuditor.prove_policy_containment(base_pol, weak_pol)["contained"] is False
+
+        acp = OmniACPServer(prompt_handler=lambda s, p: {"stop_reason": "finish", "echo": p})
+        init_r = acp.handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        assert init_r is not None and init_r["result"]["agentInfo"]["version"] == "4.4.0"
+        new_r = acp.handle_request({"jsonrpc": "2.0", "id": 2, "method": "session/new", "params": {"workspace": str(ws_dir)}})
+        sid = new_r["result"]["sessionId"]  # type: ignore[index]
+        pr_r = acp.handle_request({"jsonrpc": "2.0", "id": 3, "method": "session/prompt", "params": {"sessionId": sid, "prompt": "hello acp"}})
+        assert pr_r is not None and pr_r["result"]["result"]["echo"] == "hello acp"
+        can_r = acp.handle_request({"jsonrpc": "2.0", "id": 4, "method": "session/cancel", "params": {"sessionId": sid}})
+        assert can_r is not None and can_r["result"]["cancelled"] is True
+    finally:
+        import shutil
+        shutil.rmtree(ws_dir, ignore_errors=True)

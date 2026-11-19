@@ -104,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
     p_skills.add_argument("--kwargs", default="{}", help="JSON kwargs for skill execution")
 
     sub.add_parser("mcp-serve", help="Start the OmniExecutor MCP server over stdio (JSON-RPC 2.0)")
+    sub.add_parser("acp-serve", help="Start the OmniExecutor ACP server over stdio (JSON-RPC 2.0)")
 
     p_bench = sub.add_parser("bench", help="Real-LLM Benchmark (AM-Bench) runner & comparison")
     p_bench.add_argument("action", choices=["run", "report"], help="Benchmark action")
@@ -134,6 +135,13 @@ def main(argv: list[str] | None = None) -> int:
             security_auditor=AgentShieldAuditor(),
         )
         srv.serve_stdio()
+        return 0
+
+    if args.cmd == "acp-serve":
+        from am_ua.execution.acp_adapter import OmniACPServer
+        agent = AetherMindUniversalAgent()
+        acp = OmniACPServer(agent=agent, default_workspace=str(ROOT))
+        acp.serve_stdio()
         return 0
 
     agent = AetherMindUniversalAgent()

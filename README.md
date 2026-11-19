@@ -17,8 +17,8 @@
 2. [Capability Overview](#capability-overview)
 3. [Architecture & Mission Lifecycle](#architecture--mission-lifecycle)
 4. [Quick Start & Environment Configuration](#quick-start--environment-configuration)
-5. [Complete CLI Reference (All 14 Subcommands)](#complete-cli-reference-all-14-subcommands)
-6. [Complete Agent Tool Catalog (All 30 Workspace Tools)](#complete-agent-tool-catalog-all-30-workspace-tools)
+5. [Complete CLI Reference (All 15 Subcommands)](#complete-cli-reference-all-15-subcommands)
+6. [Complete Agent Tool Catalog (All 32 Workspace Tools)](#complete-agent-tool-catalog-all-32-workspace-tools)
 7. [Hierarchical Team Orchestration & Engineering Personas](#hierarchical-team-orchestration--engineering-personas)
 8. [Protocol Integrations (MCP, A2A v0.3, Multi-Channel Gateway & AG-UI SSE)](#protocol-integrations)
 9. [Built-in Security Analyzer & Deterministic Guardrails](#built-in-security-analyzer--deterministic-guardrails)
@@ -189,7 +189,7 @@ pytest tests -q                # Automated suite (75 unit & integration tests)
 
 ---
 
-## Complete CLI Reference (All 14 Subcommands)
+## Complete CLI Reference (All 15 Subcommands)
 
 Every capability is accessible through `.\omni-executor.cmd <command> [args]` (or `python -m am_ua.cli <command>`).
 
@@ -204,6 +204,7 @@ Every capability is accessible through `.\omni-executor.cmd <command> [args]` (o
 | **`pc`** | Execute closed-loop Windows desktop primitives and locators | `probe\|windows\|observe\|find\|clipboard\|processes\|port` `--locator L` `--filter F` `--text T` `--port N` `--no-ocr` |
 | **`skills`** | Inspect, search, and invoke SHA-256 sealed adaptive Python skills | `list\|search\|run` `--query Q` `--name N` `--kwargs '{"k":"v"}'` |
 | **`mcp-serve`** | Start the standards-compliant JSON-RPC 2.0 MCP server over `stdio` | None |
+| **`acp-serve`** | Start the Agent Client Protocol (ACP) JSON-RPC 2.0 server over `stdio` (`initialize`, `session/new`, `session/prompt`, `session/cancel`) | None |
 | **`bench`** | Execute or summarize the sealed real-LLM evaluation suite (`eval/am_bench`) | `run\|report` `--suite code\|desktop\|all\|quick` `--workflow react\|sparc\|hierarchical` `--max-turns 12` `--label TAG` |
 | **`wheel`** | Inspect or control missions paused for "Take the Wheel" human intervention | `status\|resume\|abort` `[mission_id]` `--note TEXT` |
 | **`ingest-doc`** | Parse `.docx`, `.xlsx`, `.csv`, `.pdf`, or `.md` with R16 external taint tracking into semantic memory | `<file_path>` |
@@ -237,7 +238,7 @@ Every capability is accessible through `.\omni-executor.cmd <command> [args]` (o
 
 ---
 
-## Complete Agent Tool Catalog (All 30 Workspace Tools)
+## Complete Agent Tool Catalog (All 32 Workspace Tools)
 
 Inside `AgentLoop`, every action is validated against workspace boundaries, constitutional rules, and pre/post AST hooks. The system advertises only relevant tool groups to save tokens, and supports single calls (`{"tool": ..., "args": ...}`) or **batched execution of up to 6 actions per turn** (`{"actions": [...]}`).
 
@@ -266,7 +267,9 @@ Inside `AgentLoop`, every action is validated against workspace boundaries, cons
 | `repo_map` | `pure_read` | `max_chars` (default `3000`, max `12000`) | Returns top PageRank-ranked files, symbol counts, and compact structural summary |
 | `knowledge_query` | `pure_read` | `question`, `top_k` (max `15`) | Queries `HierarchicalKnowledgeIndex` over docs, SQL schemas, configs, and source without external vector DBs |
 | `task_tracker` | `idempotent_write` | `command` (`view`\|`plan`), `task_list` | Tracks structured subtasks (`todo`, `in_progress`, `done`) with alias normalization and live AG-UI `STATE_DELTA` updates |
-| `web_fetch` | `pure_read` | `url`, `max_chars` (max `20000`) | Lightweight HTML-to-Markdown reader with SSRF protection (blocks `localhost` / `127.0.0.1`) and `UNTRUSTED_EXTERNAL` taint tagging |
+| `web_fetch` | `pure_read` | `url`, `max_chars` (max `20000`) | Lightweight HTML-to-Markdown reader with DNS/IP SSRF guard (blocks loopback, RFC1918, `169.254.0.0/16`, IPv4-mapped IPv6) and `UNTRUSTED_EXTERNAL` taint tagging |
+| `spill_query` | `pure_read` | `spill_path`, optional `pattern`, `start_line`, `max_lines` | Searches or slices large spilled tool outputs saved on disk by `ToolOutputCompressor` |
+| `code_sandbox` | `pure_read` | `code` | In-memory restricted AST evaluator (~1 ms) for deterministic math, JSON, and assertions without spawning a shell |
 
 ### Self-Healing CDP Browser Automation
 
@@ -303,6 +306,7 @@ Inside `AgentLoop`, every action is validated against workspace boundaries, cons
 
 | Tool | Mechanism | Key Arguments | Behavior |
 | :--- | :--- | :--- | :--- |
+| `handoff_agent` | Loop control (`AgentLoop`) | `target_role`, optional `reason`, `context_note` | Dynamically transfers control to a specialist role mid-mission, re-composes scoped system prompt/persona, and emits `AGENT_HANDOFF` AG-UI event |
 | `request_human` | Loop gate (`HumanWheelGate`) | `reason`, `instructions` | Pauses mission for "Take the Wheel" operator action (up to 3 times/mission), credits paused time out of the wall-clock budget, and emits AG-UI custom event |
 | `finish` | Terminal verification oracle | `summary`, `confidence` (`[0.0, 1.0]`) | Triggers `--verify` command immediately if not yet satisfied; rejects `finish` with error output if `--verify` exits non-zero; otherwise computes Brier score & triggers independent judge |
 

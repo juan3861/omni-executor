@@ -120,5 +120,28 @@ jobs:
               rb = ReasoningBank(traces_dir=tmp / "rb")
               assert rb.sleeptime_consolidate()["ok"] is True
 
+              # 5. v4.4 portable invariants (SSRF, DomainGuard, OutputGuardrails, TimeTravel, DAG, Cost/OTLP, PolicyProver, ACP)
+              from am_ua.agent_kernel import TelemetrySpanLedger
+              from am_ua.cognition.llm_client import check_cache_health, estimate_cost_usd
+              from am_ua.execution.acp_adapter import OmniACPServer
+              from am_ua.execution.agent_loop import WorkspaceTools
+              from am_ua.execution.hook_engine import OutputGuardrailDecision
+              from am_ua.security.agent_shield import AgentShieldAuditor
+              assert WorkspaceTools._validate_ssrf_url("http://169.254.169.254/latest") is not None
+              dom_br = CDPIndexedBrowser(artifact_dir=tmp / "cdp_d", allowed_domains=["example.com"])
+              assert dom_br.is_url_allowed("https://10.0.0.1/")[0] is False
+              hk = DeterministicHookEngine()
+              d_out = hk.run_output_guardrails("run", {}, {"k": "sk-" + ("Z" * 24)}, tmp)
+              assert d_out.behavior == "allow" and d_out.redacted_obs is not None
+              forked = eng.fork_run_from_step("r1", up_to_step_index=1, new_run_id="r1-fork", override_args={"s1": {"v": 9}})
+              assert forked["ok"] is True and forked["copied_steps"] == ["s1"]
+              assert eng.get_step_checkpoint("r1-fork", "s1")["args"] == {"v": 9}
+              assert bus.execute_dag([{"id": "a", "role": "planner", "objective": "plan"}])["ok"] is True
+              assert estimate_cost_usd("gpt-4o-mini", 1_000_000, 0) > 0.1
+              assert check_cache_health(2048, 100)["status"] == "unexpected_collapse"
+              assert AgentShieldAuditor.prove_policy_containment({"allow_remote_git_push": False}, {"allow_remote_git_push": True})["contained"] is False
+              acp = OmniACPServer()
+              assert acp.handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})["result"]["agentInfo"]["version"] == "4.4.0"
+
           print("ALL_PORTABLE_CI_CHECKS_PASSED")
           PY

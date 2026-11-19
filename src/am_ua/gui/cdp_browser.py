@@ -22,11 +22,13 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import difflib
 import hashlib
+import ipaddress
 import json
 from pathlib import Path
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+from urllib.parse import urlparse
 
 
 PAYMENT_TRIGGER_RE = re.compile(
@@ -111,6 +113,9 @@ class CDPIndexedBrowser:
         *,
         headless: bool = True,
         block_on_payment: bool = True,
+        allowed_domains: Optional[Sequence[str]] = None,
+        prohibited_domains: Optional[Sequence[str]] = None,
+        block_ip_addresses: bool = False,
     ) -> None:
         self.artifact_dir = Path(
             artifact_dir or r"F:\AetherMind_Temp\cdp_browser_artifacts"
@@ -118,6 +123,9 @@ class CDPIndexedBrowser:
         self.artifact_dir.mkdir(parents=True, exist_ok=True)
         self.headless = bool(headless)
         self.block_on_payment = bool(block_on_payment)
+        self.allowed_domains = [str(d).strip().lower() for d in (allowed_domains or []) if str(d).strip()]
+        self.prohibited_domains = [str(d).strip().lower() for d in (prohibited_domains or []) if str(d).strip()]
+        self.block_ip_addresses = bool(block_ip_addresses)
         self._pw: Any = None
         self._browser: Any = None
         self._context: Any = None
@@ -140,8 +148,59 @@ class CDPIndexedBrowser:
         self._page = self._context.new_page()
         return self._page
 
+    @staticmethod
+    def _domain_matches(host: str, pattern: str) -> bool:
+        p = pattern.strip().lower()
+        h = host.strip().lower()
+        if p.startswith("*."):
+            base = p[2:]
+            return h == base or h.endswith("." + base)
+        if p.count(".") == 1 and not h.startswith("www.") and p == h:
+            return True
+        if p.count(".") == 1 and h == f"www.{p}":
+            return True
+        return h == p
+
+    def is_url_allowed(self, url: str) -> Tuple[bool, str]:
+        """Check URL against block_ip_addresses, allowed_domains, and prohibited_domains (`browser-use` policy)."""
+        raw = (url or "").strip()
+        low = raw.lower()
+        if low in ("about:blank",) or low.startswith(("data:", "blob:")):
+            return True, ""
+        parsed = urlparse(raw)
+        scheme = (parsed.scheme or "").lower()
+        if scheme == "file":
+            if self.allowed_domains:
+                return False, "file:// URLs are blocked when allowed_domains is enforced"
+            return True, ""
+        if scheme not in ("http", "https"):
+            return False, f"Blocked non-web URL scheme: {scheme!r}"
+
+        host = (parsed.hostname or "").strip().lower()
+        if not host:
+            return False, "URL missing hostname"
+        if self.block_ip_addresses:
+            try:
+                ipaddress.ip_address(host)
+                return False, f"Direct IP navigation blocked by domain guard: {host}"
+            except ValueError:
+                pass
+        if self.allowed_domains:
+            if not any(self._domain_matches(host, pat) for pat in self.allowed_domains):
+                return False, f"Host '{host}' is not in allowed_domains"
+            return True, ""
+        if self.prohibited_domains:
+            for pat in self.prohibited_domains:
+                if self._domain_matches(host, pat) or (pat.count(".") == 1 and host.endswith("." + pat)):
+                    return False, f"Host '{host}' is blocked by prohibited_domains ('{pat}')"
+        return True, ""
+
     def observe(self, url: Optional[str] = None, *, wait_ms: int = 200, force_reload: bool = False) -> Dict[str, Any]:
         """Navigate (if `url` given and not already at destination), index all interactive DOM elements `[1..N]`, and save F12 + Visual proof."""
+        if url:
+            allowed, reason = self.is_url_allowed(str(url).strip())
+            if not allowed:
+                return {"ok": False, "blocked_by_domain_guard": True, "url": str(url).strip(), "error": reason}
         page = self._ensure_page()
         if url:
             cur_url = getattr(page, "url", "") or ""
@@ -286,11 +345,15 @@ class CDPIndexedBrowser:
                     ),
                 }
 
-        page = self._ensure_page()
-
         if act_name == "goto" and (url or target):
-            obs = self.observe(url=url or target)
+            dest = str(url or target)
+            allowed, reason = self.is_url_allowed(dest)
+            if not allowed:
+                return {"ok": False, "blocked_by_domain_guard": True, "action": "goto", "url": dest, "error": reason}
+            obs = self.observe(url=dest)
             return {"ok": True, "action": "goto", "observation": obs}
+
+        page = self._ensure_page()
 
         if not self.last_elements:
             self.observe(wait_ms=50)

@@ -240,3 +240,46 @@ class AgentShieldAuditor:
             passed=passed,
             findings=findings,
         )
+
+    @staticmethod
+    def prove_policy_containment(
+        baseline_policy: Dict[str, Any],
+        candidate_policy: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Formally prove that `candidate_policy` does not weaken `baseline_policy` invariants."""
+        violations: List[str] = []
+
+        def _norm_set(policy: Dict[str, Any], key: str) -> set[str]:
+            val = policy.get(key) or []
+            return {str(x).strip() for x in val if str(x).strip()}
+
+        for list_key in (
+            "self_modification_forbidden_prefixes",
+            "untouchable_external_paths",
+            "forbidden_cli_flags",
+        ):
+            base_items = _norm_set(baseline_policy, list_key)
+            cand_items = _norm_set(candidate_policy, list_key)
+            missing = sorted(base_items - cand_items)
+            if missing:
+                violations.append(f"{list_key} removed protected entries: {missing}")
+
+        # Safety booleans that must remain False when baseline is False
+        for must_stay_false in ("allow_remote_git_push", "allow_blind_rpa"):
+            base_val = bool(baseline_policy.get(must_stay_false, False))
+            cand_val = bool(candidate_policy.get(must_stay_false, False))
+            if not base_val and cand_val:
+                violations.append(f"{must_stay_false} weakened from False to True")
+
+        # Safety booleans that must remain True when baseline is True
+        for must_stay_true in ("actor_cannot_be_own_judge",):
+            base_val = bool(baseline_policy.get(must_stay_true, True))
+            cand_val = bool(candidate_policy.get(must_stay_true, True))
+            if base_val and not cand_val:
+                violations.append(f"{must_stay_true} weakened from True to False")
+
+        return {
+            "contained": len(violations) == 0,
+            "violations": violations,
+            "checked_invariants": 6,
+        }

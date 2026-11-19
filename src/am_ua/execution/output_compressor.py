@@ -129,3 +129,49 @@ class ToolOutputCompressor:
             "chars_saved": saved,
             "compression_ratio": ratio,
         }
+
+    def query_spill(
+        self,
+        spill_path: str | Path,
+        *,
+        pattern: Optional[str] = None,
+        start_line: int = 1,
+        max_lines: int = 80,
+    ) -> Dict[str, Any]:
+        """Inspect or regex-search a spilled tool output log without re-running the tool."""
+        base = self.spill_dir.resolve()
+        target = Path(spill_path)
+        if not target.is_absolute():
+            target = (base / target).resolve()
+        else:
+            target = target.resolve()
+        if target != base and base not in target.parents:
+            raise PermissionError(f"Spill path escapes spill_dir: {spill_path}")
+        if not target.is_file():
+            return {"ok": False, "error": f"Spill file not found: {target.name}"}
+
+        lines = target.read_text(encoding="utf-8", errors="replace").splitlines()
+        limit = max(1, min(int(max_lines), 200))
+        if pattern:
+            rx = re.compile(str(pattern))
+            hits = [f"{i}: {ln[:240]}" for i, ln in enumerate(lines, 1) if rx.search(ln)]
+            return {
+                "ok": True,
+                "file": target.name,
+                "total_lines": len(lines),
+                "match_count": len(hits),
+                "lines": hits[:limit],
+                "truncated": len(hits) > limit,
+            }
+        start = max(1, int(start_line))
+        end = min(len(lines), start + limit - 1)
+        sliced = [f"{i}: {lines[i - 1][:240]}" for i in range(start, end + 1)]
+        return {
+            "ok": True,
+            "file": target.name,
+            "total_lines": len(lines),
+            "start_line": start,
+            "end_line": end,
+            "lines": sliced,
+            "truncated": end < len(lines),
+        }
