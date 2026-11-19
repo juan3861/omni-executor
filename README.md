@@ -2,7 +2,7 @@
 
 **An autonomous software engineering agent with a hierarchical team orchestrator, a self-healing CDP browser engine, closed-loop Windows desktop automation, and an MCP / A2A / AG-UI interoperability harness — built around durable execution, executable verification, and hard safety gates.**
 
-[![Tests](https://img.shields.io/badge/pytest-74%20passed-2ea44f?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/pytest-75%20passed-2ea44f?style=flat-square)](tests/)
 [![Benchmark](https://img.shields.io/badge/bundled%20benchmark-20%2F20%20(self--reported)-2ea44f?style=flat-square)](#benchmarks-and-honest-caveats)
 [![Static analysis](https://img.shields.io/badge/built--in%20SAST-grade%20A-0969da?style=flat-square)](SECURITY.md)
 [![Protocols](https://img.shields.io/badge/protocols-MCP%20%7C%20A2A%20v0.3%20%7C%20AG--UI-8250df?style=flat-square)](#protocol-integrations)
@@ -18,7 +18,7 @@
 3. [Architecture & Mission Lifecycle](#architecture--mission-lifecycle)
 4. [Quick Start & Environment Configuration](#quick-start--environment-configuration)
 5. [Complete CLI Reference (All 14 Subcommands)](#complete-cli-reference-all-14-subcommands)
-6. [Complete Agent Tool Catalog (All 29 Workspace Tools)](#complete-agent-tool-catalog-all-29-workspace-tools)
+6. [Complete Agent Tool Catalog (All 30 Workspace Tools)](#complete-agent-tool-catalog-all-30-workspace-tools)
 7. [Hierarchical Team Orchestration & Engineering Personas](#hierarchical-team-orchestration--engineering-personas)
 8. [Protocol Integrations (MCP, A2A v0.3, Multi-Channel Gateway & AG-UI SSE)](#protocol-integrations)
 9. [Built-in Security Analyzer & Deterministic Guardrails](#built-in-security-analyzer--deterministic-guardrails)
@@ -184,7 +184,7 @@ $env:OPENROUTER_API_KEY = "<your-openrouter-key>"
 ```powershell
 .\omni-executor.cmd doctor     # Multi-organ readiness, SHA-256 seal, SQLite-WAL & host headroom
 .\omni-executor.cmd shield .   # Built-in static analysis (secrets, MCP configs, hooks, SAST)
-pytest tests -q                # Automated suite (74 unit & integration tests)
+pytest tests -q                # Automated suite (75 unit & integration tests)
 ```
 
 ---
@@ -237,7 +237,7 @@ Every capability is accessible through `.\omni-executor.cmd <command> [args]` (o
 
 ---
 
-## Complete Agent Tool Catalog (All 29 Workspace Tools)
+## Complete Agent Tool Catalog (All 30 Workspace Tools)
 
 Inside `AgentLoop`, every action is validated against workspace boundaries, constitutional rules, and pre/post AST hooks. The system advertises only relevant tool groups to save tokens, and supports single calls (`{"tool": ..., "args": ...}`) or **batched execution of up to 6 actions per turn** (`{"actions": [...]}`).
 
@@ -249,7 +249,7 @@ Inside `AgentLoop`, every action is validated against workspace boundaries, cons
 | `read_file` | `pure_read` | `file`, optional `start_line`, `end_line` | Reads line-numbered slices (up to 400 lines per call, clipped cleanly) |
 | `search` | `pure_read` | `pattern` (Python regex), optional `path` | Searches non-binary workspace files under 1 MB; returns up to 200 `file:line: snippet` hits |
 | `write_file` | `compensatable_mutation` | `file`, `content` | Strips accidental markdown fences, checks secrets pre-write, runs Python AST check post-write |
-| `replace_in_file` | `compensatable_mutation` | `file`, `old`, `new` | Enforces exact single-match replacement (`count == 1`) to guarantee surgical edits without collateral damage |
+| `replace_in_file` | `compensatable_mutation` | `file`, `old`/`new` or `hunks` | Enforces exact single-match replacement (`count == 1`), or applies multiple `hunks` atomically in memory (all-or-nothing rollback on mismatch) |
 
 ### Execution, Checkpointing & Verification
 
@@ -265,6 +265,7 @@ Inside `AgentLoop`, every action is validated against workspace boundaries, cons
 | :--- | :--- | :--- | :--- |
 | `repo_map` | `pure_read` | `max_chars` (default `3000`, max `12000`) | Returns top PageRank-ranked files, symbol counts, and compact structural summary |
 | `knowledge_query` | `pure_read` | `question`, `top_k` (max `15`) | Queries `HierarchicalKnowledgeIndex` over docs, SQL schemas, configs, and source without external vector DBs |
+| `task_tracker` | `idempotent_write` | `command` (`view`\|`plan`), `task_list` | Tracks structured subtasks (`todo`, `in_progress`, `done`) with alias normalization and live AG-UI `STATE_DELTA` updates |
 | `web_fetch` | `pure_read` | `url`, `max_chars` (max `20000`) | Lightweight HTML-to-Markdown reader with SSRF protection (blocks `localhost` / `127.0.0.1`) and `UNTRUSTED_EXTERNAL` taint tagging |
 
 ### Self-Healing CDP Browser Automation
@@ -436,10 +437,12 @@ Running `.\omni-executor.cmd shield .` (or `AgentShieldAuditor().scan_directory(
 
 ### Pipe-Aware Command Classifier & Runtime Isolation Guardrails
 
-- **Pipe-aware fail-closed command gating (`hook_engine.py`):** Shell commands passed to `run` strip quoted heredocs/here-strings (`<< 'EOF'`, `@' ... '@`) as inert data, split quote-safely across `|`, `&&`, `||`, `;`, classify every segment (`READ` $\rightarrow$ `WRITE` $\rightarrow$ `NETWORK` $\rightarrow$ `INSTALL` $\rightarrow$ `DESTRUCTIVE`), upgrade `NETWORK -> shell interpreter` pipes to `DESTRUCTIVE`, and fail closed to `WRITE` for unknown binaries. `evaluate_autonomy_gate` enforces `readonly`, `supervised`, and `full` tiers cleanly.
+- **Pipe-aware fail-closed command gating & policy rails (`hook_engine.py`):** Shell commands passed to `run` strip quoted heredocs/here-strings (`<< 'EOF'`, `@' ... '@`) as inert data, split quote-safely across `|`, `&&`, `||`, `;`, classify every segment (`READ` $\rightarrow$ `WRITE` $\rightarrow$ `NETWORK` $\rightarrow$ `INSTALL` $\rightarrow$ `DESTRUCTIVE`), upgrade `NETWORK -> shell interpreter` pipes to `DESTRUCTIVE`, and fail closed to `WRITE` for unknown binaries. Structural `POLICY_RAILS` (`fetch-to-exec`, `raw-disk-op`, `catastrophic-delete`) and opaque subshell detection (`$(...)`, backticks, `& $var` escalating to `PROMPT` / `UNKNOWN`) feed worst-case fusion in `evaluate_ensemble_risk`.
+- **Deterministic Test-Tamper Guard & `DeterministicPreCritic`:** `pre_write_test_tamper_guard` blocks edits to read-only verification specifications (`tests_visible/*`, `.agents/skills/verify-*`), while `AgentLoop.evaluate_pre_critic()` scores patch non-emptiness (`EmptyPatch`), finish discipline, and verification outcome before optional LLM review.
 - **Browser Payment Hard-Stop (`cdp_browser.py`):** `CDPIndexedBrowser(block_on_payment=True)` inspects target DOM elements and labels prior to clicks/submissions, halting automatically before checkout or payment actions (`blocked_by_payment_guard=True`, `requires_human_approval=True`).
 - **Symlink Traversal & Host-Pinned Memory Isolation:** `WorkspaceTools.resolve()` and `AdaptiveSkillForge` reject symlink traversal inside workspaces and skill bundles; `TriadMemoryProvider.scoped(namespace)` pins tenant namespaces strictly on the host side so LLM tool arguments cannot cross memory scopes.
-- **Role Tool Scopes & 2-Stage Tool Ranking (`agent_loop.py`):** `ROLE_TOOL_SCOPES` strips non-essential write/GUI tools on read-only/coordinator personas (`strict_auditor`, `security_auditor`, `product_ceo`, `systems_architect`), while `rank_tools_for_objective` applies `FamilyThenDecide` / `RetrieveThenDecide` Softmax filtering ($p_{\min} = 0.05$).
+- **Role Tool Scopes, Turn-0 Toolchain Markers & Tombstone Condensation (`agent_loop.py`):** `ROLE_TOOL_SCOPES` strips non-essential write/GUI tools on read-only/coordinator personas (`strict_auditor`, `security_auditor`, `product_ceo`, `systems_architect`), `rank_tools_for_objective` applies `FamilyThenDecide` / `RetrieveThenDecide` Softmax filtering ($p_{\min} = 0.05$), Turn 0 injects `TOOLCHAIN HINTS` from lockfiles (`uv.lock`, `pnpm-lock.yaml`, `Cargo.toml`, `go.mod`), and `_condense()` uses cache-friendly half-window `[CONDENSATION_TOMBSTONE]` compaction.
+- **Background ToM Consolidation (`reasoning_bank.py`):** `sleeptime_consolidate()` and `consult_tom()` distill recurring workflows, top tools, and failure pitfalls into `tom_user_model.json`.
 
 ---
 
@@ -600,7 +603,7 @@ The repository bundles a sealed real-LLM evaluation suite (`eval/am_bench/`) whe
 | :--- | :--- | :--- |
 | Code tasks (`eval/am_bench`) | 15 / 15 passed | [`am_bench_v39_rapid_full20_20261117_011748.json`](.proof/am_bench_v39_rapid_full20_20261117_011748.json) |
 | Browser tasks (`eval/am_bench`) | 5 / 5 passed (separate re-run after navigation fix) | [`am_bench_v39_browser_all5_20261117_161109.json`](.proof/am_bench_v39_browser_all5_20261117_161109.json) |
-| Unit & integration test suite | 74 passed | `pytest tests -q` ([`tests/`](tests/)) |
+| Unit & integration test suite | 75 passed | `pytest tests -q` ([`tests/`](tests/)) |
 | Built-in static analysis | Grade `A`, `0` findings | `.\omni-executor.cmd shield .` |
 
 **Honest Interpretation & Methodological Caveats:**
@@ -652,7 +655,7 @@ omni-executor/
 │   ├── perception/                         # PageRank RepoMap, HierarchicalKnowledgeIndex, architectural radar
 │   ├── routing/                            # Provider & endpoint routing
 │   └── security/                           # 15-rule AgentShield scanner & Windows DPAPI vault
-└── tests/                                  # 74 unit & integration tests
+└── tests/                                  # 75 unit & integration tests
 ```
 
 ---

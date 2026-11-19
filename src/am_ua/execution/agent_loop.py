@@ -161,6 +161,7 @@ class WorkspaceTools:
         self._knowledge_factory = knowledge_factory
         self._browser: Any = None
         self._checkpoints: Dict[str, Dict[str, bytes]] = {}
+        self._task_list: List[Dict[str, str]] = []
         # Workspace itself must be a constitutionally writable location (project root or safe temp root).
         self.seal_guard.assert_write_allowed(self.ws / ".am_probe", actor="agent_loop")
 
@@ -248,15 +249,73 @@ class WorkspaceTools:
     def replace_in_file(self, args: Dict[str, Any]) -> Dict[str, Any]:
         p = Path(str(args["path"]))
         text = p.read_text(encoding="utf-8")
-        old, new = str(args["old"]), str(args["new"])
-        if old not in text and old.strip().startswith("```"):
-            old = self._strip_fences(old)
-        new = self._strip_fences(new)
-        count = text.count(old)
-        if count != 1:
-            raise ValueError(f"'old' must match exactly once, matched {count} times")
-        p.write_text(text.replace(old, new), encoding="utf-8", newline="\n")
-        return {"replaced_in": p.relative_to(self.ws).as_posix()}
+        raw_hunks = args.get("hunks")
+        if isinstance(raw_hunks, list) and raw_hunks:
+            hunks: List[Tuple[str, str]] = []
+            for h in raw_hunks:
+                if not isinstance(h, dict):
+                    raise ValueError("each entry in 'hunks' must be an object with 'old' and 'new'")
+                h_old = str(h.get("old", h.get("old_str", "")))
+                h_new = str(h.get("new", h.get("new_str", "")))
+                hunks.append((h_old, h_new))
+        else:
+            if "old" not in args or "new" not in args:
+                raise ValueError("replace_in_file requires ('old', 'new') or non-empty 'hunks'")
+            hunks = [(str(args["old"]), str(args["new"]))]
+
+        working = text
+        for idx, (old_s, new_s) in enumerate(hunks, 1):
+            old = self._strip_fences(old_s) if (old_s not in working and old_s.strip().startswith("```")) else old_s
+            new = self._strip_fences(new_s)
+            count = working.count(old)
+            if count != 1:
+                raise ValueError(f"Hunk #{idx} 'old' must match exactly once, matched {count} times")
+            working = working.replace(old, new, 1)
+
+        p.write_text(working, encoding="utf-8", newline="\n")
+        return {"replaced_in": p.relative_to(self.ws).as_posix(), "hunks_applied": len(hunks)}
+
+    _TASK_STATUS_ALIASES = {
+        "pending": "todo",
+        "to_do": "todo",
+        "open": "todo",
+        "in-progress": "in_progress",
+        "working": "in_progress",
+        "active": "in_progress",
+        "completed": "done",
+        "complete": "done",
+        "finished": "done",
+    }
+
+    def task_tracker(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Track structured mission subtasks (`view` / `plan`) with status alias normalization."""
+        cmd = str(args.get("command", "view")).strip().lower()
+        if cmd not in ("view", "plan"):
+            raise ValueError(f"Unsupported task_tracker command: {cmd!r}")
+        if cmd == "plan":
+            raw_list = args.get("task_list")
+            if not isinstance(raw_list, list):
+                raise ValueError("'task_list' must be a list when command='plan'")
+            normalized: List[Dict[str, str]] = []
+            for item in raw_list:
+                if not isinstance(item, dict) or not str(item.get("title", "")).strip():
+                    raise ValueError("each task_list item must have a non-empty 'title'")
+                raw_st = str(item.get("status", "todo")).strip().lower().replace("-", "_").replace(" ", "_")
+                st = raw_st if raw_st in ("todo", "in_progress", "done") else self._TASK_STATUS_ALIASES.get(raw_st)
+                if st is None:
+                    raise ValueError(f"Invalid task status: {item.get('status')!r}")
+                normalized.append({
+                    "title": str(item["title"]).strip()[:200],
+                    "notes": str(item.get("notes", "")).strip()[:500],
+                    "status": st,
+                })
+            self._task_list = normalized
+        return {
+            "ok": True,
+            "command": cmd,
+            "count": len(self._task_list),
+            "tasks": list(self._task_list),
+        }
 
     def run(self, args: Dict[str, Any]) -> Dict[str, Any]:
         cmd = str(args["command"]).strip()
@@ -590,8 +649,8 @@ class WorkspaceTools:
 TOOL_FAMILIES: Dict[str, Tuple[str, ...]] = {
     "core_code": (
         "list_dir", "read_file", "search", "write_file", "replace_in_file",
-        "run", "repo_map", "knowledge_query", "checkpoint", "restore_checkpoint",
-        "request_human", "finish",
+        "run", "repo_map", "knowledge_query", "task_tracker",
+        "checkpoint", "restore_checkpoint", "request_human", "finish",
     ),
     "readonly_audit": (
         "list_dir", "read_file", "search", "run", "repo_map", "knowledge_query", "finish",
@@ -613,14 +672,14 @@ ROLE_TOOL_SCOPES: Dict[str, frozenset[str]] = {
     "security_auditor": frozenset(TOOL_FAMILIES["readonly_audit"]) | {"mcp_call", "request_human"},
     "security_reverse_engineer": frozenset(TOOL_FAMILIES["readonly_audit"]) | {"skill_run", "request_human"},
     "product_ceo": frozenset({
-        "list_dir", "read_file", "search", "repo_map", "knowledge_query",
+        "list_dir", "read_file", "search", "repo_map", "knowledge_query", "task_tracker",
         "spawn_team", "spawn_agent", "send_agent", "await_agents", "finish",
     }),
     "systems_architect": frozenset(TOOL_FAMILIES["readonly_audit"]) | {
-        "spawn_agent", "send_agent", "await_agents",
+        "task_tracker", "spawn_agent", "send_agent", "await_agents",
     },
     "eng_supervisor": frozenset(TOOL_FAMILIES["readonly_audit"]) | {
-        "replace_in_file", "spawn_agent", "send_agent", "await_agents",
+        "task_tracker", "replace_in_file", "spawn_agent", "send_agent", "await_agents",
     },
 }
 
@@ -633,6 +692,7 @@ _TOOL_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     "run": ("run", "test", "pytest", "verify", "exec", "command", "build", "compile", "lint"),
     "repo_map": ("architecture", "map", "repomap", "symbols", "overview", "dependencies"),
     "knowledge_query": ("docs", "schema", "sql", "architecture", "index", "knowledge", "query"),
+    "task_tracker": ("task", "plan", "todo", "checklist", "progress", "steps"),
     "checkpoint": ("checkpoint", "snapshot", "backup", "save"),
     "restore_checkpoint": ("restore", "rollback", "revert", "undo"),
     "browser_observe": ("browser", "playwright", "cdp", "http", "https", "url", "webpage", "website", "site", "dom"),
@@ -767,7 +827,7 @@ Tools:
 - read_file {"file": "rel/path", "start_line": 1, "end_line": 400}
 - search {"pattern": "<python regex>", "path": "."}
 - write_file {"file": "rel/path", "content": "<full file content>"}
-- replace_in_file {"file": "rel/path", "old": "<exact unique snippet>", "new": "<replacement>"}
+- replace_in_file {"file": "rel/path", "old": "<exact unique snippet>", "new": "<replacement>"}   (also accepts "hunks": [{"old": "...", "new": "..."}])
 - run {"command": "<powershell command>", "timeout_s": 120}   (cwd = workspace; use `python` for Python)
 - pc_observe {"include_ocr": true, "max_elements": 60, "window_title": "..."}   (captures Set-of-Mark screenshot + UIA/OCR elements)
 - pc_ground_vlm {"target": "<UI element description>", "window_title": "..."}   (multimodal VLM Set-of-Mark visual grounding)
@@ -787,6 +847,7 @@ Tools:
 - repo_map {"max_chars": 3000}   (PageRank + AST symbol overview of repository)
 - knowledge_query {"question": "...", "top_k": 5}   (Graphify/PageIndex tree query over docs, SQL schemas, configs, code)
 - web_fetch {"url": "https://...|file:///...", "max_chars": 6000}   (lightweight HTML-to-Markdown reader without launching Chromium)
+- task_tracker {"command": "view|plan", "task_list": [{"title": "...", "status": "todo|in_progress|done", "notes": "..."}]}
 - checkpoint {"name": "pre_edit"}   (save lightweight workspace snapshot before risky edits)
 - restore_checkpoint {"name": "pre_edit"}   (rollback workspace files to named checkpoint)
 - request_human {"reason": "<why human intervention is required>", "instructions": "<what the human must do>"}
@@ -820,7 +881,7 @@ Tools:
 - read_file {"file": "rel/path", "start_line": 1, "end_line": 400}
 - search {"pattern": "<python regex>", "path": "."}
 - write_file {"file": "rel/path", "content": "<full file content>"}
-- replace_in_file {"file": "rel/path", "old": "<exact unique snippet>", "new": "<replacement>"}
+- replace_in_file {"file": "rel/path", "old": "<exact unique snippet>", "new": "<replacement>"}   (also accepts "hunks": [{"old": "...", "new": "..."}])
 - run {"command": "<powershell command>", "timeout_s": 120}   (cwd = workspace; use `python` for Python)
 - pc_observe {"include_ocr": true, "max_elements": 60, "window_title": "..."}   (captures Set-of-Mark screenshot + UIA/OCR elements)
 - pc_ground_vlm {"target": "<UI element description>", "window_title": "..."}   (multimodal VLM Set-of-Mark visual grounding)
@@ -840,6 +901,7 @@ Tools:
 - repo_map {"max_chars": 3000}   (PageRank + AST symbol overview of repository)
 - knowledge_query {"question": "...", "top_k": 5}   (Graphify/PageIndex tree query over docs, SQL schemas, configs, code)
 - web_fetch {"url": "https://...|file:///...", "max_chars": 6000}   (lightweight HTML-to-Markdown reader without launching Chromium)
+- task_tracker {"command": "view|plan", "task_list": [{"title": "...", "status": "todo|in_progress|done", "notes": "..."}]}
 - checkpoint {"name": "pre_edit"}   (save lightweight workspace snapshot before risky edits)
 - restore_checkpoint {"name": "pre_edit"}   (rollback workspace files to named checkpoint)
 - request_human {"reason": "<why human intervention is required>", "instructions": "<what the human must do>"}
@@ -888,6 +950,7 @@ class AgentRunResult:
     role: str = "general_engineer"
     workflow: str = "react"
     event_ledger_path: Optional[str] = None
+    pre_critic: Optional[Dict[str, Any]] = None
 
 
 class AgentLoop:
@@ -898,6 +961,7 @@ class AgentLoop:
         "write_file": EffectClass.COMPENSATABLE_MUTATION,
         "replace_in_file": EffectClass.COMPENSATABLE_MUTATION,
         "run": EffectClass.COMPENSATABLE_MUTATION,
+        "task_tracker": EffectClass.IDEMPOTENT_WRITE,
         "pc_observe": EffectClass.PURE_READ,
         "pc_ground_vlm": EffectClass.PURE_READ,
         "pc_act": EffectClass.COMPENSATABLE_MUTATION,
@@ -1075,6 +1139,32 @@ class AgentLoop:
         block = f"WORKSPACE FILES ({len(rels)}): " + ", ".join(items)
         if len(rels) > 35:
             block += f", ... (+{len(rels) - 35} more)"
+
+        names = {Path(r).name.lower(): r for r in rels}
+        hints: List[str] = []
+        if "uv.lock" in names:
+            hints.append("uv.lock detected -> prefer 'uv run' / 'uv pip'")
+        elif "poetry.lock" in names:
+            hints.append("poetry.lock detected -> prefer 'poetry run'")
+        elif "pipfile" in names:
+            hints.append("Pipfile detected -> prefer 'pipenv run'")
+        elif "pyproject.toml" in names:
+            hints.append("pyproject.toml detected -> prefer 'python -m pytest'")
+        if "pnpm-lock.yaml" in names:
+            hints.append("pnpm-lock.yaml detected -> prefer 'pnpm'")
+        elif "yarn.lock" in names:
+            hints.append("yarn.lock detected -> prefer 'yarn'")
+        elif "package-lock.json" in names:
+            hints.append("package-lock.json detected -> prefer 'npm'")
+        if any(k in names for k in ("deno.json", "deno.jsonc", "deno.lock")):
+            hints.append("Deno markers detected -> prefer 'deno'")
+        if "cargo.toml" in names:
+            hints.append("Cargo.toml detected -> prefer 'cargo test' / 'cargo check'")
+        if "go.mod" in names:
+            hints.append("go.mod detected -> prefer 'go test ./...'")
+        if hints:
+            block += "\nTOOLCHAIN HINTS: " + "; ".join(hints)
+
         if len(rels) <= 15 and ws._repo_mapper_factory is not None:
             try:
                 rm_res = ws.repo_map({"max_chars": 1000})
@@ -1103,7 +1193,7 @@ class AgentLoop:
                 "read_file": {"file"},
                 "search": {"pattern"},
                 "write_file": {"path", "content"},
-                "replace_in_file": {"path", "old", "new"},
+                "replace_in_file": {"path"},
                 "run": {"command"},
                 "skill_forge": {"name", "code"},
             }.get(name, set())
@@ -1458,6 +1548,11 @@ class AgentLoop:
                         AGUIEventType.STATE_DELTA,
                         deltas=[{"op": "replace", "path": f"/files/{rel_path}"}],
                     )
+                elif ok and tool == "task_tracker" and isinstance(obs, dict):
+                    bus.emit(
+                        AGUIEventType.STATE_DELTA,
+                        deltas=[{"op": "replace", "path": "/tasks", "value": obs.get("tasks", [])}],
+                    )
 
                 turn_tools_executed += 1
                 if ok:
@@ -1537,6 +1632,14 @@ class AgentLoop:
                 stop_reason=stop_reason,
             )
 
+        pre_critic = self.evaluate_pre_critic(
+            objective=objective,
+            stop_reason=stop_reason,
+            changed_files=changed,
+            diff=diff,
+            verification=verification,
+            tool_calls=tool_log,
+        )
         result = AgentRunResult(
             mission_id=mission_id, objective=objective, workspace=str(ws.ws), status=status, epistemic_tag=tag.value,
             final_summary=summary, actor_confidence=confidence, actor_providers=providers_used, turns=turn,
@@ -1546,6 +1649,7 @@ class AgentLoop:
             brier_score=None if brier is None else round(brier, 5),
             role=role, workflow=workflow,
             event_ledger_path=ledger_path_str,
+            pre_critic=pre_critic,
         )
         if self.trace_dir is not None:
             self.trace_dir.mkdir(parents=True, exist_ok=True)
@@ -1562,21 +1666,96 @@ class AgentLoop:
 
     # ------------------------------------------------------------------ helpers
     @staticmethod
+    def evaluate_pre_critic(
+        *,
+        objective: str,
+        stop_reason: str,
+        changed_files: List[str],
+        diff: str,
+        verification: Optional[Dict[str, Any]],
+        tool_calls: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Deterministic pre-critic (`EmptyPatch` + verification + finish discipline) before LLM Judge."""
+        _ = changed_files, tool_calls
+        score = 1.0
+        issues: List[str] = []
+        clean_finish = stop_reason == "finish"
+        if not clean_finish:
+            score -= 0.35
+            issues.append("did_not_call_finish")
+
+        low = (objective or "").lower()
+        edit_intent = any(k in low for k in ("fix", "implement", "refactor", "update", "rename", "create", "write", "replace", "add"))
+        empty_patch = not (diff or "").strip()
+        if edit_intent and empty_patch:
+            score -= 0.50
+            issues.append("empty_patch_on_edit_task")
+
+        verif_passed: Optional[bool] = None
+        if verification is not None:
+            verif_passed = bool(verification.get("passed"))
+            if not verif_passed:
+                score -= 0.60
+                issues.append("verification_failed")
+
+        final_score = round(max(0.0, min(1.0, score)), 3)
+        return {
+            "score": final_score,
+            "success": final_score >= 0.5,
+            "categorized_features": {
+                "empty_patch": empty_patch,
+                "clean_finish": clean_finish,
+                "verification_passed": verif_passed,
+                "agent_behavioral_issues": issues,
+            },
+        }
+
+    @staticmethod
     def _condense(messages: List[Dict[str, str]], max_chars: int = 45_000) -> List[Dict[str, str]]:
+        """Cache-friendly half-window tombstone condensation keeping system+task head and recent tail intact."""
         total = sum(len(m["content"]) for m in messages)
-        if total <= max_chars:
+        if total <= max_chars or len(messages) <= 8:
             return messages
-        out = list(messages)
-        for i in range(2, len(out) - 6):  # keep system+task head and last 6 turns verbatim
-            if total <= max_chars:
+
+        head = list(messages[:2])
+        tail = list(messages[-6:])
+        middle = list(messages[2:-6])
+
+        while middle and (sum(len(m["content"]) for m in head + middle + tail) > max_chars):
+            if len(middle) == 1 and middle[0]["content"].startswith("[CONDENSATION_TOMBSTONE"):
                 break
-            c = out[i]["content"]
-            if len(c) > 600:
-                markers = [ln.strip() for ln in c.splitlines() if any(k in ln for k in ('"written":', '"replaced":', '"exit_code":', '"checkpoint":', '"error":'))]
-                state_note = f"\n[PINNED STATE: {' | '.join(markers[:3])[:200]}]" if markers else ""
-                out[i] = {"role": out[i]["role"], "content": c[:360] + state_note + "\n...[condensed older context]..."}
-                total -= len(c) - len(out[i]["content"])
-        return out
+            starts_with_tombstone = middle[0]["content"].startswith("[CONDENSATION_TOMBSTONE")
+            min_evict = 2 if (starts_with_tombstone and len(middle) >= 2) else 1
+            half = max(min_evict, len(middle) // 2)
+            evicted = middle[:half]
+            middle = middle[half:]
+            markers: List[str] = []
+            compacted_chars = 0
+            covered = 0
+            for m in evicted:
+                c = m["content"]
+                compacted_chars += len(c)
+                m_prev = re.match(r"\[CONDENSATION_TOMBSTONE covered_messages=(\d+)", c)
+                covered += int(m_prev.group(1)) if m_prev else 1
+                for ln in c.splitlines():
+                    if ln.startswith("[PINNED STATE:"):
+                        inner = ln[len("[PINNED STATE:"):].rstrip("]").strip()
+                        if inner and inner not in markers:
+                            markers.append(inner[:140])
+                    elif any(k in ln for k in ('"written":', '"replaced_in":', '"replaced":', '"exit_code":', '"checkpoint":', '"error":')):
+                        s_ln = ln.strip()[:140]
+                        if s_ln not in markers:
+                            markers.append(s_ln)
+            pin_note = f"[PINNED STATE: {' | '.join(markers[:5])}]" if markers else "[PINNED STATE: none]"
+            tombstone = {
+                "role": "user",
+                "content": f"[CONDENSATION_TOMBSTONE covered_messages={covered} chars_compacted={compacted_chars}]\n{pin_note}",
+            }
+            middle = [tombstone] + middle
+            if len(middle) == 1:
+                break
+
+        return head + middle + tail
 
     @staticmethod
     def _diff(before: Dict[str, Tuple[str, Optional[str]]], after: Dict[str, Tuple[str, Optional[str]]], changed: List[str]) -> str:

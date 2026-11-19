@@ -165,7 +165,13 @@ Before a shell command runs, quoted heredoc and here-string literal bodies (`<< 
 C(\mathrm{cmd}) = \max_{1 \le k \le m} C(\mathrm{seg}_k)
 ```
 
-where any segment not matching the deterministic read-only allowlist fails closed to $2\ (\mathrm{WRITE})$, and any segment sequence where $\mathrm{NETWORK}$ ($3$) pipes into a shell interpreter upgrades to $5\ (\mathrm{DESTRUCTIVE})$. Decisions (`ALLOW`, `PROMPT`, `BLOCK`) then evaluate deterministically against the active autonomy tier (`readonly`, `supervised`, `full`) and optional prefix allowlist.
+where any segment not matching the deterministic read-only allowlist fails closed to $2\ (\mathrm{WRITE})$, and any segment sequence where $\mathrm{NETWORK}$ ($3$) pipes into a shell interpreter upgrades to $5\ (\mathrm{DESTRUCTIVE})$ (`fetch-to-exec` rail). Structural policy rails (`fetch-to-exec`, `raw-disk-op`, `catastrophic-delete`), opaque shell constructs (`$(...)`, backticks, `& $var` outside single quotes), secret guards, and static SAST findings combine via worst-case ensemble fusion (`DeterministicHookEngine.evaluate_ensemble_risk`):
+
+```math
+R_{\mathrm{ensemble}} = \max_{i} R_i
+```
+
+with unresolved opaque constructs escalating `ALLOW` decisions to `PROMPT` (`UNKNOWN` risk label). Decisions (`ALLOW`, `PROMPT`, `BLOCK`) then evaluate deterministically against the active autonomy tier (`readonly`, `supervised`, `full`) and optional prefix allowlist.
 
 **Where to reuse it:** CI/CD runners, developer assistants, and database migration CLI wrappers where chained commands must inherit the worst-case blast radius rather than trusting the first verb.
 

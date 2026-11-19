@@ -179,3 +179,96 @@ class ReasoningBank:
             return target_file
         except Exception:
             return None
+
+    def sleeptime_consolidate(self) -> Dict[str, Any]:
+        """Background ToM consolidation: extract recurring tools, preferred workflow, and pitfalls."""
+        from collections import Counter
+
+        wf_counts: Counter[str] = Counter()
+        tool_counts: Counter[str] = Counter()
+        pitfall_summaries: List[str] = []
+        trajectories_analyzed = 0
+
+        if self.traces_dir.is_dir():
+            for file in self.traces_dir.glob("*.json"):
+                if file.name in ("sona_memory.json", "tom_user_model.json"):
+                    continue
+                try:
+                    data = json.loads(file.read_text(encoding="utf-8", errors="replace"))
+                except Exception:
+                    continue
+                if not isinstance(data, dict):
+                    continue
+                trajectories_analyzed += 1
+                wf = str(data.get("workflow", "react")).strip() or "react"
+                status = str(data.get("status", "")).upper()
+                verif_ok = isinstance(data.get("verification"), dict) and data["verification"].get("exit_code") == 0
+                if status.startswith("VERIFIED") or status == "PASSED" or verif_ok:
+                    wf_counts[wf] += 1
+                for tc in (data.get("tool_calls") or []):
+                    if isinstance(tc, dict) and tc.get("tool"):
+                        tool_counts[str(tc["tool"])] += 1
+
+        episodes = getattr(self.sona, "episodes", []) or []
+        for ep in episodes:
+            if not isinstance(ep, dict):
+                continue
+            wf = str(ep.get("workflow", "")).strip()
+            if ep.get("success") and wf:
+                wf_counts[wf] += 1
+            elif not ep.get("success") and ep.get("summary"):
+                pitfall_summaries.append(str(ep.get("summary", ""))[:180])
+            for t in (ep.get("tools_used") or []):
+                if t:
+                    tool_counts[str(t)] += 1
+
+        preferred_workflow = wf_counts.most_common(1)[0][0] if wf_counts else "react"
+        top_tools = [t for t, _ in tool_counts.most_common(8)]
+        profile_path = self.traces_dir / "tom_user_model.json"
+        profile = {
+            "schema": "omni_executor_tom_profile/v1",
+            "trajectories_analyzed": trajectories_analyzed,
+            "episodes_analyzed": len(episodes),
+            "preferred_workflow": preferred_workflow,
+            "top_tools": top_tools,
+            "common_pitfalls": pitfall_summaries[-10:],
+            "pitfalls_count": len(pitfall_summaries),
+        }
+        profile_path.write_text(json.dumps(profile, indent=2, ensure_ascii=False), encoding="utf-8")
+        return {"ok": True, **profile, "profile_path": str(profile_path)}
+
+    def consult_tom(self, query: str) -> Dict[str, Any]:
+        """Consult the consolidated ToM user profile plus similar trajectories and pitfalls."""
+        profile_path = self.traces_dir / "tom_user_model.json"
+        if profile_path.is_file():
+            try:
+                profile = json.loads(profile_path.read_text(encoding="utf-8"))
+            except Exception:
+                profile = self.sleeptime_consolidate()
+        else:
+            profile = self.sleeptime_consolidate()
+
+        match = self.find_best_trajectory(query, min_similarity=0.15)
+        sona_hits = self.sona.search_similar(query, top_k=3, min_score=0.15)
+        pitfalls = [h for h in sona_hits if not h.get("success")]
+
+        tips: List[str] = [
+            f"Preferred workflow based on history: {profile.get('preferred_workflow', 'react')}.",
+        ]
+        if profile.get("top_tools"):
+            tips.append(f"Frequently effective tools: {', '.join(profile['top_tools'][:5])}.")
+        if match and match.get("final_summary"):
+            tips.append(f"Closest past resolution (sim={match.get('_similarity_score')}): {str(match['final_summary'])[:180]}")
+        if pitfalls:
+            tips.append(f"Avoid recurring pitfall: {str(pitfalls[0].get('summary', ''))[:160]}")
+
+        conf = 0.85 if match else (0.65 if profile.get("episodes_analyzed", 0) > 0 else 0.4)
+        return {
+            "ok": True,
+            "query": query,
+            "preferred_workflow": profile.get("preferred_workflow", "react"),
+            "suggestions": " ".join(tips),
+            "confidence": round(conf, 3),
+            "matched_trajectory": bool(match),
+            "pitfalls_detected": len(pitfalls),
+        }

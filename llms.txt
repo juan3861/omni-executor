@@ -3,7 +3,7 @@
 > Autonomous software engineering harness with a durable SQLite-WAL execution engine, executable verification oracle (`--verify`), pipe-aware fail-closed command gating, hierarchical multi-wave team orchestrator (`solo_specialist` -> `dev_squad` -> `executive_enterprise_fleet`), self-healing CDP browser engine, closed-loop Windows desktop RPA, AST-sealed adaptive Python skills, and native MCP / A2A v0.3 / AG-UI protocol support.
 
 ## Canonical Documentation
-- [README.md](README.md): Complete user & developer guide covering installation, 14 CLI subcommands, 29 workspace tools, 10 engineering personas, MCP/A2A/AG-UI integrations, 15 SAST rules, playbooks, benchmarks, and caveats.
+- [README.md](README.md): Complete user & developer guide covering installation, 14 CLI subcommands, 30 workspace tools, 10 engineering personas, MCP/A2A/AG-UI integrations, 15 SAST rules, playbooks, benchmarks, and caveats.
 - [docs/ENGINEERING_AND_MATH_MANUAL.md](docs/ENGINEERING_AND_MATH_MANUAL.md): Exact mathematical formulations (durable effect fencing, Brier autonomy tiers, PageRank code centrality, RAM worker scaling, Casimir storage pressure, UCB1 evolution, pipe-aware command classification, and two-stage tool probability selection).
 - [CONTRIBUTING.md](CONTRIBUTING.md): Setup, automated verification gate, constitutional seal boundaries, and extension points.
 - [SECURITY.md](SECURITY.md): Defense-in-depth security architecture, secret/SAST rules, symlink protection, and reporting policy.
@@ -36,8 +36,9 @@
 - `governance/seal_guard.py`: SHA-256 manifest enforcement over protected zones (`constitution/`, `eval/`).
 - `governance/homeostasis.py`: RAM, disk pressure (`F_c(d)`), token budget, and stagnation governor.
 - `execution/durable_engine.py`: SQLite-WAL durable state owner, effect taxonomy, `OUTCOME_UNKNOWN` recovery, and lease-epoch fencing.
-- `execution/hook_engine.py`: Deterministic `PreToolUse`/`PostToolUse` hooks, secret write blocker, Python AST checker, and pipe-aware 5-class command classifier (`READ | WRITE | NETWORK | INSTALL | DESTRUCTIVE`) + autonomy gate (`readonly | supervised | full`).
-- `execution/agent_loop.py`: ReAct/SPARC/Hierarchical loop, Turn-0 workspace inventory, up to 6 batched actions/turn, symlink escape guard, `ROLE_TOOL_SCOPES` (`HostOnly`), and `rank_tools_for_objective` (`FamilyThenDecide` / `RetrieveThenDecide`).
+- `execution/hook_engine.py`: Deterministic `PreToolUse`/`PostToolUse` hooks, secret write blocker, `pre_write_test_tamper_guard`, Python AST checker, pipe-aware 5-class command classifier (`READ | WRITE | NETWORK | INSTALL | DESTRUCTIVE`), structural `PolicyRails` (`fetch-to-exec`, `raw-disk-op`, `catastrophic-delete`), opaque subshell escalation (`UNKNOWN`), and worst-case `evaluate_ensemble_risk`.
+- `execution/agent_loop.py`: ReAct/SPARC/Hierarchical loop, Turn-0 workspace inventory + `WorkspaceMarkerTrigger` toolchain hints, multi-hunk transactional `replace_in_file`, `task_tracker` (`view`/`plan`), half-window tombstone condensation, `DeterministicPreCritic`, up to 6 batched actions/turn, symlink escape guard, `ROLE_TOOL_SCOPES`, and `rank_tools_for_objective` (`FamilyThenDecide` / `RetrieveThenDecide`).
+- `cognition/reasoning_bank.py`: Hybrid Jaccard + SONA trajectory replay with `sleeptime_consolidate()` and `consult_tom()` background user-model synthesis.
 - `execution/subagent_bus.py`: 3-tier severity-scored team orchestration (`1 -> 4 -> 9` agents across 4 waves, max depth `2`, max `16` agents, exclusive GUI lock), A2A v0.3 JSON-RPC, and inbound channel burst debouncing.
 - `gui/cdp_browser.py`: Indexed CDP browser with self-healing DOM recovery and checkout/payment boundary hard stop.
 - `memory/triad_provider.py`: Unified core blocks + bi-temporal + Q-utility memory with host-pinned `ScopedMemoryFacade` namespace isolation.

@@ -31,10 +31,21 @@ _QUOTED_HEREDOC_RX = re.compile(
 )
 _PS_SINGLE_HERE_STRING_RX = re.compile(r"@'\r?\n.*?\r?\n'@", re.DOTALL)
 
+_RAW_DISK_OP_RX = re.compile(r"(?i)(?:\bformat(?:\.com)?\s+[a-z]:|\bdiskpart\b|\bdd\s+if=|\bcipher\s+/w\b)")
+_CATASTROPHIC_DELETE_RX = re.compile(
+    r"(?i)(?:\brm\s+-[^\s]*[rf][^\s]*[rf][^\s]*\s+/(\s|$)|\bRemove-Item\s+[^\n]*-Recurse[^\n]*\s[a-z]:\\?(\s|$)|\breg\s+delete\b)"
+)
+
+RAIL_FETCH_TO_EXEC = "fetch-to-exec"
+RAIL_RAW_DISK_OP = "raw-disk-op"
+RAIL_CATASTROPHIC_DELETE = "catastrophic-delete"
+POLICY_RAILS: Tuple[str, ...] = (RAIL_FETCH_TO_EXEC, RAIL_RAW_DISK_OP, RAIL_CATASTROPHIC_DELETE)
+
 _DESTRUCTIVE_RX = re.compile(
     r"(?i)(?:"
     r"\bformat(?:\.com)?\s+[a-z]:"
     r"|\bdiskpart\b"
+    r"|\bdd\s+if="
     r"|\bshutdown\b"
     r"|\bRestart-Computer\b"
     r"|\bStop-Computer\b"
@@ -100,6 +111,29 @@ def _strip_quoted_heredocs(command: str) -> str:
     cleaned = _QUOTED_HEREDOC_RX.sub(" <<'HEREDOC' ", command or "")
     cleaned = _PS_SINGLE_HERE_STRING_RX.sub(" @'HERESTRING'@ ", cleaned)
     return cleaned
+
+
+def has_opaque_shell_constructs(command: str) -> bool:
+    """Detect dynamically expanded/unresolved shell syntax (`$(...)`, backticks, `& $var`) outside single quotes."""
+    sanitized = _strip_quoted_heredocs(command or "")
+    in_single = False
+    i = 0
+    n = len(sanitized)
+    while i < n:
+        ch = sanitized[i]
+        if ch == "'" and (i == 0 or sanitized[i - 1] != "\\"):
+            in_single = not in_single
+            i += 1
+            continue
+        if not in_single:
+            if ch == "`" and (i == 0 or sanitized[i - 1] != "\\"):
+                return True
+            if ch == "$" and i + 1 < n and sanitized[i + 1] == "(":
+                return True
+        i += 1
+    if re.search(r"(?i)(?:^|\s)(?:&\s*\$\w+|\.\s+\$\w+|\beval\s+\$\w+)", sanitized):
+        return True
+    return False
 
 
 def _split_shell_segments(command: str) -> List[str]:
@@ -195,8 +229,9 @@ def _classify_segment(segment: str) -> Tuple[CommandRiskClass, bool, str]:
 
 
 def classify_shell_command(command: str) -> Dict[str, Any]:
-    """Pipe-aware fail-closed classifier returning highest CommandRiskClass across all segments."""
+    """Pipe-aware fail-closed classifier returning highest CommandRiskClass, triggered PolicyRails, and opaque flag."""
     sanitized = _strip_quoted_heredocs(command or "")
+    opaque = has_opaque_shell_constructs(sanitized)
     segments = _split_shell_segments(sanitized)
     if not segments:
         return {
@@ -204,19 +239,28 @@ def classify_shell_command(command: str) -> Dict[str, Any]:
             "risk_level": int(CommandRiskClass.WRITE),
             "segments": [],
             "fail_closed_write": True,
+            "triggered_rails": [],
+            "has_opaque_construct": opaque,
         }
 
     seg_reports: List[Dict[str, Any]] = []
+    triggered_rails: List[str] = []
     max_cls = CommandRiskClass.READ
     any_fail_closed = False
     saw_network = False
 
     for seg in segments:
         cls, fail_closed, reason = _classify_segment(seg)
+        if _RAW_DISK_OP_RX.search(seg) and RAIL_RAW_DISK_OP not in triggered_rails:
+            triggered_rails.append(RAIL_RAW_DISK_OP)
+        if _CATASTROPHIC_DELETE_RX.search(seg) and RAIL_CATASTROPHIC_DELETE not in triggered_rails:
+            triggered_rails.append(RAIL_CATASTROPHIC_DELETE)
         if saw_network and _SHELL_INTERPRETER_RX.match(seg):
             cls = CommandRiskClass.DESTRUCTIVE
             fail_closed = False
             reason = "pipe_network_to_shell"
+            if RAIL_FETCH_TO_EXEC not in triggered_rails:
+                triggered_rails.append(RAIL_FETCH_TO_EXEC)
         if cls == CommandRiskClass.NETWORK:
             saw_network = True
         if cls > max_cls:
@@ -235,6 +279,8 @@ def classify_shell_command(command: str) -> Dict[str, Any]:
         "risk_level": int(max_cls),
         "segments": seg_reports,
         "fail_closed_write": any_fail_closed and max_cls == CommandRiskClass.WRITE,
+        "triggered_rails": triggered_rails,
+        "has_opaque_construct": opaque,
     }
 
 
@@ -266,6 +312,9 @@ def evaluate_autonomy_gate(
     else:  # full
         decision = "ALLOW" if (level <= CommandRiskClass.WRITE or is_allowlisted) else "PROMPT"
 
+    if decision == "ALLOW" and classification.get("has_opaque_construct") and not is_allowlisted:
+        decision = "PROMPT"
+
     return {
         "decision": decision,
         "tier": norm_tier,
@@ -293,7 +342,9 @@ def pre_write_secret_guard(tool: str, args: Dict[str, Any], workspace: Path) -> 
     """Block writing raw leaked API tokens into workspace files."""
     if tool not in ("write_file", "replace_in_file"):
         return HookDecision(allowed=True)
-    text = str(args.get("content", "") or args.get("new", "") or args.get("new_str", ""))
+    hunks = args.get("hunks") or []
+    hunk_txt = "\n".join(str(h.get("new", h.get("new_str", ""))) for h in hunks if isinstance(h, dict)) if isinstance(hunks, list) else ""
+    text = str(args.get("content", "") or args.get("new", "") or args.get("new_str", "") or hunk_txt)
     rel = str(args.get("path", "") or args.get("file", ""))
     # Allow explicit test files named test_*.py
     if Path(rel).name.lower().startswith("test_"):
@@ -369,13 +420,53 @@ def post_python_syntax_check(tool: str, args: Dict[str, Any], obs: Dict[str, Any
         return {"python_syntax_ok": False, "python_syntax_error": f"Line {exc.lineno}: {exc.msg}"}
 
 
+def pre_write_test_tamper_guard(
+    tool: str,
+    args: Dict[str, Any],
+    workspace: Path,
+    *,
+    allow_test_edits: bool = False,
+) -> HookDecision:
+    """Deterministically block modification of read-only verification test/skill specs."""
+    if tool not in ("write_file", "replace_in_file") or allow_test_edits or args.get("_allow_test_edits"):
+        return HookDecision(allowed=True)
+    raw_rel = str(args.get("path") or args.get("file") or "").strip()
+    if not raw_rel:
+        return HookDecision(allowed=True)
+    try:
+        ws_root = Path(workspace).resolve()
+        target = Path(raw_rel)
+        if not target.is_absolute():
+            target = (ws_root / target).resolve()
+        rel_norm = target.relative_to(ws_root).as_posix().lower()
+    except Exception:
+        rel_norm = raw_rel.replace("\\", "/").lower()
+
+    if (
+        rel_norm == "tests_visible"
+        or rel_norm.startswith("tests_visible/")
+        or "/tests_visible/" in rel_norm
+        or ".agents/skills/verify-" in rel_norm
+    ):
+        return HookDecision(
+            allowed=False,
+            reason=f"PreWriteTestTamperGuard blocked modification of read-only verification suite '{rel_norm}'",
+        )
+    return HookDecision(allowed=True)
+
+
 def pre_run_command_classifier(tool: str, args: Dict[str, Any], workspace: Path) -> HookDecision:
     """Classify shell commands fail-closed and block DESTRUCTIVE patterns before execution."""
     if tool != "run":
         return HookDecision(allowed=True)
     cmd = str(args.get("command", ""))
     report = classify_shell_command(cmd)
-    notes = {"command_risk_class": report["risk_class"], "command_risk_level": report["risk_level"]}
+    notes = {
+        "command_risk_class": report["risk_class"],
+        "command_risk_level": report["risk_level"],
+        "triggered_rails": report.get("triggered_rails", []),
+        "has_opaque_construct": report.get("has_opaque_construct", False),
+    }
     if report["risk_level"] >= int(CommandRiskClass.DESTRUCTIVE):
         return HookDecision(
             allowed=False,
@@ -393,6 +484,7 @@ class DeterministicHookEngine:
         self._post_hooks: List[Tuple[str, PostHookFn]] = []
         if enable_defaults:
             self.register_pre("pre_write_secret_guard", pre_write_secret_guard)
+            self.register_pre("pre_write_test_tamper_guard", pre_write_test_tamper_guard)
             self.register_pre("pre_run_command_classifier", pre_run_command_classifier)
             self.register_post("post_python_syntax_check", post_python_syntax_check)
 
@@ -410,6 +502,57 @@ class DeterministicHookEngine:
     ) -> Dict[str, Any]:
         """Evaluate autonomy tier decision (ALLOW | PROMPT | BLOCK) for a shell command."""
         return evaluate_autonomy_gate(command, tier=tier, allowlist=allowlist)
+
+    @staticmethod
+    def evaluate_ensemble_risk(
+        *,
+        command: Optional[str] = None,
+        file_path: Optional[str] = None,
+        content: Optional[str] = None,
+        shield_auditor: Any = None,
+    ) -> Dict[str, Any]:
+        """Worst-case risk fusion (`R_ensemble = max_i R_i`) across command rails, secrets, and SAST."""
+        sev_rank = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+        max_level = 1  # LOW baseline
+        triggered_rails: List[str] = []
+        has_opaque = False
+        shield_findings = 0
+
+        if command is not None:
+            cmd_rep = classify_shell_command(command)
+            triggered_rails = list(cmd_rep.get("triggered_rails", []))
+            has_opaque = bool(cmd_rep.get("has_opaque_construct", False))
+            c_lvl = int(cmd_rep["risk_level"])
+            if triggered_rails or c_lvl >= int(CommandRiskClass.DESTRUCTIVE):
+                max_level = max(max_level, 3)  # HIGH (CRITICAL on multiple rails / destructive)
+                if len(triggered_rails) >= 2 or c_lvl >= int(CommandRiskClass.DESTRUCTIVE):
+                    max_level = max(max_level, 4 if triggered_rails else 3)
+            elif c_lvl >= int(CommandRiskClass.NETWORK):
+                max_level = max(max_level, 2)
+
+        if content is not None:
+            sec_dec = pre_write_secret_guard(
+                "write_file",
+                {"file": file_path or "file.py", "content": content},
+                Path("."),
+            )
+            if not sec_dec.allowed:
+                max_level = max(max_level, 4)
+            if shield_auditor is not None:
+                findings = shield_auditor.scan_text(content, rel_path=file_path or "<memory>")
+                shield_findings = len(findings)
+                for f in findings:
+                    max_level = max(max_level, sev_rank.get(str(getattr(f, "severity", "LOW")).upper(), 1))
+
+        inv_map = {1: "LOW", 2: "MEDIUM", 3: "HIGH", 4: "CRITICAL"}
+        label = "UNKNOWN" if (has_opaque and max_level < 3) else inv_map.get(max_level, "LOW")
+        return {
+            "max_risk_level": max_level,
+            "max_risk_label": label,
+            "triggered_rails": triggered_rails,
+            "has_opaque_construct": has_opaque,
+            "shield_findings": shield_findings,
+        }
 
     def register_pre(self, name: str, fn: PreHookFn) -> None:
         self._pre_hooks.append((name, fn))
