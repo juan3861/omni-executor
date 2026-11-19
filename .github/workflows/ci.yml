@@ -120,8 +120,7 @@ jobs:
               rb = ReasoningBank(traces_dir=tmp / "rb")
               assert rb.sleeptime_consolidate()["ok"] is True
 
-              # 5. v4.4 portable invariants (SSRF, DomainGuard, OutputGuardrails, TimeTravel, DAG, Cost/OTLP, PolicyProver, ACP)
-              from am_ua.agent_kernel import TelemetrySpanLedger
+              # 5. v4.4 portable invariants (SSRF, DomainGuard, OutputGuardrails, TimeTravel, DAG, Cost/Cache, PolicyProver, ACP)
               from am_ua.cognition.llm_client import check_cache_health, estimate_cost_usd
               from am_ua.execution.acp_adapter import OmniACPServer
               from am_ua.execution.agent_loop import WorkspaceTools
