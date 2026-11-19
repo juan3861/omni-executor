@@ -1291,6 +1291,58 @@ def test_v44_ssrf_domain_guard_timetravel_guardrails_spill_schema_handoff_dag_ot
         finally:
             sse_srv.shutdown()
             sse_srv.server_close()
+
+        # 12. Streamable HTTP/SSE JSON-RPC Transport with Bearer Auth (ACP + MCP)
+        import urllib.error
+        import urllib.request
+        from am_ua.execution.acp_adapter import StreamableHTTPJsonRpcServer
+
+        rpc_srv = StreamableHTTPJsonRpcServer(
+            acp.handle_request,
+            port=0,
+            auth_token="secret-bearer-v44",
+            server_name="omni-acp-test",
+        )
+        rpc_port = rpc_srv.start(background=True)
+        try:
+            # Unauthorized without Bearer token -> 401
+            unauth_req = urllib.request.Request(
+                f"http://127.0.0.1:{rpc_port}/rpc",
+                data=_json.dumps({"jsonrpc": "2.0", "id": 10, "method": "initialize", "params": {}}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with pytest.raises(urllib.error.HTTPError) as exc_info:
+                urllib.request.urlopen(unauth_req, timeout=3)
+            assert exc_info.value.code == 401
+
+            # Authorized JSON-RPC -> 200
+            auth_req = urllib.request.Request(
+                f"http://127.0.0.1:{rpc_port}/rpc",
+                data=_json.dumps({"jsonrpc": "2.0", "id": 11, "method": "initialize", "params": {}}).encode("utf-8"),
+                headers={"Content-Type": "application/json", "Authorization": "Bearer secret-bearer-v44"},
+                method="POST",
+            )
+            with urllib.request.urlopen(auth_req, timeout=3) as resp:
+                body = _json.loads(resp.read().decode("utf-8"))
+                assert resp.status == 200 and body["result"]["agentInfo"]["version"] == "4.4.0"
+
+            # Authorized SSE Streamable -> text/event-stream
+            sse_req = urllib.request.Request(
+                f"http://127.0.0.1:{rpc_port}/rpc",
+                data=_json.dumps({"jsonrpc": "2.0", "id": 12, "method": "initialize", "params": {}}).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "text/event-stream",
+                    "Authorization": "Bearer secret-bearer-v44",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(sse_req, timeout=3) as resp:
+                raw_sse = resp.read().decode("utf-8")
+                assert "event: message" in raw_sse and "4.4.0" in raw_sse
+        finally:
+            rpc_srv.stop()
     finally:
         import shutil
         shutil.rmtree(ws_dir, ignore_errors=True)

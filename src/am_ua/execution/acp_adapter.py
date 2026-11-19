@@ -6,8 +6,11 @@ supporting `initialize`, `session/new`, `session/prompt`, and `session/cancel`.
 
 from __future__ import annotations
 
+import hmac
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import sys
+import threading
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -158,3 +161,114 @@ class OmniACPServer:
             resp = self.handle_request(req, notify_fn=_notify)
             if resp is not None:
                 _notify(resp)
+
+
+class StreamableHTTPJsonRpcServer:
+    """Streamable HTTP/SSE JSON-RPC 2.0 transport with Bearer Auth for MCP and ACP servers."""
+
+    def __init__(
+        self,
+        handler_fn: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
+        *,
+        host: str = "127.0.0.1",
+        port: int = 8770,
+        auth_token: Optional[str] = None,
+        server_name: str = "omni-rpc",
+    ) -> None:
+        self.handler_fn = handler_fn
+        self.host = host
+        self.port = int(port)
+        self.auth_token = auth_token or ""
+        self.server_name = server_name
+        self._httpd: Optional[ThreadingHTTPServer] = None
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self, *, background: bool = False) -> int:
+        parent = self
+
+        class _Handler(BaseHTTPRequestHandler):
+            def _authorized(self) -> bool:
+                if not parent.auth_token:
+                    return True
+                auth = self.headers.get("Authorization") or ""
+                if not auth.startswith("Bearer "):
+                    return False
+                token = auth[len("Bearer ") :]
+                return hmac.compare_digest(token.encode("utf-8"), parent.auth_token.encode("utf-8"))
+
+            def do_GET(self) -> None:
+                if self.path == "/health":
+                    body = json.dumps({"ok": True, "server": parent.server_name}).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                self.send_response(404)
+                self.end_headers()
+
+            def do_POST(self) -> None:
+                if not self._authorized():
+                    err = json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32001, "message": "Unauthorized"}}).encode("utf-8")
+                    self.send_response(401)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(err)))
+                    self.end_headers()
+                    self.wfile.write(err)
+                    return
+
+                length = int(self.headers.get("Content-Length", "0"))
+                raw = self.rfile.read(length).decode("utf-8", errors="replace")
+                try:
+                    req = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    err = json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": f"Parse error: {exc}"}}).encode("utf-8")
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(err)))
+                    self.end_headers()
+                    self.wfile.write(err)
+                    return
+
+                resp = parent.handler_fn(req)
+                accept = (self.headers.get("Accept") or "").lower()
+                if "text/event-stream" in accept:
+                    sse_payload = f"event: message\ndata: {json.dumps(resp, ensure_ascii=False, default=str)}\n\n".encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("Content-Length", str(len(sse_payload)))
+                    self.end_headers()
+                    self.wfile.write(sse_payload)
+                    return
+
+                if resp is None:
+                    self.send_response(202)
+                    self.end_headers()
+                    return
+
+                body = json.dumps(resp, ensure_ascii=False, default=str).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args: Any) -> None:
+                return
+
+        self._httpd = ThreadingHTTPServer((self.host, self.port), _Handler)
+        self.port = int(self._httpd.server_address[1])
+        if background:
+            self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+            self._thread.start()
+        else:
+            self._httpd.serve_forever()
+        return self.port
+
+    def stop(self) -> None:
+        if self._httpd is not None:
+            self._httpd.shutdown()
+            self._httpd.server_close()
+            self._httpd = None

@@ -104,8 +104,12 @@ def main(argv: list[str] | None = None) -> int:
     p_skills.add_argument("--name", default=None, help="Skill name to run")
     p_skills.add_argument("--kwargs", default="{}", help="JSON kwargs for skill execution")
 
-    sub.add_parser("mcp-serve", help="Start the OmniExecutor MCP server over stdio (JSON-RPC 2.0)")
-    sub.add_parser("acp-serve", help="Start the OmniExecutor ACP server over stdio (JSON-RPC 2.0)")
+    p_mcp = sub.add_parser("mcp-serve", help="Start the OmniExecutor MCP server over stdio or Streamable HTTP (JSON-RPC 2.0)")
+    p_mcp.add_argument("--http-port", type=int, default=None, help="Serve Streamable HTTP/SSE on 127.0.0.1:<port> instead of stdio")
+    p_mcp.add_argument("--auth-token", default=None, help="Bearer token for Streamable HTTP mode (or OMNI_RPC_TOKEN env)")
+    p_acp = sub.add_parser("acp-serve", help="Start the OmniExecutor ACP server over stdio or Streamable HTTP (JSON-RPC 2.0)")
+    p_acp.add_argument("--http-port", type=int, default=None, help="Serve Streamable HTTP/SSE on 127.0.0.1:<port> instead of stdio")
+    p_acp.add_argument("--auth-token", default=None, help="Bearer token for Streamable HTTP mode (or OMNI_RPC_TOKEN env)")
 
     p_bench = sub.add_parser("bench", help="Real-LLM Benchmark (AM-Bench) runner & comparison")
     p_bench.add_argument("action", choices=["run", "report"], help="Benchmark action")
@@ -127,6 +131,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     if args.cmd == "mcp-serve":
+        from am_ua.execution.acp_adapter import StreamableHTTPJsonRpcServer
         from am_ua.execution.mcp_federation import AetherMindMCPServer
         from am_ua.security.agent_shield import AgentShieldAuditor
         agent = AetherMindUniversalAgent()
@@ -135,14 +140,22 @@ def main(argv: list[str] | None = None) -> int:
             skill_forge=agent.skill_forge,
             security_auditor=AgentShieldAuditor(),
         )
-        srv.serve_stdio()
+        if getattr(args, "http_port", None):
+            tok = getattr(args, "auth_token", None) or os.environ.get("OMNI_RPC_TOKEN")
+            StreamableHTTPJsonRpcServer(srv.handle_jsonrpc_message, port=args.http_port, auth_token=tok, server_name="omni-mcp").start()
+        else:
+            srv.serve_stdio()
         return 0
 
     if args.cmd == "acp-serve":
-        from am_ua.execution.acp_adapter import OmniACPServer
+        from am_ua.execution.acp_adapter import OmniACPServer, StreamableHTTPJsonRpcServer
         agent = AetherMindUniversalAgent()
         acp = OmniACPServer(agent=agent, default_workspace=str(ROOT))
-        acp.serve_stdio()
+        if getattr(args, "http_port", None):
+            tok = getattr(args, "auth_token", None) or os.environ.get("OMNI_RPC_TOKEN")
+            StreamableHTTPJsonRpcServer(acp.handle_request, port=args.http_port, auth_token=tok, server_name="omni-acp").start()
+        else:
+            acp.serve_stdio()
         return 0
 
     agent = AetherMindUniversalAgent()

@@ -150,6 +150,8 @@ jobs:
               assert acp.handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})["result"]["agentInfo"]["version"] == "4.4.0"
               from am_ua.execution.hermetic_sandbox_bridge import HermeticSandboxBridge
               assert HermeticSandboxBridge().is_installed() is True
+              from am_ua.execution.acp_adapter import StreamableHTTPJsonRpcServer
+              assert StreamableHTTPJsonRpcServer is not None
 
           print("ALL_PORTABLE_CI_CHECKS_PASSED")
           PY

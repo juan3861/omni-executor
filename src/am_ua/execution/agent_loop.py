@@ -1529,7 +1529,21 @@ class AgentLoop:
         for turn in range(1, max_turns + 1):
             messages = self._condense(messages)
             try:
-                resp = self.llm.chat(messages, max_tokens=4096, temperature=0.2, json_mode=True, prefer=actor_provider)
+                if event_bus is not None and hasattr(self.llm, "chat_stream"):
+                    resp = self.llm.chat_stream(
+                        messages,
+                        max_tokens=4096,
+                        temperature=0.2,
+                        json_mode=True,
+                        prefer=actor_provider,
+                        on_delta=lambda d: bus.emit(
+                            AGUIEventType.TEXT_MESSAGE_CONTENT,
+                            messageId=f"msg-{turn}",
+                            delta=d,
+                        ),
+                    )
+                else:
+                    resp = self.llm.chat(messages, max_tokens=4096, temperature=0.2, json_mode=True, prefer=actor_provider)
             except LLMUnavailableError as exc:
                 stop_reason = f"llm_unavailable: {str(exc)[:300]}"
                 break
