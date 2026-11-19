@@ -383,7 +383,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "bench":
         if str(ROOT) not in sys.path:
             sys.path.insert(0, str(ROOT))
-        from eval.am_bench.runner import run_benchmark
         if args.action == "report":
             proof_dir = ROOT / ".proof"
             reports = sorted(proof_dir.glob("am_bench_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -393,9 +392,13 @@ def main(argv: list[str] | None = None) -> int:
             data = json.loads(reports[0].read_text(encoding="utf-8"))
             print(json.dumps({"latest_report": str(reports[0]), "summary": {k: v for k, v in data.items() if k != "results"}}, indent=2))
             return 0
-        rep = run_benchmark(suite=args.suite, label=args.label, workflow=args.workflow, max_turns=args.max_turns)
-        print(json.dumps({k: v for k, v in rep.items() if k != "results"}, indent=2))
-        return 0
+        from eval.am_bench.runner import main as bench_main
+        bench_argv = ["--label", args.label, "--workflow", args.workflow]
+        if args.suite == "quick":
+            bench_argv.extend(["--only", "c01_off_by_one,c02_mutable_default,c04_money_rounding"])
+        elif args.suite in ("code", "desktop", "browser"):
+            bench_argv.extend(["--only", args.suite])
+        return int(bench_main(bench_argv))
 
     if args.cmd == "browser":
         br = agent.cdp_browser

@@ -706,6 +706,13 @@ class WorkspaceTools:
             max_lines=max_lines,
         )
 
+    def deterministic_preflight(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Single-shot deterministic bundle: AST syntax sweep + AgentShield SAST + PageRank RepoMap."""
+        from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
+
+        max_chars = min(int(args.get("max_chars", 3500)), 12000)
+        return DeterministicTaskOffloader.run_preflight_bundle(self.ws, max_chars=max_chars)
+
     def code_sandbox(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Pure-Python restricted AST evaluator for deterministic math, JSON, and assertions (~1 ms)."""
         code = str(args.get("code", "")).strip()
@@ -812,7 +819,7 @@ TOOL_FAMILIES: Dict[str, Tuple[str, ...]] = {
     "core_code": (
         "list_dir", "read_file", "search", "write_file", "replace_in_file",
         "run", "repo_map", "knowledge_query", "task_tracker",
-        "spill_query", "code_sandbox",
+        "spill_query", "code_sandbox", "deterministic_preflight",
         "checkpoint", "restore_checkpoint", "request_human", "finish",
     ),
     "readonly_audit": (
@@ -1012,6 +1019,7 @@ Tools:
 - web_fetch {"url": "https://...|file:///...", "max_chars": 6000}   (lightweight HTML-to-Markdown reader without launching Chromium)
 - spill_query {"spill_path": "...", "pattern": "...", "start_line": 1, "max_lines": 80}   (search or slice a spilled large tool output on disk)
 - code_sandbox {"code": "sum(x*x for x in range(10))"}   (fast pure-Python AST evaluator for math, JSON, and assertions)
+- deterministic_preflight {"max_chars": 3500}   (single-shot AST syntax sweep + SAST + PageRank RepoMap to save turns)
 - task_tracker {"command": "view|plan", "task_list": [{"title": "...", "status": "todo|in_progress|done", "notes": "..."}]}
 - checkpoint {"name": "pre_edit"}   (save lightweight workspace snapshot before risky edits)
 - restore_checkpoint {"name": "pre_edit"}   (rollback workspace files to named checkpoint)
@@ -1069,6 +1077,7 @@ Tools:
 - web_fetch {"url": "https://...|file:///...", "max_chars": 6000}   (lightweight HTML-to-Markdown reader without launching Chromium)
 - spill_query {"spill_path": "...", "pattern": "...", "start_line": 1, "max_lines": 80}   (search or slice a spilled large tool output on disk)
 - code_sandbox {"code": "sum(x*x for x in range(10))"}   (fast pure-Python AST evaluator for math, JSON, and assertions)
+- deterministic_preflight {"max_chars": 3500}   (single-shot AST syntax sweep + SAST + PageRank RepoMap to save turns)
 - task_tracker {"command": "view|plan", "task_list": [{"title": "...", "status": "todo|in_progress|done", "notes": "..."}]}
 - checkpoint {"name": "pre_edit"}   (save lightweight workspace snapshot before risky edits)
 - restore_checkpoint {"name": "pre_edit"}   (rollback workspace files to named checkpoint)
@@ -1153,6 +1162,7 @@ class AgentLoop:
         "web_fetch": EffectClass.PURE_READ,
         "spill_query": EffectClass.PURE_READ,
         "code_sandbox": EffectClass.PURE_READ,
+        "deterministic_preflight": EffectClass.PURE_READ,
         "checkpoint": EffectClass.PURE_READ,
         "restore_checkpoint": EffectClass.COMPENSATABLE_MUTATION,
     }
@@ -1412,6 +1422,7 @@ class AgentLoop:
         wheel_timeout_s: Optional[float] = None,
         event_bus: Optional[AGUIEventBus] = None,
         output_schema: Optional[Dict[str, Any]] = None,
+        enable_zero_token_offload: bool = True,
     ) -> AgentRunResult:
         mission_id = mission_id or f"agent-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
         ws = WorkspaceTools(
@@ -1436,6 +1447,40 @@ class AgentLoop:
         before = ws.snapshot()
         t_start = time.perf_counter()
         calls0, pt0, ct0 = self.llm.calls, self.llm.total_prompt_tokens, self.llm.total_completion_tokens
+
+        if enable_zero_token_offload:
+            from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
+
+            rail = DeterministicTaskOffloader.match_zero_token_rail(objective, verify_cmd=verify_cmd)
+            if rail is not None:
+                rail_res = DeterministicTaskOffloader.execute_rail(
+                    rail, ws.ws, verify_cmd=verify_cmd, run_fn=ws.run
+                )
+                ws.close()
+                self._active = None
+                return AgentRunResult(
+                    mission_id=mission_id,
+                    objective=objective,
+                    workspace=str(ws.ws),
+                    status="VERIFIED" if rail_res.get("ok") else "FAILED",
+                    epistemic_tag=EpistemicTag.PROVADO.value if rail_res.get("ok") else EpistemicTag.NAO_VERIFICADO.value,
+                    final_summary=str(rail_res.get("summary") or rail),
+                    actor_confidence=1.0 if rail_res.get("ok") else 0.0,
+                    actor_providers=["deterministic_offloader"],
+                    turns=0,
+                    tool_calls=[{"turn": 0, "tool": f"rail:{rail}", "args": {}, "ok": bool(rail_res.get("ok"))}],
+                    verification={"passed": bool(rail_res.get("ok")), "rail": rail, "details": rail_res.get("details")},
+                    judge=None,
+                    changed_files=[],
+                    diff="",
+                    tokens={"prompt": 0, "completion": 0},
+                    llm_calls=0,
+                    elapsed_s=round(time.perf_counter() - t_start, 3),
+                    stop_reason=f"deterministic_rail:{rail}",
+                    role=role,
+                    workflow=workflow,
+                    structured_output=rail_res,
+                )
 
         # AG-UI EventBus setup
         bus = event_bus or self.event_bus

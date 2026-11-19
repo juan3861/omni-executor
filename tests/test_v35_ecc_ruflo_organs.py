@@ -1343,6 +1343,18 @@ def test_v44_ssrf_domain_guard_timetravel_guardrails_spill_schema_handoff_dag_ot
                 assert "event: message" in raw_sse and "4.4.0" in raw_sse
         finally:
             rpc_srv.stop()
+
+        # 13. DeterministicTaskOffloader (0-token rails + single-shot deterministic_preflight)
+        from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
+
+        assert DeterministicTaskOffloader.match_zero_token_rail("Fix bug in app.py") is None
+        assert DeterministicTaskOffloader.match_zero_token_rail("Run security audit on workspace") == "shield_audit"
+        (ws_dir / "clean_mod.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+        pre_res = wt.deterministic_preflight({})
+        assert pre_res["ok"] is True and pre_res["syntax"]["ok"] is True and pre_res["shield"]["grade"] == "A"
+        rail_run = loop.run("Run security audit on this workspace", ws_dir, max_turns=3, use_judge=False)
+        assert rail_run.llm_calls == 0 and rail_run.tokens == {"prompt": 0, "completion": 0}
+        assert rail_run.stop_reason == "deterministic_rail:shield_audit" and rail_run.status == "VERIFIED"
     finally:
         import shutil
         shutil.rmtree(ws_dir, ignore_errors=True)
