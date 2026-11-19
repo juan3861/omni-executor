@@ -33,7 +33,55 @@ _URE_ROOT = r"F:\AetherMind_Universal_Reasoning_Engine"
 if Path(_URE_ROOT).is_dir() and _URE_ROOT not in sys.path:
     sys.path.insert(0, _URE_ROOT)
 
-from grammar.cfg_sieve import CFGGrammarSieve  # type: ignore[import-not-found]
+try:
+    from grammar.cfg_sieve import CFGGrammarSieve  # type: ignore[import-not-found]
+except ImportError:  # standalone / clean CI fallback AST expression sieve
+    import ast as _ast
+
+    class CFGGrammarSieve:  # type: ignore[no-redef]
+        """Standalone AST-based boolean/comparison expression sieve when external URE is absent."""
+
+        _ALLOWED_NODES = (
+            _ast.Expression,
+            _ast.BoolOp,
+            _ast.And,
+            _ast.Or,
+            _ast.UnaryOp,
+            _ast.Not,
+            _ast.USub,
+            _ast.Compare,
+            _ast.Eq,
+            _ast.NotEq,
+            _ast.Lt,
+            _ast.LtE,
+            _ast.Gt,
+            _ast.GtE,
+            _ast.BinOp,
+            _ast.Add,
+            _ast.Sub,
+            _ast.Mult,
+            _ast.Constant,
+            _ast.Name,
+            _ast.Load,
+        )
+
+        def __init__(self) -> None:
+            self._allowed_vars: set[str] = set()
+
+        def set_allowed_variables(self, allowed: set[str]) -> None:
+            self._allowed_vars = set(allowed or set())
+
+        def validate_expression(self, expr: str) -> tuple[bool, str]:
+            try:
+                tree = _ast.parse(str(expr), mode="eval")
+            except SyntaxError as exc:
+                return False, f"SyntaxError: {exc.msg}"
+            for node in _ast.walk(tree):
+                if not isinstance(node, self._ALLOWED_NODES):
+                    return False, f"Disallowed AST node: {type(node).__name__}"
+                if isinstance(node, _ast.Name) and node.id not in self._allowed_vars and node.id not in ("True", "False"):
+                    return False, f"Undeclared variable: {node.id}"
+            return True, ""
 
 
 class EffectClass(str, Enum):
