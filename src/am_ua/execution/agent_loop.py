@@ -1582,8 +1582,27 @@ class AgentLoop:
         event_bus: Optional[AGUIEventBus] = None,
         output_schema: Optional[Dict[str, Any]] = None,
         enable_zero_token_offload: bool = True,
+        execution_mode: str = "act",
+        sync_todo_anchor: bool = False,
+        enable_self_review_gate: bool = True,
+        enable_dlp_supervisor: bool = True,
+        auto_compile_skill: bool = False,
     ) -> AgentRunResult:
         mission_id = mission_id or f"agent-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
+        low_obj = (objective or "").lower()
+        s2_kw = ("architect", "refactor", "migrate", "security", "formal", "z3", "proof", "distributed", "kernel", "optimize", "compiler")
+        s2_hits = sum(1 for k in s2_kw if k in low_obj)
+        cog_score = round(min(1.0, min(0.45, s2_hits * 0.18) + min(0.25, len(low_obj) / 600.0)), 3)
+        cog_sys = "SYSTEM_2" if cog_score >= 0.45 else "SYSTEM_1"
+        event_stream_buf: List[Dict[str, Any]] = [
+            {
+                "kind": "system",
+                "event": "cognitive_route",
+                "system": cog_sys,
+                "complexity_score": cog_score,
+                "execution_mode": execution_mode,
+            }
+        ]
         ws = WorkspaceTools(
             Path(workspace),
             self.seal_guard,
@@ -1597,6 +1616,8 @@ class AgentLoop:
             knowledge_factory=self.knowledge_factory,
         )
         self._active = ws
+        if sync_todo_anchor:
+            self.sync_todo_anchor(ws.ws, objective, [{"id": "m1", "title": objective[:120], "status": "in_progress"}])
         effective_wheel_timeout = self.wheel_timeout_s if wheel_timeout_s is None else max(0.0, float(wheel_timeout_s))
         homeo = HomeostasisGovernor(max_tokens_budget=max_tokens, max_wall_seconds=max_wall_s, max_stagnant_turns=6)
         breaker = RepeatToolLoopBreaker(window_size=12, max_identical_calls=3)
@@ -1827,6 +1848,21 @@ class AgentLoop:
                             "output_tail": v_pre["output"][-2500:],
                         }
                     summary = str(args.get("summary", ""))
+                    if enable_self_review_gate and turn < max_turns and execution_mode.strip().lower() != "plan":
+                        cur_snap = ws.snapshot()
+                        mutated_py = [
+                            p for p in cur_snap
+                            if p.endswith(".py") and (p not in before or cur_snap[p] != before[p])
+                        ]
+                        if mutated_py:
+                            sr_gate = self.run_self_review_diff_gate(ws.ws)
+                            if not sr_gate["ok"]:
+                                reject_finish_msg = (
+                                    f"FINISH REJECTED (Self-Review Diff Gate): syntax_ok={sr_gate['syntax_ok']}, "
+                                    f"shield_grade={sr_gate['shield_grade']}, "
+                                    f"syntax_errors={sr_gate['syntax_errors'][:3]}. Fix before calling finish."
+                                )
+                                break
                     if output_schema is not None:
                         candidate_out = args.get("output")
                         if candidate_out is None and summary.strip().startswith(("{", "[")):
@@ -1952,10 +1988,12 @@ class AgentLoop:
 
                 ok, obs = True, None
                 call_args = None
+                event_stream_buf.append({"kind": "action", "turn": turn, "tool": tool, "args": args})
                 if tool not in self.TOOL_EFFECTS:
                     ok, obs = False, {"error": f"unknown tool '{tool}'"}
                 else:
                     try:
+                        self.assert_tool_allowed_in_mode(tool, execution_mode)
                         breaker.record_and_check(tool, args)
                         call_args = self._prepare_args(tool, args, ws)
                         pre_dec = self.hook_engine.run_pre(tool, call_args, ws.ws)
@@ -2111,6 +2149,33 @@ class AgentLoop:
             verification=verification,
             tool_calls=tool_log,
         )
+        if enable_dlp_supervisor and summary:
+            from am_ua.execution.hook_engine import ParallelPolicySupervisor
+
+            sup_verdict = ParallelPolicySupervisor(block_on_pii=False).audit_parallel(summary)
+            if sup_verdict.pii_hits:
+                summary = sup_verdict.redacted_text
+        if sync_todo_anchor:
+            final_task_st = "done" if status.startswith("VERIFIED") or status == "COMPLETED_UNVERIFIED" else "failed"
+            self.sync_todo_anchor(ws.ws, objective, [{"id": "m1", "title": objective[:120], "status": final_task_st}])
+        if auto_compile_skill and status in ("VERIFIED", "COMPLETED_UNVERIFIED"):
+            good_steps = [
+                {"tool": t["tool"], "args": t.get("args", {}), "ok": True}
+                for t in tool_log
+                if t.get("ok") and t.get("tool") not in ("finish", "request_human")
+            ]
+            if good_steps:
+                try:
+                    skill_slug = re.sub(r"[^a-z0-9_]+", "_", mission_id.lower()).strip("_")[:48]
+                    ws._skill_forge.compile_trajectory_to_skill(
+                        name=f"sop_{skill_slug}",
+                        description=f"Auto-compiled SOP from verified mission: {objective[:120]}",
+                        trajectory_steps=good_steps[:12],
+                    )
+                except Exception:
+                    pass
+        for t_rec in tool_log:
+            event_stream_buf.append({"kind": "observation", "turn": t_rec.get("turn"), "tool": t_rec.get("tool"), "ok": t_rec.get("ok")})
         result = AgentRunResult(
             mission_id=mission_id, objective=objective, workspace=str(ws.ws), status=status, epistemic_tag=tag.value,
             final_summary=summary, actor_confidence=confidence, actor_providers=providers_used, turns=turn,
@@ -2127,6 +2192,7 @@ class AgentLoop:
             self.trace_dir.mkdir(parents=True, exist_ok=True)
             tp = self.trace_dir / f"{mission_id}.json"
             tp.write_text(json.dumps({**asdict(result), "messages": messages}, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+            self.export_event_stream(event_stream_buf, self.trace_dir / f"{mission_id}_events.jsonl")
             result.trace_path = str(tp)
         if self.reasoning_bank is not None:
             self.reasoning_bank.record_run(asdict(result))

@@ -80,8 +80,9 @@ class BehaviorBestOfNEngine:
         scratch_root: Optional[Path | str] = None,
     ) -> None:
         self.llm = llm
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
         self.scratch_root = Path(
-            scratch_root or r"F:\AetherMind_Temp\bbon_sandboxes"
+            scratch_root or resolve_omni_temp_dir("bbon_sandboxes")
         ).resolve()
         self.scratch_root.mkdir(parents=True, exist_ok=True)
 

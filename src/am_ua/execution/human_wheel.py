@@ -41,7 +41,8 @@ class HumanWheelGate:
         timeout_s: float = 0.0,
         poll_interval_s: float = 0.5,
     ) -> None:
-        self.root = Path(wheel_root or self.DEFAULT_WHEEL_ROOT).resolve()
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
+        self.root = Path(wheel_root or resolve_omni_temp_dir("wheel")).resolve()
         self.timeout_s = max(0.0, float(timeout_s))
         self.poll_interval_s = max(0.1, float(poll_interval_s))
         self.root.mkdir(parents=True, exist_ok=True)

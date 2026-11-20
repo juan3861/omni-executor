@@ -60,8 +60,9 @@ class SiliconProjectRadar:
         temp_out_root: Optional[Path | str] = None,
     ) -> None:
         self.aetherscan_exe = Path(aetherscan_exe or self.DEFAULT_AETHERSCAN_EXE)
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
         self.temp_out_root = Path(
-            temp_out_root or r"F:\AetherMind_Temp\aetherscan_out"
+            temp_out_root or resolve_omni_temp_dir("aetherscan_out")
         ).resolve()
         self.temp_out_root.mkdir(parents=True, exist_ok=True)
 

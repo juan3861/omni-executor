@@ -315,12 +315,12 @@ def default_repo_root() -> "Path":
 
 
 def default_temp_dir(subdir: Optional[str] = None) -> "Path":
-    """Resolve a portable writable temp directory (honors AM_UA_TEMP_DIR and F:\\AetherMind_Temp when present)."""
+    """Resolve a portable writable temp directory (honors OMNI_TEMP_DIR, AM_UA_TEMP_DIR, and F:\\AetherMind_Temp when present)."""
     import os
     import tempfile
     from pathlib import Path
 
-    env_dir = os.environ.get("AM_UA_TEMP_DIR", "").strip()
+    env_dir = (os.environ.get("OMNI_TEMP_DIR") or os.environ.get("AM_UA_TEMP_DIR") or "").strip()
     if env_dir:
         base = Path(env_dir)
     elif os.name == "nt" and Path("F:/").exists():
@@ -328,3 +328,6 @@ def default_temp_dir(subdir: Optional[str] = None) -> "Path":
     else:
         base = Path(tempfile.gettempdir()) / "omni_executor_tmp"
     return (base / subdir) if subdir else base
+
+
+resolve_omni_temp_dir = default_temp_dir

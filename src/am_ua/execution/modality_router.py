@@ -78,8 +78,9 @@ class HybridModalityRouter:
         telemetry_path: Optional[Path | str] = None,
     ) -> None:
         self.skill_forge = skill_forge
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
         self.telemetry_path = Path(
-            telemetry_path or r"F:\AetherMind_Temp\modality_telemetry.json"
+            telemetry_path or resolve_omni_temp_dir("modality_telemetry.json")
         ).resolve()
         self.telemetry_path.parent.mkdir(parents=True, exist_ok=True)
         self._stats: Dict[str, Dict[str, int]] = self._load_stats()
