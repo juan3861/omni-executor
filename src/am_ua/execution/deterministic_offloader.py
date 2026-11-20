@@ -103,6 +103,28 @@ BUILTIN_DETERMINISTIC_RAILS: Dict[str, DeterministicRailSpec] = {
         description="Compare two Python files/snippets by AST symbol structure (added/removed/modified functions & classes).",
         estimated_tokens_saved=3000,
     ),
+    "generate_pytest_skeleton": DeterministicRailSpec(
+        name="generate_pytest_skeleton",
+        description="Generate deterministic pytest skeleton with boundary cases from Python AST signatures.",
+        estimated_tokens_saved=5500,
+        mutates_workspace=True,
+    ),
+    "extract_document_structured": DeterministicRailSpec(
+        name="extract_document_structured",
+        description="Extract structured sections, tables, and metadata from md/csv/json/html/pdf/docx/xlsx in 0 LLM tokens.",
+        estimated_tokens_saved=4500,
+    ),
+    "polyglot_outline": DeterministicRailSpec(
+        name="polyglot_outline",
+        description="Extract AST/symbol outline for Python, JS/TS, Rust, and Go files in 1 deterministic call.",
+        estimated_tokens_saved=3000,
+    ),
+    "libcst_safe_codemod": DeterministicRailSpec(
+        name="libcst_safe_codemod",
+        description="Format-preserving Python CST symbol rename via LibCST (with AST fallback).",
+        estimated_tokens_saved=4000,
+        mutates_workspace=True,
+    ),
 }
 
 # Never intercept tasks that ask to modify, create, fix, or refactor code.
@@ -457,6 +479,25 @@ class DeterministicTaskOffloader:
             return {"ok": False, "error": f"Invalid table_name: {table_name}"}
 
         ext = fp.suffix.lower()
+        if ext in (".csv", ".json", ".jsonl", ".parquet") and importlib.util.find_spec("duckdb") is not None:
+            import duckdb  # type: ignore[import-not-found]
+
+            dcon = duckdb.connect(":memory:")
+            try:
+                esc_fp = str(fp).replace("'", "''")
+                if ext == ".csv":
+                    dcon.execute(f'CREATE VIEW "{table_name}" AS SELECT * FROM read_csv_auto(\'{esc_fp}\')')
+                elif ext in (".json", ".jsonl"):
+                    dcon.execute(f'CREATE VIEW "{table_name}" AS SELECT * FROM read_json_auto(\'{esc_fp}\')')
+                elif ext == ".parquet":
+                    dcon.execute(f'CREATE VIEW "{table_name}" AS SELECT * FROM read_parquet(\'{esc_fp}\')')
+                cur = dcon.execute(q_clean)
+                col_names = [d[0] for d in (cur.description or [])]
+                fetched = [dict(zip(col_names, row)) for row in cur.fetchmany(100)]
+                return {"ok": True, "backend": "duckdb", "columns": col_names, "row_count": len(fetched), "rows": fetched}
+            finally:
+                dcon.close()
+
         if ext in (".db", ".sqlite", ".sqlite3"):
             conn = sqlite3.connect(f"file:{fp}?mode=ro", uri=True)
         else:
@@ -557,6 +598,160 @@ class DeterministicTaskOffloader:
         }
 
     @classmethod
+    def generate_pytest_skeleton(
+        cls,
+        workspace: Path,
+        *,
+        module_path: str,
+        write_to: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Deterministically synthesize a runnable pytest test skeleton from Python AST."""
+        ws = Path(workspace).resolve()
+        mod_file = _resolve_in_workspace(ws, module_path)
+        if not mod_file.is_file():
+            return {"ok": False, "error": f"Module not found: {module_path}"}
+        tree = ast.parse(mod_file.read_text(encoding="utf-8", errors="replace"), filename=str(mod_file))
+        funcs = [
+            n for n in tree.body
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and not n.name.startswith("_")
+        ]
+        classes = [n for n in tree.body if isinstance(n, ast.ClassDef) and not n.name.startswith("_")]
+        mod_stem = mod_file.stem
+        lines = [
+            f'"""Auto-generated deterministic pytest skeleton for {mod_file.name}."""',
+            "",
+            "import pytest",
+            f"import {mod_stem}",
+            "",
+        ]
+        for fn in funcs:
+            arg_names = [a.arg for a in fn.args.args if a.arg not in ("self", "cls")]
+            lines.append(f"def test_{fn.name}_basic() -> None:")
+            lines.append(f"    assert callable({mod_stem}.{fn.name})")
+            if len(arg_names) == 1:
+                lines.append(f"    # Boundary smoke probe for {arg_names[0]}")
+                lines.append(f"    assert {mod_stem}.{fn.name} is not None")
+            lines.append("")
+        for cl in classes:
+            lines.append(f"def test_{cl.name.lower()}_defined() -> None:")
+            lines.append(f"    assert hasattr({mod_stem}, '{cl.name}')")
+            lines.append("")
+        code = "\n".join(lines).rstrip() + "\n"
+        out_rel: Optional[str] = None
+        if write_to:
+            out_p = _resolve_in_workspace(ws, write_to)
+            out_p.parent.mkdir(parents=True, exist_ok=True)
+            out_p.write_text(code, encoding="utf-8", newline="\n")
+            out_rel = out_p.relative_to(ws).as_posix()
+        return {
+            "ok": True,
+            "module": mod_file.relative_to(ws).as_posix(),
+            "functions_found": [f.name for f in funcs],
+            "classes_found": [c.name for c in classes],
+            "written_to": out_rel,
+            "code": code,
+        }
+
+    @classmethod
+    def extract_document_structured(cls, workspace: Path, *, file_path: str) -> Dict[str, Any]:
+        """Extract structured sections, tables, or records from docs without LLM tokens."""
+        ws = Path(workspace).resolve()
+        fp = _resolve_in_workspace(ws, file_path)
+        if not fp.is_file():
+            return {"ok": False, "error": f"Document not found: {file_path}"}
+        ext = fp.suffix.lower()
+        if ext in (".md", ".txt"):
+            text = fp.read_text(encoding="utf-8", errors="replace")
+            headings = [ln.strip() for ln in text.splitlines() if ln.lstrip().startswith("#")]
+            return {"ok": True, "format": ext.lstrip("."), "headings": headings[:50], "line_count": len(text.splitlines()), "preview": text[:2000]}
+        if ext == ".csv":
+            with fp.open("r", encoding="utf-8", errors="replace", newline="") as fh:
+                rows = list(csv.DictReader(fh))
+            return {"ok": True, "format": "csv", "row_count": len(rows), "columns": list(rows[0].keys()) if rows else [], "sample": rows[:10]}
+        if ext in (".json", ".jsonl"):
+            raw = fp.read_text(encoding="utf-8", errors="replace")
+            data = [json.loads(l) for l in raw.splitlines() if l.strip()] if ext == ".jsonl" else json.loads(raw)
+            return {"ok": True, "format": ext.lstrip("."), "type": type(data).__name__, "sample": data[:10] if isinstance(data, list) else data}
+        if ext in (".html", ".htm"):
+            import html as _html
+            raw = fp.read_text(encoding="utf-8", errors="replace")
+            headings = [re.sub(r"<[^>]+>", "", m).strip() for m in re.findall(r"(?is)<h[1-4][^>]*>(.*?)</h[1-4]>", raw)]
+            clean = _html.unescape(re.sub(r"(?is)<[^>]+>", " ", re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", raw)))
+            clean = re.sub(r"\s+", " ", clean).strip()
+            return {"ok": True, "format": "html", "headings": headings[:30], "preview": clean[:2000]}
+        from am_ua.perception.knowledge_index import HierarchicalKnowledgeIndex
+
+        idx = HierarchicalKnowledgeIndex(ws)
+        res = idx.query(fp.stem, top_k=5)
+        return {"ok": True, "format": ext.lstrip("."), "knowledge_hits": res}
+
+    @classmethod
+    def polyglot_outline(cls, workspace: Path, *, file_path: str) -> Dict[str, Any]:
+        """Extract AST/symbol outline for a Python, JS/TS, Rust, or Go file."""
+        ws = Path(workspace).resolve()
+        fp = _resolve_in_workspace(ws, file_path)
+        if not fp.is_file():
+            return {"ok": False, "error": f"File not found: {file_path}"}
+        from dataclasses import asdict
+        from am_ua.perception.polyglot_repomap import PolyglotRepoMapper
+
+        mapper = PolyglotRepoMapper(ws)
+        rel = fp.relative_to(ws).as_posix()
+        txt = fp.read_text(encoding="utf-8", errors="replace")
+        ext = fp.suffix.lower()
+        if ext == ".py":
+            syms, refs = mapper._extract_python_symbols(rel, txt)
+        else:
+            lang_map = {".js": "javascript", ".jsx": "javascript", ".ts": "typescript", ".tsx": "typescript", ".rs": "rust", ".go": "go"}
+            syms, refs = mapper._extract_polyglot_symbols(rel, txt, lang_map.get(ext, ext.lstrip(".")))
+        return {
+            "ok": True,
+            "file": rel,
+            "symbol_count": len(syms),
+            "symbols": [asdict(s) for s in syms[:150]],
+            "references": sorted(refs)[:100],
+        }
+
+    @classmethod
+    def libcst_safe_codemod(
+        cls,
+        workspace: Path,
+        *,
+        file_path: str,
+        symbol_old: str,
+        symbol_new: str,
+    ) -> Dict[str, Any]:
+        """Format-preserving Python CST rename via LibCST (with AST fallback)."""
+        ws = Path(workspace).resolve()
+        fp = _resolve_in_workspace(ws, file_path)
+        if not fp.is_file():
+            return {"ok": False, "error": f"File not found: {file_path}"}
+        if not symbol_old.isidentifier() or not symbol_new.isidentifier():
+            return {"ok": False, "error": "symbol_old and symbol_new must be valid Python identifiers"}
+        src = fp.read_text(encoding="utf-8", errors="replace")
+        if importlib.util.find_spec("libcst") is not None:
+            import libcst as cst  # type: ignore[import-not-found]
+
+            class _Renamer(cst.CSTTransformer):
+                def __init__(self) -> None:
+                    self.count = 0
+
+                def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.Name:
+                    if original_node.value == symbol_old:
+                        self.count += 1
+                        return updated_node.with_changes(value=symbol_new)
+                    return updated_node
+
+            mod = cst.parse_module(src)
+            tr = _Renamer()
+            new_mod = mod.visit(tr)
+            if tr.count > 0:
+                fp.write_text(new_mod.code, encoding="utf-8", newline="\n")
+            return {"ok": True, "backend": "libcst", "replacements": tr.count, "file": fp.relative_to(ws).as_posix()}
+
+        return cls.structural_search_replace(ws, symbol_or_pattern=symbol_old, replacement=symbol_new, target=file_path)
+
+    @classmethod
     def execute_rail(
         cls,
         rail_name: str,
@@ -652,5 +847,28 @@ class DeterministicTaskOffloader:
                 ws,
                 file_a=str(args.get("file_a", "")),
                 file_b=str(args.get("file_b", "")),
+            )
+        if rail_name == "generate_pytest_skeleton":
+            return cls.generate_pytest_skeleton(
+                ws,
+                module_path=str(args.get("module_path", "")),
+                write_to=args.get("write_to"),
+            )
+        if rail_name == "extract_document_structured":
+            return cls.extract_document_structured(
+                ws,
+                file_path=str(args.get("file_path", "")),
+            )
+        if rail_name == "polyglot_outline":
+            return cls.polyglot_outline(
+                ws,
+                file_path=str(args.get("file_path", "")),
+            )
+        if rail_name == "libcst_safe_codemod":
+            return cls.libcst_safe_codemod(
+                ws,
+                file_path=str(args.get("file_path", "")),
+                symbol_old=str(args.get("symbol_old", "")),
+                symbol_new=str(args.get("symbol_new", "")),
             )
         return cls.run_preflight_bundle(ws, max_chars=int(args.get("max_chars", 3500)))

@@ -1398,6 +1398,27 @@ def test_v44_ssrf_domain_guard_timetravel_guardrails_spill_schema_handoff_dag_ot
             "params": {"file_a": "sample_a.py", "file_b": "sample_b.py"},
         })
         assert sdiff_res["ok"] is True and "fn:extra_fn" in sdiff_res["added_symbols"]
+
+        # 15. Wave 2 deterministic rails: generate_pytest_skeleton, extract_document_structured, polyglot_outline, libcst_safe_codemod
+        skel_res = wt.deterministic_exec({
+            "action": "generate_pytest_skeleton",
+            "params": {"module_path": "sample_b.py"},
+        })
+        assert skel_res["ok"] is True and "test_extra_fn_basic" in skel_res["code"]
+
+        (ws_dir / "notes.md").write_text("# Arquitetura\n## Motor\nConteudo\n", encoding="utf-8")
+        doc_res = wt.deterministic_exec({"action": "extract_document_structured", "params": {"file_path": "notes.md"}})
+        assert doc_res["ok"] is True and "# Arquitetura" in doc_res["headings"]
+
+        out_res = wt.deterministic_exec({"action": "polyglot_outline", "params": {"file_path": "sample_b.py"}})
+        assert out_res["ok"] is True and out_res["symbol_count"] >= 2
+
+        cst_res = wt.deterministic_exec({
+            "action": "libcst_safe_codemod",
+            "params": {"file_path": "sample_b.py", "symbol_old": "extra_fn", "symbol_new": "renamed_extra_fn"},
+        })
+        assert cst_res["ok"] is True and cst_res["replacements"] == 1
+        assert "def renamed_extra_fn" in (ws_dir / "sample_b.py").read_text(encoding="utf-8")
     finally:
         import shutil
         shutil.rmtree(ws_dir, ignore_errors=True)
