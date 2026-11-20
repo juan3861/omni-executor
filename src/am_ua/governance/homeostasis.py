@@ -38,6 +38,60 @@ def casimir_collapse_force(free_bytes: int, total_bytes: int) -> float:
     return -(math.pi ** 2) / (240.0 * (d ** 4))
 
 
+def casimir_bistable_diagnostics(
+    free_bytes: int,
+    total_bytes: int,
+    reclaimable_bytes: int = 0,
+) -> Dict[str, Any]:
+    """Compute full fastmft v1.3.0 Casimir-Helmholtz-Langevin storage potential diagnostics.
+
+    Mirrors ``computeCasimir`` in fastmft/advise.go:
+      - Normalized gap: d = FreeBytes / TotalBytes (clamped >= 0.001)
+      - Casimir force: F_C(d) = -pi^2 / (240 * d^4)
+      - Bistable well: U(ds) = 0.5*k*(ds - d0)^2 - C_cas/ds^3 + C_rep/ds^12
+      - Langevin drift: -dU/dds = -(k*(ds - d0) + 3*C_cas/ds^4 - 12*C_rep/ds^13)
+    """
+    tot = max(int(total_bytes), 1)
+    free = max(int(free_bytes), 0)
+    used = max(tot - free, 0)
+    d = max(free / float(tot), 0.001)
+    ds = max(d * 10.0, 0.15)
+    k = 1.0
+    d0 = 2.0
+    c_cas = 1.2
+    rep_c = 0.05
+    pi_sq = math.pi ** 2
+
+    fc = -(pi_sq / (240.0 * (d ** 4)))
+    u_total = 0.5 * k * ((ds - d0) ** 2) - (c_cas / (ds ** 3)) + (rep_c / (ds ** 12))
+    drift = -(k * (ds - d0) + (3.0 * c_cas / (ds ** 4)) - (12.0 * rep_c / (ds ** 13)))
+
+    if d < 0.05:
+        state = "COLAPSO_CASIMIR_CRITICO"
+    elif d < 0.15:
+        state = "LIMIAR_BIESTAVEL_MIGRACAO"
+    else:
+        state = "ESTAVEL_POCO_LOCAL"
+
+    post_free = min(free + max(int(reclaimable_bytes), 0), tot)
+    post_d = max(post_free / float(tot), 0.001)
+    post_fc = -(pi_sq / (240.0 * (post_d ** 4)))
+
+    return {
+        "total_bytes": tot,
+        "free_bytes": free,
+        "used_bytes": used,
+        "normalized_gap_d": round(d, 4),
+        "casimir_force_fc": round(fc, 2),
+        "bistable_potential_u": round(u_total, 3),
+        "langevin_drift": round(drift, 3),
+        "regime_state": state,
+        "post_move_free_bytes": post_free,
+        "post_move_gap_d": round(post_d, 4),
+        "post_move_casimir_force": round(post_fc, 2),
+    }
+
+
 class _MEMORYSTATUSEX(ctypes.Structure):
     _fields_ = [
         ("dwLength", ctypes.c_ulong),

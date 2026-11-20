@@ -13,12 +13,15 @@ import csv
 from dataclasses import dataclass
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
 import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
+import time
 from typing import Any, Dict, List, Optional
 
 
@@ -163,6 +166,11 @@ BUILTIN_DETERMINISTIC_RAILS: Dict[str, DeterministicRailSpec] = {
         description="Query workspace files, sanitized env vars, and host processes as SQL tables (osquery-style).",
         estimated_tokens_saved=3500,
     ),
+    "fastmft_radar": DeterministicRailSpec(
+        name="fastmft_radar",
+        description="Ultra-fast NTFS/filesystem topology radar, Casimir bistable storage diagnostics, ARIA 7-lens advise, UCIP compression, and build parasite detection/cleanup via fastmft v1.3.0.",
+        estimated_tokens_saved=6500,
+    ),
 }
 
 # Never intercept tasks that ask to modify, create, fix, or refactor code.
@@ -209,14 +217,31 @@ class DeterministicTaskOffloader:
         return None
 
     @staticmethod
+    def _find_fastmft() -> Optional[str]:
+        for name in ("fastmft", "aetherscan", "aetherscan_v1.3.0"):
+            found = shutil.which(name)
+            if found:
+                return found
+        for cand in (
+            Path(r"E:\Tools\maps\aetherscan\fastmft.exe"),
+            Path(r"E:\Tools\maps\aetherscan\aetherscan_v1.3.0.exe"),
+            Path(r"E:\Tools\maps\aetherscan\aetherscan.exe"),
+        ):
+            if cand.is_file():
+                return str(cand)
+        return None
+
+    @staticmethod
     def probe_capabilities() -> Dict[str, Any]:
         """Report which external deterministic engines and builtin fallbacks are available on this host."""
         bins = {
             b: bool(shutil.which(b))
-            for b in ("ruff", "sg", "ast-grep", "mypy", "pyright", "semgrep", "difft", "syft", "uv", "git")
+            for b in ("ruff", "sg", "ast-grep", "mypy", "pyright", "semgrep", "difft", "syft", "uv", "git", "fastmft")
         }
         if DeterministicTaskOffloader._find_ast_grep():
             bins["ast-grep"] = True
+        if DeterministicTaskOffloader._find_fastmft():
+            bins["fastmft"] = True
         mods = {
             m: bool(importlib.util.find_spec(m))
             for m in ("ruff", "mypy", "hypothesis", "z3", "duckdb", "polars", "libcst", "tree_sitter", "trafilatura", "ast_grep_py", "pydantic", "pytest")
@@ -257,6 +282,8 @@ class DeterministicTaskOffloader:
             return "sbom_and_deps_audit"
         if any(k in low for k in ("git forensics", "git status summary", "historico git")):
             return "git_forensics"
+        if any(k in low for k in ("fastmft", "aetherscan", "casimir", "parasites", "parasitas", "disk radar")):
+            return "fastmft_radar"
         if verify_cmd and any(k in low for k in ("only run verify", "run tests only", "rodar testes apenas", "somente verificar")):
             return "verify_only_check"
         return None
@@ -1322,6 +1349,226 @@ class DeterministicTaskOffloader:
             conn.close()
 
     @classmethod
+    def fastmft_radar(
+        cls,
+        workspace: Path,
+        *,
+        mode: str = "projects",
+        target: str = ".",
+        top: int = 20,
+        dry_run: bool = True,
+    ) -> Dict[str, Any]:
+        """Symbiotic fastmft / AetherScan v1.3.0 rail: projects, Casimir advise + UCIP, and safe parasite cleanup."""
+        from am_ua.governance.homeostasis import casimir_bistable_diagnostics
+
+        ws = Path(workspace).resolve()
+        tgt = _resolve_in_workspace(ws, target)
+        if not tgt.exists():
+            return {"ok": False, "error": f"Target does not exist: {target}"}
+
+        mode_norm = (mode or "projects").strip().lower()
+        if mode_norm not in ("projects", "advise", "clean_parasites"):
+            return {"ok": False, "error": f"Unsupported fastmft_radar mode: {mode_norm} (use projects|advise|clean_parasites)"}
+
+        safe_clean_names = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".turbo"}
+        all_parasite_names = safe_clean_names | {"node_modules", "target", ".venv", "venv", "dist", "build", ".next"}
+        project_markers = {
+            ".git": "git",
+            "pyproject.toml": "python",
+            "requirements.txt": "python",
+            "package.json": "node",
+            "cargo.toml": "rust",
+            "go.mod": "go",
+            "cmakelists.txt": "cpp",
+            "pom.xml": "java",
+        }
+
+        t0 = time.perf_counter()
+
+        def _scan_parasites_local(root: Path, allowed_names: set[str]) -> List[Dict[str, Any]]:
+            found: List[Dict[str, Any]] = []
+            for dirpath, dirnames, _ in os.walk(root):
+                matched = [d for d in dirnames if d in allowed_names]
+                for d in matched:
+                    p_dir = Path(dirpath) / d
+                    p_bytes = 0
+                    p_files = 0
+                    for sr, _, sf in os.walk(p_dir):
+                        for fn in sf:
+                            try:
+                                p_bytes += (Path(sr) / fn).stat().st_size
+                                p_files += 1
+                            except OSError:
+                                continue
+                    found.append({
+                        "name": d,
+                        "rel_path": p_dir.relative_to(ws).as_posix(),
+                        "bytes": p_bytes,
+                        "files": p_files,
+                    })
+                dirnames[:] = [d for d in dirnames if d not in allowed_names and d != ".git"]
+            found.sort(key=lambda x: x["bytes"], reverse=True)
+            return found
+
+        if mode_norm == "clean_parasites":
+            parasites = _scan_parasites_local(tgt, safe_clean_names)
+            removed: List[str] = []
+            reclaimed_bytes = 0
+            if not dry_run:
+                for item in parasites:
+                    p_full = _resolve_in_workspace(ws, item["rel_path"])
+                    if p_full.is_dir():
+                        shutil.rmtree(p_full, ignore_errors=True)
+                        if not p_full.exists():
+                            removed.append(item["rel_path"])
+                            reclaimed_bytes += int(item["bytes"])
+            elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            return {
+                "ok": True,
+                "backend": "fastmft_parasite_cleaner",
+                "mode": "clean_parasites",
+                "dry_run": bool(dry_run),
+                "elapsed_ms": elapsed_ms,
+                "parasite_count": len(parasites),
+                "total_parasite_bytes": sum(int(p["bytes"]) for p in parasites),
+                "removed_count": len(removed),
+                "reclaimed_bytes": reclaimed_bytes,
+                "removed": removed[:50],
+                "parasites": parasites[:50],
+            }
+
+        fm_bin = cls._find_fastmft()
+
+        if mode_norm == "advise":
+            if fm_bin and os.name == "nt":
+                temp_base = Path(r"F:\AetherMind_Temp\fastmft_rail")
+                if temp_base.parent.exists():
+                    temp_base.mkdir(parents=True, exist_ok=True)
+                    out_dir = Path(tempfile.mkdtemp(prefix="advise_", dir=str(temp_base)))
+                else:
+                    out_dir = Path(tempfile.mkdtemp(prefix="fastmft_advise_"))
+                try:
+                    env = os.environ.copy()
+                    if temp_base.parent.exists():
+                        env["TMP"] = str(temp_base.parent)
+                        env["TEMP"] = str(temp_base.parent)
+                    proc = subprocess.run(
+                        [fm_bin, "advise", str(tgt), "--top", str(max(1, int(top))), "--out", str(out_dir)],
+                        stdin=subprocess.DEVNULL,
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        env=env,
+                        timeout=60,
+                        check=False,
+                    )
+                    rep_file = out_dir / "advise_report.json"
+                    ucip_file = out_dir / "ucip_map.txt"
+                    if proc.returncode == 0 and rep_file.is_file():
+                        rep_data = json.loads(rep_file.read_text(encoding="utf-8", errors="replace"))
+                        ucip_txt = ucip_file.read_text(encoding="utf-8", errors="replace") if ucip_file.is_file() else str(rep_data.get("ucip_compact_protocol", ""))
+                        return {
+                            "ok": True,
+                            "backend": "fastmft_v1.3.0",
+                            "mode": "advise",
+                            "elapsed_ms": round((time.perf_counter() - t0) * 1000.0, 2),
+                            "casimir": rep_data.get("casimir_bistable_model", {}),
+                            "relocation_candidates": (rep_data.get("relocation_candidates") or [])[:top],
+                            "projects": (rep_data.get("discovered_projects") or [])[:top],
+                            "ucip_compact": ucip_txt.strip(),
+                        }
+                finally:
+                    shutil.rmtree(out_dir, ignore_errors=True)
+
+            # Portable deterministic fallback (Linux / CI / host without fastmft binary)
+            du = shutil.disk_usage(tgt)
+            parasites = _scan_parasites_local(tgt, all_parasite_names)
+            reclaimable = sum(int(p["bytes"]) for p in parasites)
+            cas = casimir_bistable_diagnostics(du.free, du.total, reclaimable_bytes=reclaimable)
+            projects: List[Dict[str, Any]] = []
+            for dirpath, dirnames, filenames in os.walk(tgt):
+                dirnames[:] = [d for d in dirnames if d not in all_parasite_names]
+                markers = []
+                for name in list(dirnames) + list(filenames):
+                    tag = project_markers.get(name.lower())
+                    if tag and tag not in markers:
+                        markers.append(tag)
+                if markers:
+                    projects.append({"path": Path(dirpath).as_posix(), "markers": markers})
+                dirnames[:] = [d for d in dirnames if d != ".git"]
+            elapsed_s = round(time.perf_counter() - t0, 3)
+            vol_label = tgt.drive or "/"
+            ucip_line = (
+                f"§UCIP:1.2|VOL:{vol_label}|SCAN:{elapsed_s:.3f}s|"
+                f"TOT:{du.total // (1024**3)}GB|FREE:{du.free // (1024**3)}GB|"
+                f"GAP_D:{cas['normalized_gap_d']:.4f}|FC:{cas['casimir_force_fc']:.1f}|"
+                f"U:{cas['bistable_potential_u']:.3f}|STATE:{cas['regime_state']}|"
+                f"POST_FREE:{cas['post_move_free_bytes'] // (1024**3)}GB"
+            )
+            return {
+                "ok": True,
+                "backend": "python_fastmft_fallback",
+                "mode": "advise",
+                "elapsed_ms": round((time.perf_counter() - t0) * 1000.0, 2),
+                "casimir": cas,
+                "relocation_candidates": [],
+                "projects": projects[:top],
+                "ucip_compact": ucip_line,
+            }
+
+        # Default mode == "projects"
+        parasites = _scan_parasites_local(tgt, all_parasite_names)
+        total_p_bytes = sum(int(p["bytes"]) for p in parasites)
+        raw_stdout = ""
+        backend = "python_fastmft_fallback"
+        if fm_bin and os.name == "nt":
+            proc = subprocess.run(
+                [fm_bin, "projects", str(tgt), "--parasites", "--top", str(max(1, int(top)))],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=60,
+                check=False,
+            )
+            if proc.returncode == 0:
+                backend = "fastmft_v1.3.0"
+                raw_stdout = (proc.stdout or "")[:3000]
+
+        projects_list: List[Dict[str, Any]] = []
+        for dirpath, dirnames, filenames in os.walk(tgt):
+            markers = []
+            for name in list(dirnames) + list(filenames):
+                tag = project_markers.get(name.lower())
+                if tag and tag not in markers:
+                    markers.append(tag)
+            if markers:
+                projects_list.append({
+                    "path": Path(dirpath).relative_to(ws).as_posix() or ".",
+                    "markers": markers,
+                })
+            dirnames[:] = [d for d in dirnames if d not in all_parasite_names and d != ".git"]
+
+        elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+        p_sig = ",".join(f"{p['rel_path']}:{p['bytes']//1024}K" for p in parasites[:8]) or "none"
+        ucip_proj = f"§UCIP:PROJECTS|ROOT:{tgt.name}|BACKEND:{backend}|MS:{elapsed_ms}|PROJS:{len(projects_list)}|PARASITES_KB:{total_p_bytes//1024}|TOP:{p_sig}"
+        return {
+            "ok": True,
+            "backend": backend,
+            "mode": "projects",
+            "elapsed_ms": elapsed_ms,
+            "projects_found": len(projects_list),
+            "projects": projects_list[:top],
+            "parasite_count": len(parasites),
+            "total_parasite_bytes": total_p_bytes,
+            "parasites": parasites[:top],
+            "ucip_compact": ucip_proj,
+            "native_report_excerpt": raw_stdout,
+        }
+
+    @classmethod
     def execute_rail(
         cls,
         rail_name: str,
@@ -1487,5 +1734,13 @@ class DeterministicTaskOffloader:
             return cls.os_sql_query(
                 ws,
                 sql=str(args.get("sql", "SELECT path, size_bytes FROM files ORDER BY size_bytes DESC LIMIT 20")),
+            )
+        if rail_name == "fastmft_radar":
+            return cls.fastmft_radar(
+                ws,
+                mode=str(args.get("mode", "projects")),
+                target=str(args.get("target", ".")),
+                top=int(args.get("top", 20)),
+                dry_run=bool(args.get("dry_run", True)),
             )
         return cls.run_preflight_bundle(ws, max_chars=int(args.get("max_chars", 3500)))

@@ -1495,3 +1495,64 @@ def test_v44_ssrf_domain_guard_timetravel_guardrails_spill_schema_handoff_dag_ot
     finally:
         import shutil
         shutil.rmtree(ws_dir, ignore_errors=True)
+
+
+def test_v45_fastmft_symbiosis_casimir_ucip_parasites(tmp_path: Path) -> None:
+    """Verify Rail 26 (fastmft_radar): Casimir bistable math, UCIP output, project radar, and safe parasite cleanup."""
+    from am_ua.execution.agent_loop import WorkspaceTools
+    from am_ua.execution.deterministic_offloader import BUILTIN_DETERMINISTIC_RAILS, DeterministicTaskOffloader
+    from am_ua.governance.homeostasis import casimir_bistable_diagnostics
+    from am_ua.governance.seal_guard import ConstitutionSealGuard
+
+    # 1. Rail 26 registered & zero-token matcher
+    assert "fastmft_radar" in BUILTIN_DETERMINISTIC_RAILS
+    assert len(BUILTIN_DETERMINISTIC_RAILS) >= 26
+    assert DeterministicTaskOffloader.match_zero_token_rail("run fastmft casimir disk radar") == "fastmft_radar"
+
+    # 2. Casimir-Helmholtz-Langevin bistable model across all 3 physical regimes
+    stable = casimir_bistable_diagnostics(300 * 1024**3, 1000 * 1024**3)
+    threshold = casimir_bistable_diagnostics(100 * 1024**3, 1000 * 1024**3)
+    critical = casimir_bistable_diagnostics(20 * 1024**3, 1000 * 1024**3, reclaimable_bytes=50 * 1024**3)
+    assert stable["regime_state"] == "ESTAVEL_POCO_LOCAL"
+    assert threshold["regime_state"] == "LIMIAR_BIESTAVEL_MIGRACAO"
+    assert critical["regime_state"] == "COLAPSO_CASIMIR_CRITICO"
+    assert abs(critical["casimir_force_fc"]) > abs(threshold["casimir_force_fc"]) > abs(stable["casimir_force_fc"])
+    assert critical["post_move_gap_d"] > critical["normalized_gap_d"]
+
+    # 3. End-to-end WorkspaceTools execution in isolated workspace
+    ws_dir = tmp_path / "fastmft_ws"
+    ws_dir.mkdir(parents=True, exist_ok=True)
+    (ws_dir / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+    (ws_dir / "main.py").write_text("print('ok')\n", encoding="utf-8")
+    pycache = ws_dir / "__pycache__"
+    pycache.mkdir()
+    (pycache / "main.cpython-311.pyc").write_bytes(b"\x00" * 4096)
+    ptcache = ws_dir / ".pytest_cache"
+    ptcache.mkdir()
+    (ptcache / "README.md").write_text("pytest cache\n", encoding="utf-8")
+
+    wt = WorkspaceTools(ws_dir, ConstitutionSealGuard(r"F:\AetherMind_Universal_Agent"))
+
+    # 3a. mode="projects"
+    proj_res = wt.deterministic_exec({"action": "fastmft_radar", "params": {"mode": "projects", "target": "."}})
+    assert proj_res["ok"] is True
+    assert proj_res["projects_found"] >= 1
+    assert proj_res["parasite_count"] >= 2
+    assert proj_res["total_parasite_bytes"] >= 4096
+    assert "§UCIP:PROJECTS" in proj_res["ucip_compact"]
+
+    # 3b. mode="advise" (Casimir + UCIP)
+    adv_res = wt.deterministic_exec({"action": "fastmft_radar", "params": {"mode": "advise", "target": "."}})
+    assert adv_res["ok"] is True
+    assert "casimir" in adv_res and "regime_state" in adv_res["casimir"]
+    assert "§UCIP:1.2" in adv_res["ucip_compact"]
+
+    # 3c. mode="clean_parasites" dry_run=True (preserves) then dry_run=False (removes safely)
+    dry_res = wt.deterministic_exec({"action": "fastmft_radar", "params": {"mode": "clean_parasites", "dry_run": True}})
+    assert dry_res["ok"] is True and dry_res["removed_count"] == 0 and dry_res["parasite_count"] == 2
+    assert pycache.exists() and ptcache.exists()
+
+    clean_res = wt.deterministic_exec({"action": "fastmft_radar", "params": {"mode": "clean_parasites", "dry_run": False}})
+    assert clean_res["ok"] is True and clean_res["removed_count"] == 2 and clean_res["reclaimed_bytes"] >= 4096
+    assert not pycache.exists() and not ptcache.exists()
+    assert (ws_dir / "pyproject.toml").is_file() and (ws_dir / "main.py").is_file()
