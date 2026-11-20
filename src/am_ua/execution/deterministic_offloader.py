@@ -171,6 +171,11 @@ BUILTIN_DETERMINISTIC_RAILS: Dict[str, DeterministicRailSpec] = {
         description="Ultra-fast NTFS/filesystem topology radar, Casimir bistable storage diagnostics, ARIA 7-lens advise, UCIP compression, and build parasite detection/cleanup via fastmft v1.3.0.",
         estimated_tokens_saved=6500,
     ),
+    "ledger_audit": DeterministicRailSpec(
+        name="ledger_audit",
+        description="Deterministic double-entry accounting ledger verifier using exact Decimal math (zero floating-point error) for journal balance and reconciliation.",
+        estimated_tokens_saved=4500,
+    ),
 }
 
 # Never intercept tasks that ask to modify, create, fix, or refactor code.
@@ -1743,4 +1748,88 @@ class DeterministicTaskOffloader:
                 top=int(args.get("top", 20)),
                 dry_run=bool(args.get("dry_run", True)),
             )
+        if rail_name == "ledger_audit":
+            return cls.ledger_audit(
+                entries=args.get("entries"),
+                file_path=args.get("file_path"),
+                workspace=ws,
+            )
         return cls.run_preflight_bundle(ws, max_chars=int(args.get("max_chars", 3500)))
+
+    @classmethod
+    def ledger_audit(
+        cls,
+        *,
+        entries: Optional[List[Dict[str, Any]]] = None,
+        file_path: Optional[str] = None,
+        workspace: Optional[Path] = None,
+    ) -> Dict[str, Any]:
+        """Rillet/Basis-style deterministic double-entry accounting ledger verifier using exact Decimal math."""
+        from decimal import Decimal, InvalidOperation
+
+        rows: List[Dict[str, Any]] = []
+        if entries is not None:
+            rows = list(entries)
+        elif file_path and workspace is not None:
+            p = _resolve_in_workspace(Path(workspace).resolve(), str(file_path))
+            if not p.is_file():
+                return {"ok": False, "error": f"Ledger file not found: {file_path}"}
+            if p.suffix.lower() == ".json":
+                loaded = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+                rows = loaded if isinstance(loaded, list) else list(loaded.get("entries", []))
+            else:
+                with p.open("r", encoding="utf-8", errors="replace", newline="") as fh:
+                    rows = list(csv.DictReader(fh))
+        else:
+            return {"ok": False, "error": "Provide 'entries' list or 'file_path' (.json/.csv) for ledger_audit"}
+
+        total_debits = Decimal("0")
+        total_credits = Decimal("0")
+        by_tx: Dict[str, Dict[str, Decimal]] = {}
+        account_balances: Dict[str, Decimal] = {}
+        parse_errors: List[str] = []
+
+        for idx, row in enumerate(rows):
+            tx_id = str(row.get("tx_id") or row.get("journal_id") or f"tx_{idx}")
+            acct = str(row.get("account") or "UNSPECIFIED")
+            try:
+                debit = Decimal(str(row.get("debit") or "0"))
+                credit = Decimal(str(row.get("credit") or "0"))
+            except (InvalidOperation, ValueError) as exc:
+                parse_errors.append(f"Row {idx} ({tx_id}): invalid decimal ({exc})")
+                continue
+            if debit < 0 or credit < 0:
+                parse_errors.append(f"Row {idx} ({tx_id}): negative debit/credit not allowed")
+                continue
+            total_debits += debit
+            total_credits += credit
+            bucket = by_tx.setdefault(tx_id, {"debit": Decimal("0"), "credit": Decimal("0")})
+            bucket["debit"] += debit
+            bucket["credit"] += credit
+            account_balances[acct] = account_balances.get(acct, Decimal("0")) + (debit - credit)
+
+        unbalanced_txs = [
+            {
+                "tx_id": tid,
+                "debit": str(b["debit"]),
+                "credit": str(b["credit"]),
+                "delta": str(b["debit"] - b["credit"]),
+            }
+            for tid, b in sorted(by_tx.items())
+            if b["debit"] != b["credit"]
+        ]
+        net_delta = total_debits - total_credits
+        balanced = (net_delta == Decimal("0")) and not unbalanced_txs and not parse_errors
+        return {
+            "ok": balanced,
+            "backend": "decimal_double_entry_ledger",
+            "entries_checked": len(rows),
+            "transactions_checked": len(by_tx),
+            "total_debits": str(total_debits),
+            "total_credits": str(total_credits),
+            "net_delta": str(net_delta),
+            "balanced": balanced,
+            "unbalanced_transactions": unbalanced_txs[:50],
+            "parse_errors": parse_errors[:50],
+            "account_balances": {k: str(v) for k, v in sorted(account_balances.items())},
+        }

@@ -135,7 +135,22 @@ def main(argv: list[str] | None = None) -> int:
     p_det.add_argument("--workspace", default=str(ROOT), help="Target workspace directory")
     p_det.add_argument("--params", default="{}", help="JSON params object for the deterministic rail")
 
+    p_a2a = sub.add_parser("a2a-serve", help="Run Agent2Agent (A2A) interoperability server or emit AgentCard JSON")
+    p_a2a.add_argument("--host", default="127.0.0.1")
+    p_a2a.add_argument("--port", type=int, default=8788)
+    p_a2a.add_argument("--auth-token", default=None)
+    p_a2a.add_argument("--card-only", action="store_true", help="Print /.well-known/agent.json AgentCard and exit")
+
     args = parser.parse_args(argv)
+    if args.cmd == "a2a-serve":
+        from am_ua.execution.a2a_protocol import AgentCard, OmniA2AServer
+        srv = OmniA2AServer(card=AgentCard(url=f"http://{args.host}:{args.port}"))
+        if args.card_only:
+            print(json.dumps(srv.get_agent_card(), indent=2, ensure_ascii=False))
+            return 0
+        tok = args.auth_token or os.environ.get("OMNI_RPC_TOKEN")
+        srv.serve_http(host=args.host, port=args.port, auth_token=tok)
+        return 0
     if args.cmd == "mcp-serve":
         from am_ua.execution.acp_adapter import StreamableHTTPJsonRpcServer
         from am_ua.execution.mcp_federation import AetherMindMCPServer

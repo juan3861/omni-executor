@@ -11,7 +11,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 _SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "venv", "third_party"}
@@ -32,6 +32,9 @@ class HierarchicalKnowledgeIndex:
         self.nodes: List[Dict[str, Any]] = []
         self.entity_links: Dict[str, Set[str]] = {}
         self._file_hashes: Dict[str, str] = {}
+        self.dir_hashes: Dict[str, str] = {}
+        self.merkle_root: str = ""
+        self._acl_policies: Dict[str, Set[str]] = {}
         self.build()
 
     def build(self) -> int:
@@ -60,7 +63,47 @@ class HierarchicalKnowledgeIndex:
                 rel = str(fp.relative_to(self.root)).replace("\\", "/")
                 self._file_hashes[rel] = hashlib.sha256(raw_bytes).hexdigest()
                 self._index_file(rel, fp.suffix.lower(), text)
+        self._recompute_merkle_tree()
         return len(self.nodes)
+
+    def _recompute_merkle_tree(self) -> str:
+        """Compute Cursor-style directory Merkle tree hashes and root SHA-256."""
+        import hashlib
+
+        by_dir: Dict[str, List[Tuple[str, str]]] = {}
+        for rel, fhash in sorted(self._file_hashes.items()):
+            parent = str(Path(rel).parent).replace("\\", "/")
+            if parent == ".":
+                parent = ""
+            by_dir.setdefault(parent, []).append((rel, fhash))
+
+        self.dir_hashes = {}
+        for d, items in sorted(by_dir.items()):
+            h = hashlib.sha256()
+            for rel, fh in items:
+                h.update(f"{rel}:{fh}\n".encode("utf-8"))
+            self.dir_hashes[d or "."] = h.hexdigest()
+
+        root_h = hashlib.sha256()
+        for d, dh in sorted(self.dir_hashes.items()):
+            root_h.update(f"{d}={dh}\n".encode("utf-8"))
+        self.merkle_root = root_h.hexdigest()
+        return self.merkle_root
+
+    def set_acl_policy(self, path_prefix: str, allowed_scopes: Set[str] | List[str]) -> None:
+        """Register Glean-style ACL/RBAC scopes required to retrieve nodes under `path_prefix`."""
+        norm = path_prefix.replace("\\", "/").lstrip("./")
+        self._acl_policies[norm] = {str(s).strip() for s in allowed_scopes if str(s).strip()}
+
+    def _is_file_allowed_for_principal(self, rel: str, principal_scopes: Optional[Set[str]]) -> bool:
+        if principal_scopes is None:
+            return True
+        norm = rel.replace("\\", "/").lstrip("./")
+        for prefix, required in self._acl_policies.items():
+            if norm == prefix or norm.startswith(prefix.rstrip("/") + "/"):
+                if not (set(principal_scopes) & required):
+                    return False
+        return True
 
     def _index_file(self, rel: str, ext: str, text: str) -> None:
         lines = text.splitlines()
@@ -113,12 +156,23 @@ class HierarchicalKnowledgeIndex:
             if len(t) >= 4:
                 self.entity_links.setdefault(t, set()).add(rel)
 
-    def query(self, question: str, *, top_k: int = 5) -> Dict[str, Any]:
+    def query(
+        self,
+        question: str,
+        *,
+        top_k: int = 5,
+        principal_scopes: Optional[Set[str] | List[str]] = None,
+    ) -> Dict[str, Any]:
+        scopes_set = {str(s) for s in principal_scopes} if principal_scopes is not None else None
         q_toks = set(_TOKEN_RX.findall((question or "").lower()))
         if not q_toks:
-            return {"ok": True, "node_count": len(self.nodes), "hits": [], "related_files": []}
+            return {"ok": True, "node_count": len(self.nodes), "hits": [], "related_files": [], "merkle_root": self.merkle_root}
         scored: List[Tuple[float, Dict[str, Any]]] = []
+        acl_filtered = 0
         for n in self.nodes:
+            if not self._is_file_allowed_for_principal(n["file"], scopes_set):
+                acl_filtered += 1
+                continue
             overlap = len(q_toks & n["_tokens"])
             if overlap == 0:
                 continue
@@ -140,12 +194,16 @@ class HierarchicalKnowledgeIndex:
         ]
         related: Set[str] = set()
         for t in q_toks:
-            related.update(self.entity_links.get(t, set()))
+            for rf in self.entity_links.get(t, set()):
+                if self._is_file_allowed_for_principal(rf, scopes_set):
+                    related.add(rf)
         return {
             "ok": True,
             "node_count": len(self.nodes),
             "hits": hits,
             "related_files": sorted(related)[:12],
+            "acl_filtered_nodes": acl_filtered,
+            "merkle_root": self.merkle_root,
         }
 
     def sync_changes(self) -> Dict[str, Any]:
@@ -194,14 +252,23 @@ class HierarchicalKnowledgeIndex:
                 for t in list(n["_tokens"])[:25]:
                     if len(t) >= 4:
                         self.entity_links.setdefault(t, set()).add(n["file"])
+            self._recompute_merkle_tree()
 
+        unchanged_count = max(0, len(self._file_hashes) - len(added) - len(updated))
         return {
             "ok": True,
             "added": added,
             "updated": updated,
             "removed": removed,
+            "unchanged_count": unchanged_count,
+            "merkle_root": self.merkle_root,
+            "dir_count": len(self.dir_hashes),
             "node_count": len(self.nodes),
         }
+
+    def sync_incremental(self) -> Dict[str, Any]:
+        """Alias for Merkle-tree incremental delta sync (`sync_changes`)."""
+        return self.sync_changes()
 
     def export_mermaid_graph(self, *, max_edges: int = 24) -> str:
         """Archify / Understand-Anything style Mermaid architecture graph synthesis over indexed files."""

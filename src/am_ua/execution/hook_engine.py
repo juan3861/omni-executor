@@ -668,3 +668,73 @@ class DeterministicHookEngine:
             except Exception as exc:
                 annotations[name] = {"hook_error": str(exc)[:200]}
         return annotations
+
+
+_PII_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
+    ("brazilian_cpf", re.compile(r"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b")),
+    ("us_ssn", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
+    ("credit_card", re.compile(r"\b(?:\d[ -]*?){13,16}\b")),
+    ("private_key_block", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")),
+    ("bearer_secret", re.compile(r"\b(?:sk-[A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})\b")),
+)
+
+
+@dataclass(frozen=True)
+class SupervisorVerdict:
+    """Result from independent parallel policy & DLP supervisor (Sierra / OpenAI SDK / Harvey)."""
+
+    allowed: bool
+    veto_reasons: Tuple[str, ...] = ()
+    redacted_text: str = ""
+    pii_hits: Tuple[str, ...] = ()
+    zero_retention: bool = False
+
+
+class ParallelPolicySupervisor:
+    """Runs independent policy, DLP/PII redaction, and zero-retention checks in parallel."""
+
+    def __init__(self, *, zero_retention: bool = False, block_on_pii: bool = True) -> None:
+        self.zero_retention = bool(zero_retention)
+        self.block_on_pii = bool(block_on_pii)
+        self._custom_rules: List[Tuple[str, Callable[[str], Optional[str]]]] = []
+
+    def register_rule(self, name: str, fn: Callable[[str], Optional[str]]) -> None:
+        """Register a custom policy check returning a violation reason string or None."""
+        self._custom_rules.append((name, fn))
+
+    def _scan_pii(self, text: str) -> Tuple[List[str], str]:
+        hits: List[str] = []
+        redacted = text
+        for label, rx in _PII_PATTERNS:
+            if rx.search(redacted):
+                hits.append(label)
+                redacted = rx.sub(f"[REDACTED_{label.upper()}]", redacted)
+        return hits, redacted
+
+    def audit_parallel(self, payload_text: str) -> SupervisorVerdict:
+        """Evaluate DLP/PII and custom policy rules concurrently with immediate veto semantics."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        text = str(payload_text or "")
+        veto_reasons: List[str] = []
+        pii_hits: List[str] = []
+        redacted_text = text
+
+        with ThreadPoolExecutor(max_workers=max(2, len(self._custom_rules) + 1)) as pool:
+            pii_fut = pool.submit(self._scan_pii, text)
+            rule_futs = [(name, pool.submit(fn, text)) for name, fn in self._custom_rules]
+            pii_hits, redacted_text = pii_fut.result()
+            if pii_hits and self.block_on_pii:
+                veto_reasons.append(f"DLP/PII violation detected: {', '.join(pii_hits)}")
+            for name, fut in rule_futs:
+                reason = fut.result()
+                if reason:
+                    veto_reasons.append(f"Policy '{name}': {reason}")
+
+        return SupervisorVerdict(
+            allowed=(len(veto_reasons) == 0),
+            veto_reasons=tuple(veto_reasons),
+            redacted_text=redacted_text,
+            pii_hits=tuple(pii_hits),
+            zero_retention=self.zero_retention,
+        )

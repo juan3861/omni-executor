@@ -1195,6 +1195,102 @@ class AgentLoop:
             raise ValueError(f"Illegal AgentLoop state transition: {current} -> {target}")
         return target
 
+    PLAN_MODE_FORBIDDEN_TOOLS: frozenset[str] = frozenset({
+        "write_file",
+        "replace_in_file",
+        "run",
+        "pc_act",
+        "pc_window",
+        "browser_act",
+        "skill_forge",
+        "skill_run",
+        "restore_checkpoint",
+        "mcp_call",
+    })
+
+    @classmethod
+    def assert_tool_allowed_in_mode(cls, tool_name: str, mode: str = "act") -> None:
+        """Cline/Roo-style strict Plan vs Act execution gate at kernel level."""
+        m = (mode or "act").strip().lower()
+        if m == "plan" and tool_name in cls.PLAN_MODE_FORBIDDEN_TOOLS:
+            raise PermissionError(f"Tool '{tool_name}' is strictly blocked in PLAN (read-only) mode")
+
+    @staticmethod
+    def sync_todo_anchor(
+        workspace: Path,
+        objective: str,
+        tasks: List[Dict[str, str]],
+        *,
+        filename: str = ".omni_todo.md",
+    ) -> Path:
+        """Manus-style external plan state anchor (`todo.md`) rewritten on milestones to prevent context drift."""
+        ws = Path(workspace).resolve()
+        p = (ws / filename).resolve()
+        if ws not in p.parents and p != ws:
+            raise PermissionError(f"todo anchor escapes workspace: {filename}")
+        lines = [f"# Mission Plan Anchor", f"", f"**Objective:** {objective}", f""]
+        for t in tasks:
+            st = str(t.get("status", "pending")).lower()
+            box = "[x]" if st in ("done", "completed", "verified") else ("[-]" if st in ("in_progress", "active") else "[ ]")
+            lines.append(f"- {box} `{t.get('id', '?')}` {t.get('title', '')} ({st})")
+        p.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+        return p
+
+    @staticmethod
+    def export_event_stream(events: List[Dict[str, Any]], out_path: Path) -> Path:
+        """OpenHands/Giga-style 100% reproducible Action -> Observation JSONL event stream export."""
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with out_path.open("w", encoding="utf-8", newline="\n") as fh:
+            for idx, ev in enumerate(events, 1):
+                rec = {"seq": idx, **ev}
+                fh.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+        return out_path
+
+    @staticmethod
+    def replay_event_stream(jsonl_path: Path) -> Dict[str, Any]:
+        """Deterministically replay and audit an exported Action -> Observation JSONL stream."""
+        records: List[Dict[str, Any]] = []
+        actions = 0
+        observations = 0
+        for raw in Path(jsonl_path).read_text(encoding="utf-8", errors="replace").splitlines():
+            if not raw.strip():
+                continue
+            item = json.loads(raw)
+            records.append(item)
+            kind = str(item.get("kind") or item.get("type") or "").lower()
+            if kind == "action":
+                actions += 1
+            elif kind == "observation":
+                observations += 1
+        return {
+            "ok": True,
+            "event_count": len(records),
+            "action_count": actions,
+            "observation_count": observations,
+            "records": records,
+        }
+
+    @staticmethod
+    def run_self_review_diff_gate(workspace: Path) -> Dict[str, Any]:
+        """Devin / Claude Agent SDK mandatory pre-finish self-review gate (syntax + SAST + git diff)."""
+        from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
+        from am_ua.security.agent_shield import AgentShieldAuditor
+
+        ws = Path(workspace).resolve()
+        syn = DeterministicTaskOffloader.ast_syntax_sweep(ws)
+        shield = AgentShieldAuditor().scan_directory(ws, include_source_sast=True)
+        git_info = DeterministicTaskOffloader.git_forensics(ws)
+        passed = bool(syn.get("ok")) and bool(shield.passed)
+        return {
+            "ok": passed,
+            "passed": passed,
+            "syntax_ok": bool(syn.get("ok")),
+            "syntax_errors": syn.get("syntax_errors", []),
+            "shield_grade": shield.grade,
+            "shield_findings": len(shield.findings),
+            "git_diff_stat": git_info.get("diff_stat", ""),
+        }
+
     TOOL_EFFECTS = {
         "list_dir": EffectClass.PURE_READ,
         "read_file": EffectClass.PURE_READ,

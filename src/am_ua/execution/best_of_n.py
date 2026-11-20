@@ -15,10 +15,12 @@ Assimilates `simular-ai/Agent-S` (Agent S2.5 / S3) Behavior Best-of-N (`bBoN`):
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import time
 import uuid
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -84,6 +86,40 @@ class BehaviorBestOfNEngine:
         self.scratch_root.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
+    def _is_git_repo(ws: Path) -> bool:
+        return (ws / ".git").exists()
+
+    @staticmethod
+    def _prepare_candidate_workspace(src: Path, dst: Path, *, use_git_worktree: bool = True) -> bool:
+        """Prepare an isolated candidate workspace using fast `git worktree` when possible, else `copytree`."""
+        if dst.exists():
+            shutil.rmtree(dst, ignore_errors=True)
+        if use_git_worktree and BehaviorBestOfNEngine._is_git_repo(src):
+            proc = subprocess.run(
+                ["git", "-C", str(src), "worktree", "add", "--detach", str(dst)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if proc.returncode == 0 and dst.is_dir():
+                return True
+        BehaviorBestOfNEngine._copy_workspace(src, dst)
+        return False
+
+    @staticmethod
+    def _cleanup_worktree(src: Path, dst: Path) -> None:
+        subprocess.run(
+            ["git", "-C", str(src), "worktree", "remove", "--force", str(dst)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        if dst.exists():
+            shutil.rmtree(dst, ignore_errors=True)
+
+    @staticmethod
     def _copy_workspace(src: Path, dst: Path) -> None:
         if dst.exists():
             shutil.rmtree(dst, ignore_errors=True)
@@ -94,13 +130,22 @@ class BehaviorBestOfNEngine:
         )
 
     @staticmethod
-    def _sync_winner_to_workspace(winner_ws: Path, target_ws: Path, changed_files: List[str]) -> List[str]:
+    def _sync_winner_to_workspace(
+        winner_ws: Path,
+        target_ws: Path,
+        changed_files: List[str],
+        *,
+        post_sync_verify_fn: Optional[Callable[[Path], bool]] = None,
+    ) -> Tuple[List[str], bool]:
+        """Atomically sync winner files with backup & automatic rollback if post_sync_verify_fn fails."""
+        backups: Dict[Path, Optional[bytes]] = {}
         synced: List[str] = []
         for rel in changed_files:
             src_f = (winner_ws / rel).resolve()
             dst_f = (target_ws / rel).resolve()
             if target_ws not in dst_f.parents and dst_f != target_ws:
                 continue
+            backups[dst_f] = dst_f.read_bytes() if dst_f.is_file() else None
             if src_f.is_file():
                 dst_f.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src_f, dst_f)
@@ -108,7 +153,20 @@ class BehaviorBestOfNEngine:
             elif not src_f.exists() and dst_f.is_file():
                 dst_f.unlink()
                 synced.append(rel)
-        return synced
+
+        rolled_back = False
+        if post_sync_verify_fn is not None and synced:
+            if not bool(post_sync_verify_fn(target_ws)):
+                for dst_f, old_bytes in backups.items():
+                    if old_bytes is None:
+                        if dst_f.exists():
+                            dst_f.unlink()
+                    else:
+                        dst_f.parent.mkdir(parents=True, exist_ok=True)
+                        dst_f.write_bytes(old_bytes)
+                synced = []
+                rolled_back = True
+        return synced, rolled_back
 
     @staticmethod
     def score_candidate(cand: RolloutCandidate) -> float:
@@ -129,20 +187,22 @@ class BehaviorBestOfNEngine:
         n: int = 3,
         early_stop_on_first_verified: bool = False,
         use_llm_judge: bool = True,
+        parallel: bool = True,
+        use_git_worktree: bool = True,
+        post_sync_verify_fn: Optional[Callable[[Path], bool]] = None,
     ) -> Dict[str, Any]:
-        """Run up to `n` isolated rollouts of `runner_fn(candidate_ws, idx)` and apply the winner."""
+        """Run up to `n` isolated rollouts (parallel git worktrees or copies) and atomically apply the winner."""
         target_ws = Path(workspace).resolve()
         n_clamped = min(max(1, int(n)), 5)
         batch_id = f"bbon-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
         batch_dir = self.scratch_root / batch_id
         batch_dir.mkdir(parents=True, exist_ok=True)
 
-        candidates: List[RolloutCandidate] = []
-        for idx in range(1, n_clamped + 1):
-            cand_id = f"cand_{idx}"
-            cand_ws = batch_dir / cand_id
-            self._copy_workspace(target_ws, cand_ws)
+        worktree_paths: List[Path] = []
+        used_worktrees = False
 
+        def _exec_one(idx: int, cand_ws: Path) -> RolloutCandidate:
+            cand_id = f"cand_{idx}"
             res = runner_fn(cand_ws, idx)
             if hasattr(res, "status"):
                 status = str(res.status)
@@ -176,71 +236,106 @@ class BehaviorBestOfNEngine:
                 summary=summary,
             )
             cand.composite_score = self.score_candidate(cand)
-            candidates.append(cand)
+            return cand
 
-            if early_stop_on_first_verified and passed:
-                break
-
-        passing = [c for c in candidates if c.passed_oracle]
-        pool = passing if passing else candidates
-        pool.sort(key=lambda c: c.composite_score, reverse=True)
-        winner = pool[0]
-        judge_rationale = "Selected by deterministic composite score (oracle + minimal turns + clean diff)."
-
-        if len(passing) >= 2 and use_llm_judge and self.llm is not None:
-            try:
-                cand_desc = [
-                    {
-                        "candidate_id": c.candidate_id,
-                        "turns": c.turns,
-                        "changed_files": c.changed_files,
-                        "summary": c.summary[:400],
-                        "diff": c.diff[:3000],
-                    }
-                    for c in passing
-                ]
-                resp = self.llm.chat(
-                    [
-                        {"role": "system", "content": COMPARATIVE_JUDGE_PROMPT},
-                        {
-                            "role": "user",
-                            "content": f"OBJECTIVE:\n{objective}\n\nCANDIDATES:\n{json.dumps(cand_desc, ensure_ascii=False)}",
-                        },
-                    ],
-                    max_tokens=500,
-                    temperature=0.0,
-                    json_mode=True,
-                )
-                parsed = extract_json_object(resp.text)
-                picked_id = str(parsed.get("winner_candidate_id", ""))
-                for c in passing:
-                    if c.candidate_id == picked_id:
-                        winner = c
-                        judge_rationale = str(parsed.get("rationale") or judge_rationale)
+        candidates: List[RolloutCandidate] = []
+        try:
+            if parallel and not early_stop_on_first_verified and n_clamped > 1:
+                prepared: List[Tuple[int, Path]] = []
+                for idx in range(1, n_clamped + 1):
+                    cand_ws = batch_dir / f"cand_{idx}"
+                    is_wt = self._prepare_candidate_workspace(target_ws, cand_ws, use_git_worktree=use_git_worktree)
+                    if is_wt:
+                        used_worktrees = True
+                        worktree_paths.append(cand_ws)
+                    prepared.append((idx, cand_ws))
+                with ThreadPoolExecutor(max_workers=n_clamped) as pool_exec:
+                    futs = {pool_exec.submit(_exec_one, idx, ws_p): idx for idx, ws_p in prepared}
+                    for fut in as_completed(futs):
+                        candidates.append(fut.result())
+                candidates.sort(key=lambda c: c.candidate_id)
+            else:
+                for idx in range(1, n_clamped + 1):
+                    cand_ws = batch_dir / f"cand_{idx}"
+                    is_wt = self._prepare_candidate_workspace(target_ws, cand_ws, use_git_worktree=use_git_worktree)
+                    if is_wt:
+                        used_worktrees = True
+                        worktree_paths.append(cand_ws)
+                    cand = _exec_one(idx, cand_ws)
+                    candidates.append(cand)
+                    if early_stop_on_first_verified and cand.passed_oracle:
                         break
-            except Exception:
-                pass
 
-        synced_files: List[str] = []
-        if winner.changed_files:
-            synced_files = self._sync_winner_to_workspace(
-                Path(winner.workspace_path), target_ws, winner.changed_files
-            )
+            passing = [c for c in candidates if c.passed_oracle]
+            pool = passing if passing else candidates
+            pool.sort(key=lambda c: c.composite_score, reverse=True)
+            winner = pool[0]
+            judge_rationale = "Selected by deterministic composite score (oracle + minimal turns + clean diff)."
 
-        return {
-            "schema": "AETHERMIND_BBON_RESULT/v1",
-            "batch_id": batch_id,
-            "n_requested": n_clamped,
-            "n_executed": len(candidates),
-            "passing_count": len(passing),
-            "winner_candidate_id": winner.candidate_id,
-            "winner_passed_oracle": winner.passed_oracle,
-            "winner_score": winner.composite_score,
-            "judge_rationale": judge_rationale,
-            "synced_files": synced_files,
-            "total_tokens_all_rollouts": sum(c.total_tokens for c in candidates),
-            "candidates": [c.to_dict() for c in candidates],
-        }
+            if len(passing) >= 2 and use_llm_judge and self.llm is not None:
+                try:
+                    cand_desc = [
+                        {
+                            "candidate_id": c.candidate_id,
+                            "turns": c.turns,
+                            "changed_files": c.changed_files,
+                            "summary": c.summary[:400],
+                            "diff": c.diff[:3000],
+                        }
+                        for c in passing
+                    ]
+                    resp = self.llm.chat(
+                        [
+                            {"role": "system", "content": COMPARATIVE_JUDGE_PROMPT},
+                            {
+                                "role": "user",
+                                "content": f"OBJECTIVE:\n{objective}\n\nCANDIDATES:\n{json.dumps(cand_desc, ensure_ascii=False)}",
+                            },
+                        ],
+                        max_tokens=500,
+                        temperature=0.0,
+                        json_mode=True,
+                    )
+                    parsed = extract_json_object(resp.text)
+                    picked_id = str(parsed.get("winner_candidate_id", ""))
+                    for c in passing:
+                        if c.candidate_id == picked_id:
+                            winner = c
+                            judge_rationale = str(parsed.get("rationale") or judge_rationale)
+                            break
+                except Exception:
+                    pass
+
+            synced_files: List[str] = []
+            rolled_back = False
+            if winner.changed_files:
+                synced_files, rolled_back = self._sync_winner_to_workspace(
+                    Path(winner.workspace_path),
+                    target_ws,
+                    winner.changed_files,
+                    post_sync_verify_fn=post_sync_verify_fn,
+                )
+
+            return {
+                "schema": "AETHERMIND_BBON_RESULT/v1",
+                "batch_id": batch_id,
+                "n_requested": n_clamped,
+                "n_executed": len(candidates),
+                "passing_count": len(passing),
+                "winner_candidate_id": winner.candidate_id,
+                "winner_passed_oracle": winner.passed_oracle,
+                "winner_score": winner.composite_score,
+                "judge_rationale": judge_rationale,
+                "synced_files": synced_files,
+                "rolled_back": rolled_back,
+                "used_git_worktree": used_worktrees,
+                "parallel_execution": parallel and not early_stop_on_first_verified and n_clamped > 1,
+                "total_tokens_all_rollouts": sum(c.total_tokens for c in candidates),
+                "candidates": [c.to_dict() for c in candidates],
+            }
+        finally:
+            for wt_p in worktree_paths:
+                self._cleanup_worktree(target_ws, wt_p)
 
     @staticmethod
     def score_gui_plan(plan: HierarchicalPlan) -> Tuple[float, str]:

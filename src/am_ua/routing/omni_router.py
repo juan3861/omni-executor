@@ -291,3 +291,122 @@ class UniversalCognitiveRouter:
         }
         self.telemetry_log.append({"ts": time.time(), "task_tier": task_tier, **decision})
         return decision
+
+
+@dataclass(frozen=True)
+class CognitiveSystemDecision:
+    """Dual-system cognitive routing decision (Figure Helix S1/S2 + Ema Mixture-of-Models)."""
+
+    system: str  # "SYSTEM_1" | "SYSTEM_2"
+    complexity_score: float
+    recommended_tier: str
+    use_best_of_n: bool
+    max_turns_hint: int
+    rationale: str
+
+
+_S2_COMPLEXITY_RX = re.compile(
+    r"\b(architect|arquitetura|refactor|refator|migrate|migra|security|seguranca|formal|z3|proof|prova|"
+    r"concurrent|concorren|distributed|distribu|kernel|optimize|otimiz|consensus|benchmark|multi-file|"
+    r"deadlock|cryptograph|compiler|compilador|synthesis|sintese)\b",
+    re.IGNORECASE,
+)
+
+
+def classify_cognitive_system(
+    objective: str,
+    *,
+    context_chars: int = 0,
+    risk_level: str = "LOW",
+) -> CognitiveSystemDecision:
+    """Route trivial/reflex tasks to System 1 (fast/cheap) and deep reasoning to System 2."""
+    text = (objective or "").strip()
+    risk_norm = (risk_level or "LOW").strip().upper()
+    s2_hits = len(_S2_COMPLEXITY_RX.findall(text))
+    score = 0.0
+    score += min(0.45, s2_hits * 0.18)
+    score += min(0.25, len(text) / 600.0)
+    score += min(0.20, max(0, int(context_chars)) / 40000.0)
+    if risk_norm in ("HIGH", "CRITICAL"):
+        score += 0.35
+    elif risk_norm == "MEDIUM":
+        score += 0.12
+
+    score = round(min(1.0, score), 3)
+    if score >= 0.45 or risk_norm in ("HIGH", "CRITICAL"):
+        return CognitiveSystemDecision(
+            system="SYSTEM_2",
+            complexity_score=score,
+            recommended_tier="deep_reasoning",
+            use_best_of_n=(score >= 0.65 or risk_norm == "CRITICAL"),
+            max_turns_hint=16,
+            rationale=f"High complexity/risk (score={score}, risk={risk_norm}, s2_hits={s2_hits}) -> System 2",
+        )
+    return CognitiveSystemDecision(
+        system="SYSTEM_1",
+        complexity_score=score,
+        recommended_tier="fast_reflex",
+        use_best_of_n=False,
+        max_turns_hint=4,
+        rationale=f"Low complexity/risk (score={score}, risk={risk_norm}) -> System 1 fast path",
+    )
+
+
+def verify_citation_grounding(
+    claims: List[str],
+    evidence_sources: Dict[str, str],
+    *,
+    min_token_overlap: float = 0.35,
+    min_grounded_ratio: float = 0.70,
+) -> Dict[str, Any]:
+    """PaperQA2 / Harvey-style deterministic citation grounding & calibrated abstention gate."""
+    tok_rx = re.compile(r"[a-z0-9_]{3,}")
+    source_tokens: Dict[str, set[str]] = {
+        src_id: set(tok_rx.findall((body or "").lower()))
+        for src_id, body in (evidence_sources or {}).items()
+    }
+    clean_claims = [c.strip() for c in (claims or []) if c and c.strip()]
+    if not clean_claims:
+        return {
+            "ok": False,
+            "verdict": "INSUFFICIENT_EVIDENCE",
+            "grounded_ratio": 0.0,
+            "grounded_count": 0,
+            "total_claims": 0,
+            "details": [],
+        }
+
+    details: List[Dict[str, Any]] = []
+    grounded_count = 0
+    for claim in clean_claims:
+        c_toks = set(tok_rx.findall(claim.lower()))
+        best_src = None
+        best_score = 0.0
+        if c_toks:
+            for src_id, s_toks in source_tokens.items():
+                if not s_toks:
+                    continue
+                overlap = len(c_toks & s_toks) / float(len(c_toks))
+                if overlap > best_score:
+                    best_score = overlap
+                    best_src = src_id
+        is_grounded = best_src is not None and best_score >= float(min_token_overlap)
+        if is_grounded:
+            grounded_count += 1
+        details.append({
+            "claim": claim[:200],
+            "grounded": is_grounded,
+            "best_source": best_src,
+            "overlap_score": round(best_score, 3),
+        })
+
+    ratio = round(grounded_count / float(len(clean_claims)), 3)
+    ok = ratio >= float(min_grounded_ratio)
+    return {
+        "ok": ok,
+        "verdict": "GROUNDED" if ok else "INSUFFICIENT_EVIDENCE",
+        "grounded_ratio": ratio,
+        "grounded_count": grounded_count,
+        "total_claims": len(clean_claims),
+        "details": details,
+    }

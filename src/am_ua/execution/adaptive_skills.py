@@ -413,3 +413,71 @@ def {clean_skill}(argv: Optional[Union[str, List[str]]] = None, timeout_s: float
         forged["discovered_subcommands"] = subcmds
         forged["discovered_flags"] = flags
         return forged
+
+    def compile_trajectory_to_skill(
+        self,
+        name: str,
+        description: str,
+        trajectory_steps: List[Dict[str, Any]],
+        *,
+        tags: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Simular/Decagon/n8n-style Trajectory-to-Skill Compiler (SOP Distillation).
+
+        Compiles a verified successful Action->Observation trajectory into a versioned,
+        AST-audited, SHA-256-sealed deterministic Python skill so future runs execute
+        at ~0 LLM token cost and millisecond latency.
+        """
+        clean_steps: List[Dict[str, Any]] = []
+        for idx, st in enumerate(trajectory_steps or []):
+            tool_name = str(st.get("tool") or st.get("action") or "").strip()
+            if not tool_name:
+                continue
+            clean_steps.append({
+                "step": idx + 1,
+                "tool": tool_name,
+                "args": dict(st.get("args") or st.get("params") or {}),
+                "expected_ok": bool(st.get("ok", True)),
+            })
+        if not clean_steps:
+            raise ValueError("Trajectory must contain at least one valid tool step to compile.")
+
+        clean_name = re.sub(r"[^a-z0-9_]+", "_", name.lower()).strip("_")
+        if not SKILL_NAME_RE.match(clean_name):
+            clean_name = f"sop_{clean_name or 'compiled'}"[:64]
+
+        steps_literal = repr(clean_steps)
+        code = f'''"""Compiled deterministic SOP skill distilled from verified trajectory."""
+from typing import Any, Callable, Dict, List, Optional
+
+COMPILED_STEPS: List[Dict[str, Any]] = {steps_literal}
+
+def {clean_name}(executor: Optional[Callable[[str, Dict[str, Any]], Dict[str, Any]]] = None, overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Replay compiled deterministic SOP steps without LLM reasoning overhead."""
+    ov = dict(overrides or {{}})
+    results: List[Dict[str, Any]] = []
+    for item in COMPILED_STEPS:
+        args = dict(item["args"])
+        for k, v in ov.items():
+            if k in args:
+                args[k] = v
+        if executor is None:
+            results.append({{"step": item["step"], "tool": item["tool"], "args": args, "status": "DRY_RUN_PLANNED"}})
+        else:
+            obs = executor(item["tool"], args)
+            ok = bool(obs.get("ok", True)) if isinstance(obs, dict) else True
+            results.append({{"step": item["step"], "tool": item["tool"], "ok": ok, "observation": obs}})
+            if item.get("expected_ok", True) and not ok:
+                return {{"ok": False, "failed_step": item["step"], "results": results}}
+    return {{"ok": True, "compiled_steps": len(COMPILED_STEPS), "results": results}}
+'''
+        merged_tags = sorted(set((tags or []) + ["compiled-sop", "zero-token-trajectory"]))
+        forged = self.forge_skill(
+            name=clean_name,
+            description=description or f"Compiled SOP skill ({len(clean_steps)} steps)",
+            code=code,
+            tags=merged_tags,
+            test_kwargs={"executor": None},
+        )
+        forged["compiled_step_count"] = len(clean_steps)
+        return forged
