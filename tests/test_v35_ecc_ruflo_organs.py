@@ -1419,6 +1419,30 @@ def test_v44_ssrf_domain_guard_timetravel_guardrails_spill_schema_handoff_dag_ot
         })
         assert cst_res["ok"] is True and cst_res["replacements"] == 1
         assert "def renamed_extra_fn" in (ws_dir / "sample_b.py").read_text(encoding="utf-8")
+
+        # 16. Wave 3 completion rails: replace_function_body + pytest_failure_diagnoser
+        rfb_res = wt.deterministic_exec({
+            "action": "replace_function_body",
+            "params": {
+                "file_path": "sample_b.py",
+                "func_name": "renamed_extra_fn",
+                "new_code": "return 42",
+            },
+        })
+        assert rfb_res["ok"] is True
+        assert "return 42" in (ws_dir / "sample_b.py").read_text(encoding="utf-8")
+
+        sample_pt_out = (
+            "___ test_round_cent ___\n"
+            "billing.py:14: in round_cent\n"
+            "E   AssertionError: assert 1.25 == 1.26\n"
+        )
+        diag_res = wt.deterministic_exec({
+            "action": "pytest_failure_diagnoser",
+            "params": {"raw_output": sample_pt_out},
+        })
+        assert diag_res["ok"] is False and diag_res["failure_count"] == 1
+        assert diag_res["failures"][0]["test"] == "test_round_cent"
     finally:
         import shutil
         shutil.rmtree(ws_dir, ignore_errors=True)

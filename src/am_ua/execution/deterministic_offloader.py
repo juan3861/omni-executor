@@ -125,6 +125,17 @@ BUILTIN_DETERMINISTIC_RAILS: Dict[str, DeterministicRailSpec] = {
         estimated_tokens_saved=4000,
         mutates_workspace=True,
     ),
+    "replace_function_body": DeterministicRailSpec(
+        name="replace_function_body",
+        description="Replace a Python function/method definition by AST symbol name without fragile text matching.",
+        estimated_tokens_saved=4500,
+        mutates_workspace=True,
+    ),
+    "pytest_failure_diagnoser": DeterministicRailSpec(
+        name="pytest_failure_diagnoser",
+        description="Run pytest (or parse pytest output) into structured failure records (test, file, line, assertion).",
+        estimated_tokens_saved=3500,
+    ),
 }
 
 # Never intercept tasks that ask to modify, create, fix, or refactor code.
@@ -752,6 +763,137 @@ class DeterministicTaskOffloader:
         return cls.structural_search_replace(ws, symbol_or_pattern=symbol_old, replacement=symbol_new, target=file_path)
 
     @classmethod
+    def replace_function_body(
+        cls,
+        workspace: Path,
+        *,
+        file_path: str,
+        func_name: str,
+        new_code: str,
+    ) -> Dict[str, Any]:
+        """Replace an entire Python function/method by AST symbol name (eliminates text-match/indentation errors)."""
+        ws = Path(workspace).resolve()
+        fp = _resolve_in_workspace(ws, file_path)
+        if not fp.is_file():
+            return {"ok": False, "error": f"File not found: {file_path}"}
+        if not func_name.strip():
+            return {"ok": False, "error": "missing 'func_name'"}
+
+        raw = fp.read_text(encoding="utf-8", errors="replace")
+        tree = ast.parse(raw, filename=str(fp))
+        target_node: Optional[ast.AST] = None
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name:
+                target_node = node
+                break
+        if target_node is None or not hasattr(target_node, "lineno") or not hasattr(target_node, "end_lineno"):
+            return {"ok": False, "error": f"Function '{func_name}' not found in {file_path}"}
+
+        lines = raw.splitlines()
+        start_idx = int(target_node.lineno) - 1
+        end_idx = int(target_node.end_lineno)  # 1-based inclusive -> slice end
+        orig_line = lines[start_idx]
+        indent = orig_line[: len(orig_line) - len(orig_line.lstrip(" \t"))]
+
+        import textwrap
+        dedented = textwrap.dedent(new_code).strip("\n")
+        if not dedented.lstrip().startswith(("def ", "async def ")):
+            # Treat new_code as body only: keep original signature line
+            sig_line = orig_line
+            indented_body = [
+                (indent + "    " + ln) if ln.strip() else ""
+                for ln in dedented.splitlines()
+            ]
+            replacement_lines = [sig_line, *indented_body]
+        else:
+            replacement_lines = [
+                (indent + ln) if ln.strip() else ""
+                for ln in dedented.splitlines()
+            ]
+
+        new_src = "\n".join(lines[:start_idx] + replacement_lines + lines[end_idx:]) + "\n"
+        try:
+            ast.parse(new_src, filename=str(fp))
+        except SyntaxError as exc:
+            return {"ok": False, "error": f"Replacement produced SyntaxError at line {exc.lineno}: {exc.msg}"}
+
+        fp.write_text(new_src, encoding="utf-8", newline="\n")
+        return {
+            "ok": True,
+            "file": fp.relative_to(ws).as_posix(),
+            "func_name": func_name,
+            "replaced_lines": [int(target_node.lineno), int(target_node.end_lineno)],
+        }
+
+    @staticmethod
+    def parse_pytest_output(raw_output: str) -> Dict[str, Any]:
+        """Parse raw pytest failure output into structured JSON records for flyweight LLMs."""
+        failures: List[Dict[str, Any]] = []
+        current_test: Optional[str] = None
+        current_loc: Optional[str] = None
+        current_err: List[str] = []
+
+        for ln in (raw_output or "").splitlines():
+            m_hdr = re.match(r"^_{3,}\s+([^\s_].*?)\s+_{3,}$", ln.strip())
+            if m_hdr:
+                if current_test:
+                    failures.append({
+                        "test": current_test,
+                        "location": current_loc,
+                        "detail": "\n".join(current_err[-6:]),
+                    })
+                current_test = m_hdr.group(1).strip()
+                current_loc = None
+                current_err = []
+                continue
+            if current_test:
+                if re.match(r"^[^\s].+\.py:\d+:", ln):
+                    current_loc = ln.strip()
+                elif ln.lstrip().startswith(("E   ", "AssertionError", "TypeError", "ValueError", "KeyError")):
+                    current_err.append(ln.strip())
+
+        if current_test:
+            failures.append({
+                "test": current_test,
+                "location": current_loc,
+                "detail": "\n".join(current_err[-6:]),
+            })
+
+        return {
+            "ok": len(failures) == 0,
+            "failure_count": len(failures),
+            "failures": failures[:15],
+        }
+
+    @classmethod
+    def pytest_failure_diagnoser(
+        cls,
+        workspace: Path,
+        *,
+        target: str = ".",
+        raw_output: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Run pytest (or parse supplied pytest output) and return structured failure diagnostics."""
+        if raw_output is not None:
+            return cls.parse_pytest_output(raw_output)
+        ws = Path(workspace).resolve()
+        tgt = _resolve_in_workspace(ws, target)
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", str(tgt), "-q", "--tb=short"],
+            cwd=str(ws),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+        )
+        combined = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+        parsed = cls.parse_pytest_output(combined)
+        parsed["exit_code"] = proc.returncode
+        parsed["ok"] = proc.returncode == 0
+        return parsed
+
+    @classmethod
     def execute_rail(
         cls,
         rail_name: str,
@@ -870,5 +1012,18 @@ class DeterministicTaskOffloader:
                 file_path=str(args.get("file_path", "")),
                 symbol_old=str(args.get("symbol_old", "")),
                 symbol_new=str(args.get("symbol_new", "")),
+            )
+        if rail_name == "replace_function_body":
+            return cls.replace_function_body(
+                ws,
+                file_path=str(args.get("file_path", "")),
+                func_name=str(args.get("func_name", "")),
+                new_code=str(args.get("new_code", "")),
+            )
+        if rail_name == "pytest_failure_diagnoser":
+            return cls.pytest_failure_diagnoser(
+                ws,
+                target=str(args.get("target", ".")),
+                raw_output=args.get("raw_output"),
             )
         return cls.run_preflight_bundle(ws, max_chars=int(args.get("max_chars", 3500)))

@@ -1667,10 +1667,18 @@ class AgentLoop:
                     if verify_cmd and turn < max_turns:
                         v_pre = ws.run({"command": verify_cmd, "timeout_s": 600})
                         if v_pre["exit_code"] != 0:
+                            from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
+
+                            diag = DeterministicTaskOffloader.parse_pytest_output(v_pre["output"])
+                            diag_note = (
+                                f"\nSTRUCTURED_DIAGNOSIS: {json.dumps(diag, ensure_ascii=False)}"
+                                if diag.get("failures")
+                                else ""
+                            )
                             reject_finish_msg = (
                                 f"FINISH REJECTED: acceptance command '{verify_cmd}' failed "
                                 f"(exit_code={v_pre['exit_code']}). Fix the failure before calling finish:\n"
-                                f"{v_pre['output'][-2000:]}"
+                                f"{v_pre['output'][-2000:]}{diag_note}"
                             )
                             break
                         pre_verification = {
@@ -1820,6 +1828,18 @@ class AgentLoop:
                                                           args=call_args, state={"mission_id": mission_id}, lease_epoch=epoch, envelope=envelope)
                             obs = cp["output"]
                             if isinstance(obs, dict):
+                                if ok and tool in ("write_file", "replace_in_file") and call_args:
+                                    edited_p = Path(str(call_args.get("path", "")))
+                                    if edited_p.suffix.lower() == ".py" and edited_p.is_file():
+                                        from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
+
+                                        fix_res = DeterministicTaskOffloader.code_autofix_and_lint(
+                                            ws.ws, target=str(edited_p), apply_fix=True
+                                        )
+                                        obs["auto_lint"] = {
+                                            "ok": fix_res.get("ok"),
+                                            "backend": fix_res.get("backend"),
+                                        }
                                 post_notes = self.hook_engine.run_post(tool, call_args, obs, ws.ws)
                                 if post_notes:
                                     obs["hook_annotations"] = post_notes
