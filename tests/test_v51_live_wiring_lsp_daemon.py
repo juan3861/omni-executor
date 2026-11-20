@@ -55,8 +55,10 @@ def test_v51_live_agent_loop_plan_mode_self_review_dlp_todo_events_and_skill_com
         json.dumps({"thought": "try write in plan mode", "tool": "write_file", "args": {"file": "hack.py", "content": "x=1\n"}}),
         json.dumps({"thought": "blocked as expected", "tool": "finish", "args": {"summary": "Plan complete", "confidence": 0.9}}),
     ])
+    eng_plan = DurableExecutionEngine(tmp_path / "plan.db")
+    eng_plan.security_gate.seal_guard = guard
     loop_plan = AgentLoop(
-        engine=DurableExecutionEngine(tmp_path / "plan.db"),
+        engine=eng_plan,
         seal_guard=guard,
         llm=plan_llm,
         trace_dir=tmp_path / "traces_plan",
@@ -80,8 +82,10 @@ def test_v51_live_agent_loop_plan_mode_self_review_dlp_todo_events_and_skill_com
         json.dumps({"thought": "fix syntax error", "tool": "write_file", "args": {"file": "calc.py", "content": "def add(a, b):\n    return a + b\n"}}),
         json.dumps({"thought": "finish cleanly", "tool": "finish", "args": {"summary": "Fixed calc.py for user CPF 123.456.789-00", "confidence": 0.95}}),
     ])
+    eng_act = DurableExecutionEngine(tmp_path / "act.db")
+    eng_act.security_gate.seal_guard = guard
     loop_act = AgentLoop(
-        engine=DurableExecutionEngine(tmp_path / "act.db"),
+        engine=eng_act,
         seal_guard=guard,
         llm=act_llm,
         trace_dir=tmp_path / "traces_act",
