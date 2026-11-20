@@ -1,0 +1,1005 @@
+{
+  "count": 100,
+  "repos": [
+    {
+      "full_name": "firecrawl/firecrawl",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "web-scraping",
+      "stars": 204267,
+      "language": "TypeScript",
+      "license": "agpl-3.0",
+      "description": "Knowledge infrastructure to make your agents smarter. Search, scrape and 550+ data providers through one API.",
+      "url": "https://github.com/firecrawl/firecrawl"
+    },
+    {
+      "full_name": "github/gitignore",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "git",
+      "stars": 176402,
+      "language": "N/A",
+      "license": "cc0-1.0",
+      "description": "A collection of useful .gitignore templates",
+      "url": "https://github.com/github/gitignore"
+    },
+    {
+      "full_name": "Graphify-Labs/graphify",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "tree-sitter",
+      "stars": 150668,
+      "language": "Python",
+      "license": "apache-2.0",
+      "description": "Turn any codebase, with its docs, SQL schemas, configs, and PDFs, into a queryable knowledge graph. A /graphify skill for Claude Code, Cursor, Codex, and Gemini CLI: local determin",
+      "url": "https://github.com/Graphify-Labs/graphify"
+    },
+    {
+      "full_name": "stablyai/orca",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "orchestration",
+      "stars": 129939,
+      "language": "TypeScript",
+      "license": "mit",
+      "description": "Orca lets you run a fleet of coding agents (e.g. Claude Code, Codex) with your own subscription. Available on desktop, mobile and remote runtime.",
+      "url": "https://github.com/stablyai/orca"
+    },
+    {
+      "full_name": "Chalarangelo/30-seconds-of-code",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "git",
+      "stars": 129573,
+      "language": "JavaScript",
+      "license": "cc-by-4.0",
+      "description": "Coding articles to level up your development skills",
+      "url": "https://github.com/Chalarangelo/30-seconds-of-code"
+    },
+    {
+      "full_name": "browser-use/browser-use",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "browser-automation",
+      "stars": 121527,
+      "language": "Python",
+      "license": "mit",
+      "description": "Open-source Python library for AI browser agents, plus Browser Use Cloud: stealth browsers and a hosted agent API.",
+      "url": "https://github.com/browser-use/browser-use"
+    },
+    {
+      "full_name": "D4Vinci/Scrapling",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "web-scraping",
+      "stars": 104436,
+      "language": "Python",
+      "license": "bsd-3-clause",
+      "description": "🕷️ The BEST Web Scraping framework that handles everything from a single request to a full-scale crawl! Don't be shy, join here: https://discord.gg/EMgGbDceNQ and follow here for d",
+      "url": "https://github.com/D4Vinci/Scrapling"
+    },
+    {
+      "full_name": "PaddlePaddle/PaddleOCR",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "ocr",
+      "stars": 92919,
+      "language": "Python",
+      "license": "apache-2.0",
+      "description": "Turn any PDF or image document into structured data for your AI. A powerful, lightweight OCR toolkit that bridges the gap between images/PDFs and LLMs. Supports 100+ languages.",
+      "url": "https://github.com/PaddlePaddle/PaddleOCR"
+    },
+    {
+      "full_name": "unclecode/crawl4ai",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "web-scraping",
+      "stars": 87573,
+      "language": "Python",
+      "license": "apache-2.0",
+      "description": "Official Crawl4AI Cloud: a hosted web scraping, extraction, and search API for AI agents. Free API key, 1,000 credits a month, no card. Fully open source: this repo is the Apache-2",
+      "url": "https://github.com/unclecode/crawl4ai"
+    },
+    {
+      "full_name": "bregman-arie/devops-exercises",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "git",
+      "stars": 86900,
+      "language": "Python",
+      "license": "other",
+      "description": "Linux, Jenkins, AWS, SRE, Prometheus, Docker, Python, Ansible, Git, Kubernetes, Terraform, OpenStack, SQL, NoSQL, Azure, GCP, DNS, Elastic, Network, Virtualization. DevOps Intervie",
+      "url": "https://github.com/bregman-arie/devops-exercises"
+    },
+    {
+      "full_name": "opendatalab/MinerU",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "ocr",
+      "stars": 84012,
+      "language": "Python",
+      "license": "other",
+      "description": "Transforms complex documents like PDFs and Office docs into LLM-ready markdown/JSON for your Agentic workflows.",
+      "url": "https://github.com/opendatalab/MinerU"
+    },
+    {
+      "full_name": "jesseduffield/lazygit",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "git",
+      "stars": 83964,
+      "language": "Go",
+      "license": "mit",
+      "description": "simple terminal UI for git commands",
+      "url": "https://github.com/jesseduffield/lazygit"
+    },
+    {
+      "full_name": "tesseract-ocr/tesseract",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "ocr",
+      "stars": 77593,
+      "language": "C++",
+      "license": "apache-2.0",
+      "description": "Tesseract Open Source OCR Engine (main repository)",
+      "url": "https://github.com/tesseract-ocr/tesseract"
+    },
+    {
+      "full_name": "code-yeongyu/oh-my-openagent",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "orchestration",
+      "stars": 71010,
+      "language": "TypeScript",
+      "license": "other",
+      "description": "OmO: Just type \"mass ulw\" keyword with your prompt. Now you are the master of graph engineering.",
+      "url": "https://github.com/code-yeongyu/oh-my-openagent"
+    },
+    {
+      "full_name": "scrapy/scrapy",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "web-scraping",
+      "stars": 65501,
+      "language": "Python",
+      "license": "bsd-3-clause",
+      "description": "Scrapy, a fast high-level web crawling & scraping framework for Python.",
+      "url": "https://github.com/scrapy/scrapy"
+    },
+    {
+      "full_name": "sharkdp/bat",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "git",
+      "stars": 61321,
+      "language": "Rust",
+      "license": "apache-2.0",
+      "description": "A cat(1) clone with wings.",
+      "url": "https://github.com/sharkdp/bat"
+    },
+    {
+      "full_name": "tiimgreen/github-cheat-sheet",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "git",
+      "stars": 60494,
+      "language": "N/A",
+      "license": "mit",
+      "description": "A list of cool features of Git and GitHub.",
+      "url": "https://github.com/tiimgreen/github-cheat-sheet"
+    },
+    {
+      "full_name": "go-gitea/gitea",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "git",
+      "stars": 59175,
+      "language": "Go",
+      "license": "mit",
+      "description": "Git with a cup of tea! Painless self-hosted all-in-one software development service, including Git hosting, code review, team collaboration, package registry and CI/CD",
+      "url": "https://github.com/go-gitea/gitea"
+    },
+    {
+      "full_name": "WerWolv/ImHex",
+      "pillar": "2. Static Analysis, Types & SAST",
+      "matched_topic": "static-analysis",
+      "stars": 55955,
+      "language": "C++",
+      "license": "gpl-2.0",
+      "description": "🔍 A Hex Editor for Reverse Engineers, Programmers and people who value their retinas when working at 3 AM.",
+      "url": "https://github.com/WerWolv/ImHex"
+    },
+    {
+      "full_name": "prettier/prettier",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "ast",
+      "stars": 52434,
+      "language": "JavaScript",
+      "license": "mit",
+      "description": "Prettier is an opinionated code formatter.",
+      "url": "https://github.com/prettier/prettier"
+    },
+    {
+      "full_name": "astral-sh/ruff",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "linter",
+      "stars": 51316,
+      "language": "Rust",
+      "license": "mit",
+      "description": "An extremely fast Python linter and code formatter, written in Rust.",
+      "url": "https://github.com/astral-sh/ruff"
+    },
+    {
+      "full_name": "Homebrew/brew",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "package-manager",
+      "stars": 50388,
+      "language": "Ruby",
+      "license": "bsd-2-clause",
+      "description": "🍺 The Package Manager for Everywhere",
+      "url": "https://github.com/Homebrew/brew"
+    },
+    {
+      "full_name": "DeusData/codebase-memory-mcp",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "tree-sitter",
+      "stars": 48882,
+      "language": "C",
+      "license": "mit",
+      "description": "Local code intelligence for developers and AI agents. Connect code, docs and infrastructure in a persistent graph, with CBM Lens, MCP tools, agent integrations and change-aware tes",
+      "url": "https://github.com/DeusData/codebase-memory-mcp"
+    },
+    {
+      "full_name": "hiroi-sora/Umi-OCR",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "ocr",
+      "stars": 48815,
+      "language": "Python",
+      "license": "mit",
+      "description": "OCR software, free and offline. 开源、免费的离线OCR软件。支持截屏/批量导入图片，PDF文档识别，排除水印/页眉页脚，扫描/生成二维码。内置多国语言库。",
+      "url": "https://github.com/hiroi-sora/Umi-OCR"
+    },
+    {
+      "full_name": "usebruno/bruno",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "git",
+      "stars": 48469,
+      "language": "JavaScript",
+      "license": "mit",
+      "description": "Opensource IDE For Exploring and Testing API's (lightweight alternative to Postman/Insomnia)",
+      "url": "https://github.com/usebruno/bruno"
+    },
+    {
+      "full_name": "paperless-ngx/paperless-ngx",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "ocr",
+      "stars": 48360,
+      "language": "Python",
+      "license": "gpl-3.0",
+      "description": "A community-supported supercharged document management system: scan, index and archive all your documents",
+      "url": "https://github.com/paperless-ngx/paperless-ngx"
+    },
+    {
+      "full_name": "apache/airflow",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "workflow-engine",
+      "stars": 47564,
+      "language": "Python",
+      "license": "apache-2.0",
+      "description": "Apache Airflow - A platform to programmatically author, schedule, and monitor workflows",
+      "url": "https://github.com/apache/airflow"
+    },
+    {
+      "full_name": "juspay/hyperswitch",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "orchestration",
+      "stars": 45850,
+      "language": "Rust",
+      "license": "apache-2.0",
+      "description": "Open source, composable payments platform | PCI compliant | SaaS and Self-host options | Enables connectivity to multiple payment, payout, fraud, vault and tokenization providers |",
+      "url": "https://github.com/juspay/hyperswitch"
+    },
+    {
+      "full_name": "babel/babel",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "ast",
+      "stars": 44075,
+      "language": "TypeScript",
+      "license": "mit",
+      "description": "🐠 Babel is a compiler for writing next generation JavaScript.",
+      "url": "https://github.com/babel/babel"
+    },
+    {
+      "full_name": "lightpanda-io/browser",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "browser-automation",
+      "stars": 42248,
+      "language": "Zig",
+      "license": "agpl-3.0",
+      "description": "Lightpanda: the headless browser designed for AI and automation",
+      "url": "https://github.com/lightpanda-io/browser"
+    },
+    {
+      "full_name": "yarnpkg/yarn",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "package-manager",
+      "stars": 41457,
+      "language": "JavaScript",
+      "license": "other",
+      "description": "The 1.x line is frozen - features and bugfixes now happen on https://github.com/yarnpkg/berry",
+      "url": "https://github.com/yarnpkg/yarn"
+    },
+    {
+      "full_name": "ShareX/ShareX",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "ocr",
+      "stars": 41223,
+      "language": "C#",
+      "license": "gpl-3.0",
+      "description": "ShareX is a free and open-source application that enables users to capture or record any area of their screen with a single keystroke. It also supports uploading images, text, and ",
+      "url": "https://github.com/ShareX/ShareX"
+    },
+    {
+      "full_name": "datalab-to/marker",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "ocr",
+      "stars": 40990,
+      "language": "Python",
+      "license": "apache-2.0",
+      "description": "Convert PDF to markdown + JSON quickly with high accuracy",
+      "url": "https://github.com/datalab-to/marker"
+    },
+    {
+      "full_name": "pola-rs/polars",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "dataframe",
+      "stars": 40388,
+      "language": "Rust",
+      "license": "mit",
+      "description": "Extremely fast Query Engine for DataFrames, written in Rust",
+      "url": "https://github.com/pola-rs/polars"
+    },
+    {
+      "full_name": "koalaman/shellcheck",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "linter",
+      "stars": 40360,
+      "language": "Haskell",
+      "license": "gpl-3.0",
+      "description": "ShellCheck, a static analysis tool for shell scripts",
+      "url": "https://github.com/koalaman/shellcheck"
+    },
+    {
+      "full_name": "JCodesMore/ai-website-cloner-template",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "web-scraping",
+      "stars": 39515,
+      "language": "TypeScript",
+      "license": "mit",
+      "description": "Clone any website with one command using AI coding agents",
+      "url": "https://github.com/JCodesMore/ai-website-cloner-template"
+    },
+    {
+      "full_name": "docker/compose",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "orchestration",
+      "stars": 39050,
+      "language": "Go",
+      "license": "apache-2.0",
+      "description": "Define and run multi-container applications with Docker",
+      "url": "https://github.com/docker/compose"
+    },
+    {
+      "full_name": "naptha/tesseract.js",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "ocr",
+      "stars": 38841,
+      "language": "JavaScript",
+      "license": "apache-2.0",
+      "description": "Pure Javascript OCR for more than 100 Languages 📖🎉🖥",
+      "url": "https://github.com/naptha/tesseract.js"
+    },
+    {
+      "full_name": "firecracker-microvm/firecracker",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "sandbox",
+      "stars": 38125,
+      "language": "Rust",
+      "license": "apache-2.0",
+      "description": "Secure and fast microVMs for serverless computing.",
+      "url": "https://github.com/firecracker-microvm/firecracker"
+    },
+    {
+      "full_name": "pnpm/pnpm",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "package-manager",
+      "stars": 37144,
+      "language": "Rust",
+      "license": "mit",
+      "description": "Fast, disk space efficient package manager",
+      "url": "https://github.com/pnpm/pnpm"
+    },
+    {
+      "full_name": "h4ckf0r0day/obscura",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "browser-automation",
+      "stars": 36581,
+      "language": "Rust",
+      "license": "apache-2.0",
+      "description": "The headless browser for AI agents and web scraping",
+      "url": "https://github.com/h4ckf0r0day/obscura"
+    },
+    {
+      "full_name": "dgtlmoon/changedetection.io",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "web-scraping",
+      "stars": 35911,
+      "language": "Python",
+      "license": "apache-2.0",
+      "description": "Best and simplest tool for website change detection, web page monitoring, and website change alerts. Perfect for tracking content changes, price drops, restock alerts, and website ",
+      "url": "https://github.com/dgtlmoon/changedetection.io"
+    },
+    {
+      "full_name": "python-poetry/poetry",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "package-manager",
+      "stars": 34332,
+      "language": "Python",
+      "license": "mit",
+      "description": "Python packaging and dependency management made easy",
+      "url": "https://github.com/python-poetry/poetry"
+    },
+    {
+      "full_name": "CloakHQ/CloakBrowser",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "browser-automation",
+      "stars": 32984,
+      "language": "Python",
+      "license": "mit",
+      "description": "Stealth Chromium that passes every bot detection test. Drop-in Playwright replacement with source-level fingerprint patches. 50+ tests passed.",
+      "url": "https://github.com/CloakHQ/CloakBrowser"
+    },
+    {
+      "full_name": "tirth8205/code-review-graph",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "tree-sitter",
+      "stars": 32872,
+      "language": "Python",
+      "license": "mit",
+      "description": "Local-first code intelligence graph for MCP and CLI. Builds a persistent map of your codebase so AI coding tools read only what matters, with benchmarked context reductions on revi",
+      "url": "https://github.com/tirth8205/code-review-graph"
+    },
+    {
+      "full_name": "feder-cr/Jobs_Applier_AI_Agent",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "browser-automation",
+      "stars": 32579,
+      "language": "Python",
+      "license": "mit",
+      "description": "AIHawk: AI job application bot, automated job search, job hunting, auto-apply to resume-matching jobs while you sleep.",
+      "url": "https://github.com/feder-cr/Jobs_Applier_AI_Agent"
+    },
+    {
+      "full_name": "conductor-oss/conductor",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "workflow-engine",
+      "stars": 32489,
+      "language": "Java",
+      "license": "apache-2.0",
+      "description": "Conductor is an event driven agentic workflow engine providing durable and highly resilient execution engine for applications and AI Agents",
+      "url": "https://github.com/conductor-oss/conductor"
+    },
+    {
+      "full_name": "jackwener/OpenCLI",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "browser-automation",
+      "stars": 31186,
+      "language": "JavaScript",
+      "license": "apache-2.0",
+      "description": "Make Any Website into CLI & Use your logged-in browser by AI agent.",
+      "url": "https://github.com/jackwener/OpenCLI"
+    },
+    {
+      "full_name": "statelyai/xstate",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "state-machine",
+      "stars": 30520,
+      "language": "TypeScript",
+      "license": "mit",
+      "description": "State machines, statecharts, and actors for complex logic",
+      "url": "https://github.com/statelyai/xstate"
+    },
+    {
+      "full_name": "opendataloader-project/opendataloader-pdf",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "pdf-extraction",
+      "stars": 30348,
+      "language": "Java",
+      "license": "apache-2.0",
+      "description": "PDF Parser for AI-ready data. Automate PDF accessibility. Open-source.",
+      "url": "https://github.com/opendataloader-project/opendataloader-pdf"
+    },
+    {
+      "full_name": "kestra-io/kestra",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "orchestration",
+      "stars": 30288,
+      "language": "Java",
+      "license": "apache-2.0",
+      "description": "Orchestrate everything, everywhere. The open-source control plane for workflows across data, infrastructure, business processes and AI agents. Declarative YAML, event-driven, any l",
+      "url": "https://github.com/kestra-io/kestra"
+    },
+    {
+      "full_name": "alibaba/page-agent",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "browser-automation",
+      "stars": 29721,
+      "language": "TypeScript",
+      "license": "mit",
+      "description": "JavaScript in-page GUI agent. Control web interfaces with natural language.",
+      "url": "https://github.com/alibaba/page-agent"
+    },
+    {
+      "full_name": "composer/composer",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "package-manager",
+      "stars": 29579,
+      "language": "PHP",
+      "license": "mit",
+      "description": "Dependency Manager for PHP",
+      "url": "https://github.com/composer/composer"
+    },
+    {
+      "full_name": "standard/standard",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "linter",
+      "stars": 29425,
+      "language": "JavaScript",
+      "license": "mit",
+      "description": "🌟 JavaScript Style Guide, with linter & automatic code fixer",
+      "url": "https://github.com/standard/standard"
+    },
+    {
+      "full_name": "postcss/postcss",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "ast",
+      "stars": 28976,
+      "language": "TypeScript",
+      "license": "mit",
+      "description": "Transforming styles with JS plugins",
+      "url": "https://github.com/postcss/postcss"
+    },
+    {
+      "full_name": "Budibase/budibase",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "workflow-engine",
+      "stars": 28426,
+      "language": "TypeScript",
+      "license": "other",
+      "description": "AI agents, automations and apps that run your operations. Model agnostic.",
+      "url": "https://github.com/Budibase/budibase"
+    },
+    {
+      "full_name": "eslint/eslint",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "linter",
+      "stars": 27635,
+      "language": "JavaScript",
+      "license": "mit",
+      "description": "Find and fix problems in your JavaScript code.",
+      "url": "https://github.com/eslint/eslint"
+    },
+    {
+      "full_name": "microsoft/vcpkg",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "package-manager",
+      "stars": 27624,
+      "language": "CMake",
+      "license": "mit",
+      "description": "C++ Library Manager for Windows, Linux, and MacOS",
+      "url": "https://github.com/microsoft/vcpkg"
+    },
+    {
+      "full_name": "tree-sitter/tree-sitter",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "tree-sitter",
+      "stars": 27510,
+      "language": "Rust",
+      "license": "mit",
+      "description": "An incremental parsing system for programming tools",
+      "url": "https://github.com/tree-sitter/tree-sitter"
+    },
+    {
+      "full_name": "humanlayer/12-factor-agents",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "orchestration",
+      "stars": 27335,
+      "language": "TypeScript",
+      "license": "other",
+      "description": "What are the principles we can use to build LLM-powered software that is actually good enough to put in the hands of production customers?",
+      "url": "https://github.com/humanlayer/12-factor-agents"
+    },
+    {
+      "full_name": "Devolutions/UniGetUI",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "package-manager",
+      "stars": 27130,
+      "language": "C#",
+      "license": "mit",
+      "description": "UniGetUI: The Graphical Interface for your package managers. Could be terribly described as a package manager manager to manage your package managers",
+      "url": "https://github.com/Devolutions/UniGetUI"
+    },
+    {
+      "full_name": "microsoft/winget-cli",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "package-manager",
+      "stars": 26628,
+      "language": "C++",
+      "license": "mit",
+      "description": "WinGet is the Windows Package Manager. This project includes a CLI (Command Line Interface), PowerShell modules, and a COM (Component Object Model) API (Application Programming Int",
+      "url": "https://github.com/microsoft/winget-cli"
+    },
+    {
+      "full_name": "dapr/dapr",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "workflow-engine",
+      "stars": 26212,
+      "language": "Go",
+      "license": "apache-2.0",
+      "description": "Dapr is a portable runtime for building distributed applications across cloud and edge, combining event-driven architecture with workflow orchestration.",
+      "url": "https://github.com/dapr/dapr"
+    },
+    {
+      "full_name": "Wilfred/difftastic",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "tree-sitter",
+      "stars": 26205,
+      "language": "Rust",
+      "license": "mit",
+      "description": "a structural diff that understands syntax 🟥🟩",
+      "url": "https://github.com/Wilfred/difftastic"
+    },
+    {
+      "full_name": "biomejs/biome",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "linter",
+      "stars": 26156,
+      "language": "Rust",
+      "license": "apache-2.0",
+      "description": "A toolchain for web projects, aimed to provide functionalities to maintain them. Biome offers formatter and linter, usable via CLI and LSP.",
+      "url": "https://github.com/biomejs/biome"
+    },
+    {
+      "full_name": "browserbase/stagehand",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "browser-automation",
+      "stars": 26094,
+      "language": "TypeScript",
+      "license": "mit",
+      "description": "The SDK to extract data and interact with any site on the web. Get started with Claude Code, Codex, Eve, Mastra, and more.",
+      "url": "https://github.com/browserbase/stagehand"
+    },
+    {
+      "full_name": "nocobase/nocobase",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "workflow-engine",
+      "stars": 24970,
+      "language": "TypeScript",
+      "license": "other",
+      "description": "NocoBase is the open-source platform for building, running, and evolving business systems with AI. Agents write the code and do the work, NocoBase provides the foundation and gover",
+      "url": "https://github.com/nocobase/nocobase"
+    },
+    {
+      "full_name": "temporalio/temporal",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "workflow-engine",
+      "stars": 24509,
+      "language": "Go",
+      "license": "mit",
+      "description": "Temporal service",
+      "url": "https://github.com/temporalio/temporal"
+    },
+    {
+      "full_name": "PrefectHQ/prefect",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "workflow-engine",
+      "stars": 24188,
+      "language": "Python",
+      "license": "apache-2.0",
+      "description": "Prefect is a workflow orchestration framework for building resilient data pipelines in Python.",
+      "url": "https://github.com/PrefectHQ/prefect"
+    },
+    {
+      "full_name": "coleam00/Archon",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "workflow-engine",
+      "stars": 23960,
+      "language": "TypeScript",
+      "license": "mit",
+      "description": "The first open-source harness builder for AI coding. Make AI coding deterministic and repeatable.",
+      "url": "https://github.com/coleam00/Archon"
+    },
+    {
+      "full_name": "oxc-project/oxc",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "linter",
+      "stars": 23509,
+      "language": "Rust",
+      "license": "mit",
+      "description": "⚓ A collection of high-performance JavaScript tools.",
+      "url": "https://github.com/oxc-project/oxc"
+    },
+    {
+      "full_name": "rome/tools",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "linter",
+      "stars": 23340,
+      "language": "Rust",
+      "license": "mit",
+      "description": "Unified developer tools for JavaScript, TypeScript, and the web",
+      "url": "https://github.com/rome/tools"
+    },
+    {
+      "full_name": "MobSF/Mobile-Security-Framework-MobSF",
+      "pillar": "2. Static Analysis, Types & SAST",
+      "matched_topic": "static-analysis",
+      "stars": 22268,
+      "language": "Python",
+      "license": "gpl-3.0",
+      "description": "Mobile Security Framework (MobSF) is an automated, all-in-one mobile application (Android/iOS/Windows) pen-testing, malware analysis and security assessment framework capable of pe",
+      "url": "https://github.com/MobSF/Mobile-Security-Framework-MobSF"
+    },
+    {
+      "full_name": "teableio/teable",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "sandbox",
+      "stars": 22002,
+      "language": "TypeScript",
+      "license": "other",
+      "description": "✨ AI Spreadsheet for Business",
+      "url": "https://github.com/teableio/teable"
+    },
+    {
+      "full_name": "python/mypy",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "linter",
+      "stars": 20729,
+      "language": "Python",
+      "license": "other",
+      "description": "Optional static typing for Python",
+      "url": "https://github.com/python/mypy"
+    },
+    {
+      "full_name": "firecrawl/pdf-inspector",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "pdf-extraction",
+      "stars": 20068,
+      "language": "Rust",
+      "license": "mit",
+      "description": "Fast Rust library for PDF inspection, classification, and text extraction. Intelligently detects scanned vs text-based PDFs to enable smart routing decisions.",
+      "url": "https://github.com/firecrawl/pdf-inspector"
+    },
+    {
+      "full_name": "gvisor/gvisor",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "sandbox",
+      "stars": 20059,
+      "language": "Go",
+      "license": "apache-2.0",
+      "description": "Application Kernel for Containers",
+      "url": "https://github.com/gvisor/gvisor"
+    },
+    {
+      "full_name": "realm/SwiftLint",
+      "pillar": "2. Static Analysis, Types & SAST",
+      "matched_topic": "static-analysis",
+      "stars": 19794,
+      "language": "Swift",
+      "license": "mit",
+      "description": "A tool to enforce Swift style and conventions.",
+      "url": "https://github.com/realm/SwiftLint"
+    },
+    {
+      "full_name": "bytecodealliance/wasmtime",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "sandbox",
+      "stars": 18877,
+      "language": "Rust",
+      "license": "apache-2.0",
+      "description": "A lightweight WebAssembly runtime that is fast, secure, and standards-compliant",
+      "url": "https://github.com/bytecodealliance/wasmtime"
+    },
+    {
+      "full_name": "semgrep/semgrep",
+      "pillar": "2. Static Analysis, Types & SAST",
+      "matched_topic": "static-analysis",
+      "stars": 17833,
+      "language": "C",
+      "license": "lgpl-2.1",
+      "description": "Lightweight static analysis for many languages. Find bug variants with patterns that look like source code.",
+      "url": "https://github.com/semgrep/semgrep"
+    },
+    {
+      "full_name": "opensandbox-group/OpenSandbox",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "sandbox",
+      "stars": 17666,
+      "language": "Go",
+      "license": "apache-2.0",
+      "description": "Secure, Fast, and Extensible Sandbox runtime for AI agents.",
+      "url": "https://github.com/opensandbox-group/OpenSandbox"
+    },
+    {
+      "full_name": "nikic/PHP-Parser",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "ast",
+      "stars": 17483,
+      "language": "PHP",
+      "license": "bsd-3-clause",
+      "description": "A PHP parser written in PHP",
+      "url": "https://github.com/nikic/PHP-Parser"
+    },
+    {
+      "full_name": "ast-grep/ast-grep",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "tree-sitter",
+      "stars": 16629,
+      "language": "Rust",
+      "license": "mit",
+      "description": "⚡A CLI tool for code structural search, lint and rewriting. Written in Rust",
+      "url": "https://github.com/ast-grep/ast-grep"
+    },
+    {
+      "full_name": "Kanaries/pygwalker",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "dataframe",
+      "stars": 16005,
+      "language": "Python",
+      "license": "apache-2.0",
+      "description": "PyGWalker: Turn your dataframe into an interactive UI for visual analysis",
+      "url": "https://github.com/Kanaries/pygwalker"
+    },
+    {
+      "full_name": "analysis-tools-dev/static-analysis",
+      "pillar": "2. Static Analysis, Types & SAST",
+      "matched_topic": "sast",
+      "stars": 14911,
+      "language": "Rust",
+      "license": "mit",
+      "description": "⚙️ A curated list of static analysis (SAST) tools and linters for all programming languages, config files, build tools, and more. The focus is on tools which improve code quality.",
+      "url": "https://github.com/analysis-tools-dev/static-analysis"
+    },
+    {
+      "full_name": "NevaMind-AI/memU",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "sandbox",
+      "stars": 14629,
+      "language": "Python",
+      "license": "other",
+      "description": "Personal memory across agents",
+      "url": "https://github.com/NevaMind-AI/memU"
+    },
+    {
+      "full_name": "nvim-treesitter/nvim-treesitter",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "tree-sitter",
+      "stars": 14549,
+      "language": "Tree-sitter Query",
+      "license": "apache-2.0",
+      "description": "Nvim Treesitter configurations and abstraction layer",
+      "url": "https://github.com/nvim-treesitter/nvim-treesitter"
+    },
+    {
+      "full_name": "angular-ui/ui-router",
+      "pillar": "4. Durable Workflows, State Machines & Git",
+      "matched_topic": "state-machine",
+      "stars": 13413,
+      "language": "TypeScript",
+      "license": "mit",
+      "description": "The de-facto solution to flexible routing with nested views in AngularJS",
+      "url": "https://github.com/angular-ui/ui-router"
+    },
+    {
+      "full_name": "TencentCloud/CubeSandbox",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "sandbox",
+      "stars": 13377,
+      "language": "Go",
+      "license": "other",
+      "description": "Instant, Concurrent, Secure & Lightweight Sandbox for AI Agents.",
+      "url": "https://github.com/TencentCloud/CubeSandbox"
+    },
+    {
+      "full_name": "earthly/earthly",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "reproducible-builds",
+      "stars": 12049,
+      "language": "Go",
+      "license": "mpl-2.0",
+      "description": "Super simple build framework with fast, repeatable builds and an instantly familiar syntax – like Dockerfile and Makefile had a baby.",
+      "url": "https://github.com/earthly/earthly"
+    },
+    {
+      "full_name": "omnigent-ai/omnigent",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "sandbox",
+      "stars": 11444,
+      "language": "Python",
+      "license": "apache-2.0",
+      "description": "Omnigent is an open-source AI agent framework and meta-harness: orchestrate Claude Code, Codex, Cursor, Pi, and custom agents — swap harnesses without rewriting, enforce policies a",
+      "url": "https://github.com/omnigent-ai/omnigent"
+    },
+    {
+      "full_name": "trailhq/Trail-Code",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "tree-sitter",
+      "stars": 11348,
+      "language": "TypeScript",
+      "license": "mit",
+      "description": "One shared memory for every coding agent on your team. Claude Code, Cursor and Codex get a map of your code and your team's past decisions, so they pick up where you left off.",
+      "url": "https://github.com/trailhq/Trail-Code"
+    },
+    {
+      "full_name": "rectorphp/rector",
+      "pillar": "1. AST, Parsing & Codemods",
+      "matched_topic": "ast",
+      "stars": 10516,
+      "language": "PHP",
+      "license": "mit",
+      "description": "Instant Upgrades and Automated Refactoring of any PHP 5.3+ code",
+      "url": "https://github.com/rectorphp/rector"
+    },
+    {
+      "full_name": "modin-project/modin",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "dataframe",
+      "stars": 10389,
+      "language": "Python",
+      "license": "apache-2.0",
+      "description": "Modin: Scale your Pandas workflows by changing a single line of code",
+      "url": "https://github.com/modin-project/modin"
+    },
+    {
+      "full_name": "anchore/syft",
+      "pillar": "2. Static Analysis, Types & SAST",
+      "matched_topic": "sbom",
+      "stars": 9928,
+      "language": "Go",
+      "license": "apache-2.0",
+      "description": "CLI tool and library for generating a Software Bill of Materials from container images and filesystems",
+      "url": "https://github.com/anchore/syft"
+    },
+    {
+      "full_name": "NVIDIA/cudf",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "dataframe",
+      "stars": 9800,
+      "language": "C++",
+      "license": "apache-2.0",
+      "description": "cuDF - GPU DataFrame Library",
+      "url": "https://github.com/NVIDIA/cudf"
+    },
+    {
+      "full_name": "apache/datafusion",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "dataframe",
+      "stars": 9617,
+      "language": "Rust",
+      "license": "apache-2.0",
+      "description": "Apache DataFusion SQL Query Engine",
+      "url": "https://github.com/apache/datafusion"
+    },
+    {
+      "full_name": "xberg-io/xberg",
+      "pillar": "5. Deterministic Web, Docs, Data & RPA",
+      "matched_topic": "pdf-extraction",
+      "stars": 9603,
+      "language": "Rust",
+      "license": "mit",
+      "description": "The fast, precise document-intelligence engine for every language: text, tables and metadata from 100+ formats, with OCR, transcription and code intelligence.",
+      "url": "https://github.com/xberg-io/xberg"
+    },
+    {
+      "full_name": "HypothesisWorks/hypothesis",
+      "pillar": "3. Formal Verification, SMT & Solvers",
+      "matched_topic": "property-based-testing",
+      "stars": 9193,
+      "language": "Python",
+      "license": "other",
+      "description": "The property-based testing library for Python",
+      "url": "https://github.com/HypothesisWorks/hypothesis"
+    },
+    {
+      "full_name": "superradcompany/microsandbox",
+      "pillar": "6. Sandboxing, Policy-as-Code & Hermetic Builds",
+      "matched_topic": "microvm",
+      "stars": 9147,
+      "language": "Rust",
+      "license": "apache-2.0",
+      "description": "🧱 easy, fast, programmable and local-first microVM runtime and library",
+      "url": "https://github.com/superradcompany/microsandbox"
+    }
+  ]
+}

@@ -1,0 +1,116 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "flyweight_det_v2",
+  "workflow": "react",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\flyweight_det_v2_20261119_234325",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 3,
+  "selected": 3,
+  "summary": {
+    "overall": {
+      "n": 3,
+      "passed": 2,
+      "pass_rate": 0.667,
+      "tokens": 41276,
+      "llm_calls": 17,
+      "elapsed_s": 62.3
+    },
+    "code": {
+      "n": 3,
+      "passed": 2,
+      "pass_rate": 0.667,
+      "tokens": 41276,
+      "llm_calls": 17,
+      "elapsed_s": 62.3
+    }
+  },
+  "results": [
+    {
+      "task_id": "c01_off_by_one",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 5,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.56s\n",
+      "elapsed_s": 18.7,
+      "llm_calls": 5,
+      "prompt_tokens": 10628,
+      "completion_tokens": 693
+    },
+    {
+      "task_id": "c02_mutable_default",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 5,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.57s\n",
+      "elapsed_s": 20.4,
+      "llm_calls": 5,
+      "prompt_tokens": 10528,
+      "completion_tokens": 826
+    },
+    {
+      "task_id": "c04_money_rounding",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 7,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "write_file",
+        "run",
+        "run"
+      ],
+      "passed": false,
+      "hidden_exit_code": 1,
+      "visible_tampered": [],
+      "hidden_output_tail": "F                                                                        [100%]\n================================== FAILURES ===================================\n__________________________________ test_all ___________________________________\n\n    def test_all():\n        assert total(['0.10','0.20']) == '0.30'\n        assert total(['0.105']) == '0.11'\n        assert total(['2.675']) == '2.68'\n>       assert total([]) == '0.00'\n               ^^^^^^^^^\n\ntests_hidden\\test_h.py:8: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\nprices = []\n\n    def total(prices):\n>       return str(sum(Decimal(p) for p in prices).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       AttributeError: 'int' object has no attribute 'quantize'\n\nmoney.py:4: AttributeError\n=========================== short test summary info ===========================\nFAILED tests_hidden/test_h.py::test_all - AttributeError: 'int' object has no...\n1 failed in 0.91s\n",
+      "elapsed_s": 23.2,
+      "llm_calls": 7,
+      "prompt_tokens": 16955,
+      "completion_tokens": 1646
+    }
+  ]
+}

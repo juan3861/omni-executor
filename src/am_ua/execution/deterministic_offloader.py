@@ -197,12 +197,26 @@ class DeterministicTaskOffloader:
     """Matches pure-diagnostic objectives to 0-token rails and executes programmable deterministic actions."""
 
     @staticmethod
+    def _find_ast_grep() -> Optional[str]:
+        for name in ("ast-grep", "sg"):
+            found = shutil.which(name)
+            if found:
+                return found
+        scripts_dir = Path(sys.executable).parent / ("Scripts" if Path(sys.executable).suffix.lower() == ".exe" else "")
+        for cand in (scripts_dir / "ast-grep.exe", scripts_dir / "ast-grep", scripts_dir / "sg.exe", scripts_dir / "sg"):
+            if cand.is_file():
+                return str(cand)
+        return None
+
+    @staticmethod
     def probe_capabilities() -> Dict[str, Any]:
         """Report which external deterministic engines and builtin fallbacks are available on this host."""
         bins = {
             b: bool(shutil.which(b))
             for b in ("ruff", "sg", "ast-grep", "mypy", "pyright", "semgrep", "difft", "syft", "uv", "git")
         }
+        if DeterministicTaskOffloader._find_ast_grep():
+            bins["ast-grep"] = True
         mods = {
             m: bool(importlib.util.find_spec(m))
             for m in ("ruff", "mypy", "hypothesis", "z3", "duckdb", "polars", "libcst", "tree_sitter", "trafilatura", "ast_grep_py", "pydantic", "pytest")
@@ -341,12 +355,52 @@ class DeterministicTaskOffloader:
         symbol_or_pattern: str,
         replacement: Optional[str] = None,
         target: str = ".",
+        lang: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """AST-aware structural search (and exact identifier rename) across Python files."""
+        """AST-aware structural search & rewrite (via ast-grep for polyglot/meta patterns, or Python AST)."""
         ws = Path(workspace).resolve()
         tgt = _resolve_in_workspace(ws, target)
         if not symbol_or_pattern.strip():
             return {"ok": False, "error": "missing 'symbol_or_pattern'"}
+
+        non_py_target = tgt.is_file() and tgt.suffix.lower() != ".py"
+        has_meta = "$" in symbol_or_pattern
+        sg_bin = cls._find_ast_grep()
+        if sg_bin and (lang is not None or non_py_target or has_meta):
+            cmd_inspect = [sg_bin, "run", "--pattern", symbol_or_pattern, "--json=compact"]
+            if lang:
+                cmd_inspect.extend(["--lang", lang])
+            cmd_inspect.append(str(tgt))
+            proc = subprocess.run(cmd_inspect, cwd=str(ws), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+            raw_out = (proc.stdout or "").strip()
+            sg_hits: List[Dict[str, Any]] = []
+            if raw_out.startswith("["):
+                try:
+                    for m in json.loads(raw_out):
+                        sg_hits.append({
+                            "file": m.get("file"),
+                            "line": ((m.get("range") or {}).get("start") or {}).get("line", 0) + 1,
+                            "text": (m.get("text") or "")[:160],
+                        })
+                except Exception:
+                    pass
+            rewritten_ok = False
+            if replacement is not None and sg_hits:
+                cmd_rewrite = [sg_bin, "run", "--pattern", symbol_or_pattern, "--rewrite", replacement, "--update-all"]
+                if lang:
+                    cmd_rewrite.extend(["--lang", lang])
+                cmd_rewrite.append(str(tgt))
+                proc_rw = subprocess.run(cmd_rewrite, cwd=str(ws), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+                rewritten_ok = proc_rw.returncode in (0, 1)
+
+            return {
+                "ok": proc.returncode in (0, 1),
+                "backend": "ast-grep",
+                "pattern": symbol_or_pattern,
+                "hit_count": len(sg_hits),
+                "hits": sg_hits[:100],
+                "rewritten": rewritten_ok,
+            }
 
         py_files = [tgt] if tgt.is_file() else _iter_py_files(tgt)
         hits: List[Dict[str, Any]] = []
@@ -1338,6 +1392,7 @@ class DeterministicTaskOffloader:
                 symbol_or_pattern=str(args.get("symbol_or_pattern") or args.get("pattern") or ""),
                 replacement=args.get("replacement"),
                 target=str(args.get("target", ".")),
+                lang=args.get("lang"),
             )
         if rail_name == "type_and_contract_check":
             return cls.type_and_contract_check(ws, target=str(args.get("target", ".")))

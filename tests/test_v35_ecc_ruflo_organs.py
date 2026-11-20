@@ -1476,6 +1476,22 @@ def test_v44_ssrf_domain_guard_timetravel_guardrails_spill_schema_handoff_dag_ot
         assert AgentLoop.transition_state("PREFLIGHT", "ACT") == "ACT"
         with pytest.raises(ValueError):
             AgentLoop.transition_state("FINISH", "ACT")
+
+        # 18. Polyglot ast-grep search & rewrite (when ast-grep binary is present)
+        if DeterministicTaskOffloader._find_ast_grep():
+            js_file = ws_dir / "app.js"
+            js_file.write_text("console.log('hello');\n", encoding="utf-8")
+            sg_res = wt.deterministic_exec({
+                "action": "structural_search_replace",
+                "params": {
+                    "symbol_or_pattern": "console.log($MSG)",
+                    "replacement": "logger.info($MSG)",
+                    "target": "app.js",
+                    "lang": "javascript",
+                },
+            })
+            assert sg_res["ok"] is True and sg_res["backend"] == "ast-grep" and sg_res["hit_count"] >= 1
+            assert "logger.info('hello')" in js_file.read_text(encoding="utf-8")
     finally:
         import shutil
         shutil.rmtree(ws_dir, ignore_errors=True)
