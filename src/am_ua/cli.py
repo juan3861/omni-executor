@@ -129,6 +129,12 @@ def main(argv: list[str] | None = None) -> int:
     p_shield = sub.add_parser("shield", help="Run AgentShield static security audit over a directory")
     p_shield.add_argument("target", nargs="?", default=str(ROOT))
 
+    p_det = sub.add_parser("det", help="Programmable Deterministic Command Hub (list or run 0-token deterministic rails)")
+    p_det.add_argument("action", choices=["list", "run"], help="List available rails or run a deterministic rail")
+    p_det.add_argument("rail", nargs="?", default="list_capabilities", help="Deterministic rail name for 'run'")
+    p_det.add_argument("--workspace", default=str(ROOT), help="Target workspace directory")
+    p_det.add_argument("--params", default="{}", help="JSON params object for the deterministic rail")
+
     args = parser.parse_args(argv)
     if args.cmd == "mcp-serve":
         from am_ua.execution.acp_adapter import StreamableHTTPJsonRpcServer
@@ -170,6 +176,17 @@ def main(argv: list[str] | None = None) -> int:
         rep = AgentShieldAuditor().scan_directory(args.target)
         print(json.dumps(rep.to_dict(), indent=2, ensure_ascii=False))
         return 0 if rep.passed else 1
+
+    if args.cmd == "det":
+        from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
+        if args.action == "list":
+            print(json.dumps(DeterministicTaskOffloader.probe_capabilities(), indent=2, ensure_ascii=False))
+            return 0
+        ws_det = Path(args.workspace).resolve()
+        params_det = json.loads(args.params or "{}")
+        res_det = DeterministicTaskOffloader.execute_rail(args.rail, ws_det, params=params_det)
+        print(json.dumps(res_det, indent=2, ensure_ascii=False, default=str))
+        return 0 if res_det.get("ok", True) else 1
 
     if args.cmd == "radar":
         ucip = agent.radar.build_ucip_summary(args.target)

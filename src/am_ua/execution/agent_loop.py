@@ -713,6 +713,21 @@ class WorkspaceTools:
         max_chars = min(int(args.get("max_chars", 3500)), 12000)
         return DeterministicTaskOffloader.run_preflight_bundle(self.ws, max_chars=max_chars)
 
+    def deterministic_exec(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute any programmable deterministic rail (ruff/AST lint, structural rename, mypy/contracts, edge fuzz, git forensics, SQL over CSV/JSON, SBOM, structural diff)."""
+        from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
+
+        action = str(args.get("action") or args.get("rail") or "list_capabilities").strip()
+        params = args.get("params") if isinstance(args.get("params"), dict) else {
+            k: v for k, v in args.items() if k not in ("action", "rail")
+        }
+        return DeterministicTaskOffloader.execute_rail(
+            action,
+            self.ws,
+            params=params,
+            run_fn=self.run,
+        )
+
     def code_sandbox(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Pure-Python restricted AST evaluator for deterministic math, JSON, and assertions (~1 ms)."""
         code = str(args.get("code", "")).strip()
@@ -819,7 +834,7 @@ TOOL_FAMILIES: Dict[str, Tuple[str, ...]] = {
     "core_code": (
         "list_dir", "read_file", "search", "write_file", "replace_in_file",
         "run", "repo_map", "knowledge_query", "task_tracker",
-        "spill_query", "code_sandbox", "deterministic_preflight",
+        "spill_query", "code_sandbox", "deterministic_preflight", "deterministic_exec",
         "checkpoint", "restore_checkpoint", "request_human", "finish",
     ),
     "readonly_audit": (
@@ -1020,6 +1035,7 @@ Tools:
 - spill_query {"spill_path": "...", "pattern": "...", "start_line": 1, "max_lines": 80}   (search or slice a spilled large tool output on disk)
 - code_sandbox {"code": "sum(x*x for x in range(10))"}   (fast pure-Python AST evaluator for math, JSON, and assertions)
 - deterministic_preflight {"max_chars": 3500}   (single-shot AST syntax sweep + SAST + PageRank RepoMap to save turns)
+- deterministic_exec {"action": "list_capabilities|code_autofix_and_lint|structural_search_replace|type_and_contract_check|property_edge_fuzz|git_forensics|data_sql_query|sbom_and_deps_audit|structural_diff", "params": {...}}   (offload heavy work to deterministic engines in 1 call)
 - task_tracker {"command": "view|plan", "task_list": [{"title": "...", "status": "todo|in_progress|done", "notes": "..."}]}
 - checkpoint {"name": "pre_edit"}   (save lightweight workspace snapshot before risky edits)
 - restore_checkpoint {"name": "pre_edit"}   (rollback workspace files to named checkpoint)
@@ -1078,6 +1094,7 @@ Tools:
 - spill_query {"spill_path": "...", "pattern": "...", "start_line": 1, "max_lines": 80}   (search or slice a spilled large tool output on disk)
 - code_sandbox {"code": "sum(x*x for x in range(10))"}   (fast pure-Python AST evaluator for math, JSON, and assertions)
 - deterministic_preflight {"max_chars": 3500}   (single-shot AST syntax sweep + SAST + PageRank RepoMap to save turns)
+- deterministic_exec {"action": "list_capabilities|code_autofix_and_lint|structural_search_replace|type_and_contract_check|property_edge_fuzz|git_forensics|data_sql_query|sbom_and_deps_audit|structural_diff", "params": {...}}   (offload heavy work to deterministic engines in 1 call)
 - task_tracker {"command": "view|plan", "task_list": [{"title": "...", "status": "todo|in_progress|done", "notes": "..."}]}
 - checkpoint {"name": "pre_edit"}   (save lightweight workspace snapshot before risky edits)
 - restore_checkpoint {"name": "pre_edit"}   (rollback workspace files to named checkpoint)
@@ -1163,6 +1180,7 @@ class AgentLoop:
         "spill_query": EffectClass.PURE_READ,
         "code_sandbox": EffectClass.PURE_READ,
         "deterministic_preflight": EffectClass.PURE_READ,
+        "deterministic_exec": EffectClass.COMPENSATABLE_MUTATION,
         "checkpoint": EffectClass.PURE_READ,
         "restore_checkpoint": EffectClass.COMPENSATABLE_MUTATION,
     }

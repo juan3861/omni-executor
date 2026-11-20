@@ -1355,6 +1355,49 @@ def test_v44_ssrf_domain_guard_timetravel_guardrails_spill_schema_handoff_dag_ot
         rail_run = loop.run("Run security audit on this workspace", ws_dir, max_turns=3, use_judge=False)
         assert rail_run.llm_calls == 0 and rail_run.tokens == {"prompt": 0, "completion": 0}
         assert rail_run.stop_reason == "deterministic_rail:shield_audit" and rail_run.status == "VERIFIED"
+
+        # 14. Programmable Deterministic Command Hub (deterministic_exec: lint/autofix, structural rename, type check, edge fuzz, SQL, SBOM, structural diff)
+        caps = wt.deterministic_exec({"action": "list_capabilities"})
+        assert caps["ok"] is True and len(caps["rails"]) >= 14
+
+        (ws_dir / "sample_a.py").write_text("def old_fn(x: int) -> int:\n    return x + 1\n", encoding="utf-8")
+        (ws_dir / "sample_b.py").write_text("def old_fn(x: int) -> int:\n    return x + 2\ndef extra_fn() -> int:\n    return 3\n", encoding="utf-8")
+
+        lint_res = wt.deterministic_exec({"action": "code_autofix_and_lint", "params": {"target": "sample_a.py"}})
+        assert lint_res["ok"] is True
+
+        ren_res = wt.deterministic_exec({
+            "action": "structural_search_replace",
+            "params": {"symbol_or_pattern": "old_fn", "replacement": "new_fn", "target": "sample_a.py"},
+        })
+        assert ren_res["ok"] is True and "sample_a.py" in ren_res["modified_files"]
+        assert "def new_fn" in (ws_dir / "sample_a.py").read_text(encoding="utf-8")
+
+        type_res = wt.deterministic_exec({"action": "type_and_contract_check", "params": {"target": "sample_b.py"}})
+        assert type_res["ok"] is True
+
+        fuzz_res = wt.deterministic_exec({
+            "action": "property_edge_fuzz",
+            "params": {"module_path": "sample_b.py", "func_name": "old_fn"},
+        })
+        assert fuzz_res["ok"] is True and fuzz_res["cases_tested"] >= 10
+
+        (ws_dir / "metrics.csv").write_text("name,score\nalpha,10\nbeta,25\n", encoding="utf-8")
+        sql_res = wt.deterministic_exec({
+            "action": "data_sql_query",
+            "params": {"file_path": "metrics.csv", "sql": "SELECT name, CAST(score AS INTEGER) AS s FROM data WHERE CAST(score AS INTEGER) > 15"},
+        })
+        assert sql_res["ok"] is True and sql_res["row_count"] == 1 and sql_res["rows"][0]["name"] == "beta"
+
+        (ws_dir / "requirements.txt").write_text("pytest>=8.0\n", encoding="utf-8")
+        sbom_res = wt.deterministic_exec({"action": "sbom_and_deps_audit"})
+        assert sbom_res["ok"] is True and "requirements.txt" in sbom_res["manifests_found"]
+
+        sdiff_res = wt.deterministic_exec({
+            "action": "structural_diff",
+            "params": {"file_a": "sample_a.py", "file_b": "sample_b.py"},
+        })
+        assert sdiff_res["ok"] is True and "fn:extra_fn" in sdiff_res["added_symbols"]
     finally:
         import shutil
         shutil.rmtree(ws_dir, ignore_errors=True)
