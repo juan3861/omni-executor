@@ -1443,6 +1443,39 @@ def test_v44_ssrf_domain_guard_timetravel_guardrails_spill_schema_handoff_dag_ot
         })
         assert diag_res["ok"] is False and diag_res["failure_count"] == 1
         assert diag_res["failures"][0]["test"] == "test_round_cent"
+
+        # 17. Phase A-F Completion: Z3 SMT, Hypothesis shrinking, OpenAPI & SQL codegen, os_sql_query, Statechart
+        z3_res = wt.deterministic_exec({
+            "action": "z3_constraint_solve",
+            "params": {"ints": ["x", "y"], "constraints": ["x + y == 10", "x - y == 4"]},
+        })
+        assert z3_res["ok"] is True and z3_res["model"] == {"x": 7, "y": 3}
+
+        (ws_dir / "abs_mod.py").write_text("def double_sq(n: int) -> int:\n    return n * n\n", encoding="utf-8")
+        hyp_res = wt.deterministic_exec({
+            "action": "hypothesis_property_test",
+            "params": {"module_path": "abs_mod.py", "func_name": "double_sq", "arg_types": ["int"], "invariant": "result >= 0", "max_examples": 20},
+        })
+        assert hyp_res["ok"] is True and hyp_res["examples_tested"] >= 20
+
+        (ws_dir / "openapi.json").write_text(_json.dumps({
+            "openapi": "3.0.0",
+            "components": {"schemas": {"Order": {"type": "object", "required": ["id"], "properties": {"id": {"type": "integer"}, "note": {"type": "string"}}}}},
+            "paths": {"/orders": {"get": {"operationId": "list_orders"}}},
+        }), encoding="utf-8")
+        oa_res = wt.deterministic_exec({"action": "codegen_from_openapi", "params": {"spec_path": "openapi.json"}})
+        assert oa_res["ok"] is True and "class Order:" in oa_res["code"] and "def list_orders" in oa_res["code"]
+
+        (ws_dir / "schema.sql").write_text("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);", encoding="utf-8")
+        sql_gen = wt.deterministic_exec({"action": "codegen_sql_to_python", "params": {"schema_path": "schema.sql"}})
+        assert sql_gen["ok"] is True and "def insert_users" in sql_gen["code"]
+
+        os_res = wt.deterministic_exec({"action": "os_sql_query", "params": {"sql": "SELECT path FROM files WHERE ext = '.py' ORDER BY path"}})
+        assert os_res["ok"] is True and os_res["row_count"] >= 1
+
+        assert AgentLoop.transition_state("PREFLIGHT", "ACT") == "ACT"
+        with pytest.raises(ValueError):
+            AgentLoop.transition_state("FINISH", "ACT")
     finally:
         import shutil
         shutil.rmtree(ws_dir, ignore_errors=True)

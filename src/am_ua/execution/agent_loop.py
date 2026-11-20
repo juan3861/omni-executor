@@ -333,6 +333,19 @@ class WorkspaceTools:
             from am_ua.execution.hermetic_sandbox_bridge import HermeticSandboxBridge
 
             return HermeticSandboxBridge().run_command(cmd, timeout_s=timeout)
+        if sandbox_mode == "docker":
+            import shutil
+
+            docker_bin = shutil.which("docker")
+            if not docker_bin:
+                return {"exit_code": 127, "output": "docker binary not found on host", "elapsed_s": 0.0}
+            t0_d = time.perf_counter()
+            d_proc = subprocess.run(
+                [docker_bin, "run", "--rm", "--network=none", "-v", f"{self.ws}:/ws", "-w", "/ws", "python:3.11-slim", "sh", "-lc", cmd],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
+            )
+            d_out = (d_proc.stdout or "") + (("\n[stderr]\n" + d_proc.stderr) if d_proc.stderr else "")
+            return {"exit_code": d_proc.returncode, "output": clip(str(d_out)), "elapsed_s": round(time.perf_counter() - t0_d, 2), "sandbox": "docker"}
         # In PowerShell, invoking a quoted path requires the call operator '&'
         if os.name == "nt":
             if cmd.startswith(('"', "'")) and not cmd.startswith("&"):
@@ -676,10 +689,21 @@ class WorkspaceTools:
                     except OSError:
                         pass
                 raw = raw_bytes.decode("utf-8", errors="replace")
-            cleaned = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", raw)
-            cleaned = re.sub(r"(?is)<h([1-4])[^>]*>(.*?)</h\1>", lambda m: f"\n{'#' * int(m.group(1))} {re.sub(r'<[^>]+>', '', m.group(2)).strip()}\n", cleaned)
-            cleaned = re.sub(r"(?is)<[^>]+>", " ", cleaned)
-            cleaned = _html.unescape(re.sub(r"[ \t]+", " ", re.sub(r"\n{3,}", "\n\n", cleaned))).strip()
+            extracted: Optional[str] = None
+            if not url.startswith("file://"):
+                try:
+                    import trafilatura  # type: ignore[import-not-found]
+
+                    extracted = trafilatura.extract(raw, output_format="markdown")
+                except Exception:
+                    extracted = None
+            if extracted:
+                cleaned = extracted.strip()
+            else:
+                cleaned = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", raw)
+                cleaned = re.sub(r"(?is)<h([1-4])[^>]*>(.*?)</h\1>", lambda m: f"\n{'#' * int(m.group(1))} {re.sub(r'<[^>]+>', '', m.group(2)).strip()}\n", cleaned)
+                cleaned = re.sub(r"(?is)<[^>]+>", " ", cleaned)
+                cleaned = _html.unescape(re.sub(r"[ \t]+", " ", re.sub(r"\n{3,}", "\n\n", cleaned))).strip()
             return {
                 "ok": True,
                 "url": url,
@@ -1152,6 +1176,25 @@ class AgentRunResult:
 
 
 class AgentLoop:
+    AGENT_STATE_TRANSITIONS: Dict[str, frozenset[str]] = {
+        "PREFLIGHT": frozenset({"ACT", "FINISH", "ABORT"}),
+        "ACT": frozenset({"ACT", "VERIFY", "HANDOFF", "HUMAN_WHEEL", "FINISH", "ABORT"}),
+        "VERIFY": frozenset({"DIAGNOSE", "FINISH", "ABORT"}),
+        "DIAGNOSE": frozenset({"ACT", "HANDOFF", "ABORT"}),
+        "HANDOFF": frozenset({"ACT", "VERIFY", "ABORT"}),
+        "HUMAN_WHEEL": frozenset({"ACT", "ABORT"}),
+        "FINISH": frozenset(),
+        "ABORT": frozenset(),
+    }
+
+    @classmethod
+    def transition_state(cls, current: str, target: str) -> str:
+        """Enforce finite-statechart transition invariants (XState-style)."""
+        allowed = cls.AGENT_STATE_TRANSITIONS.get(current, frozenset())
+        if target not in allowed:
+            raise ValueError(f"Illegal AgentLoop state transition: {current} -> {target}")
+        return target
+
     TOOL_EFFECTS = {
         "list_dir": EffectClass.PURE_READ,
         "read_file": EffectClass.PURE_READ,

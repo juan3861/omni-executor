@@ -153,8 +153,8 @@ jobs:
               from am_ua.execution.acp_adapter import StreamableHTTPJsonRpcServer
               assert StreamableHTTPJsonRpcServer is not None
               from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
-              assert len(DeterministicTaskOffloader.list_rails()) >= 20
-              assert DeterministicTaskOffloader.execute_rail("sbom_and_deps_audit", Path("."))["ok"] is True
+              assert len(DeterministicTaskOffloader.list_rails()) >= 25
+              assert DeterministicTaskOffloader.execute_rail("os_sql_query", Path("."))["ok"] is True
 
           print("ALL_PORTABLE_CI_CHECKS_PASSED")
           PY
