@@ -2,9 +2,9 @@
 
 **An autonomous software engineering agent with a hierarchical team orchestrator, a self-healing CDP browser engine, closed-loop Windows desktop automation, and an MCP / A2A / AG-UI interoperability harness — built around durable execution, executable verification, and hard safety gates.**
 
-[![Tests](https://img.shields.io/badge/pytest-85%2B%20passed-2ea44f?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/pytest-105%20passed-2ea44f?style=flat-square)](tests/)
 [![Benchmark](https://img.shields.io/badge/AM--Bench%20code-13%2F15%20%2B%202%2F2%20re--run-2ea44f?style=flat-square)](#benchmarks-and-honest-caveats)
-[![Deterministic Rails](https://img.shields.io/badge/deterministic%20rails-28%20zero--token-0969da?style=flat-square)](#complete-cli-reference-all-19-subcommands)
+[![Deterministic Rails](https://img.shields.io/badge/deterministic%20rails-150%20zero--token-0969da?style=flat-square)](#complete-cli-reference-all-21-subcommands)
 [![Static analysis](https://img.shields.io/badge/built--in%20SAST-grade%20A-0969da?style=flat-square)](SECURITY.md)
 [![Protocols](https://img.shields.io/badge/protocols-MCP%20%7C%20A2A%20v0.3%20%7C%20AG--UI-8250df?style=flat-square)](#protocol-integrations)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square)](pyproject.toml)
@@ -18,7 +18,7 @@
 2. [Capability Overview](#capability-overview)
 3. [Architecture & Mission Lifecycle](#architecture--mission-lifecycle)
 4. [Quick Start & Environment Configuration](#quick-start--environment-configuration)
-5. [Complete CLI Reference (All 19 Subcommands)](#complete-cli-reference-all-19-subcommands)
+5. [Complete CLI Reference (All 21 Subcommands)](#complete-cli-reference-all-21-subcommands)
 6. [Complete Agent Tool Catalog (All 32 Workspace Tools)](#complete-agent-tool-catalog-all-32-workspace-tools)
 7. [Hierarchical Team Orchestration & Engineering Personas](#hierarchical-team-orchestration--engineering-personas)
 8. [Protocol Integrations (MCP, A2A v0.3, Multi-Channel Gateway & AG-UI SSE)](#protocol-integrations)
@@ -49,9 +49,9 @@ OmniExecutor Agent treats every one of those failure modes as a systems-engineer
 
 | Domain | What OmniExecutor Agent Can Do | Primary Module(s) |
 | :--- | :--- | :--- |
-| **Autonomous Coding Loop** | ReAct, SPARC (`S/P/A/R/C`), and Hierarchical DAG workflows; Turn-0 inventory; `Plan`/`Act` mode gate; `.omni_todo.md` anchor; Action→Observation JSONL replay; `Self-Review Diff Gate` (AST + SAST + empty-input boundary probe); parallel `git worktree` Best-of-N with atomic rollback | `execution/agent_loop.py`, `execution/loop_policies.py`, `execution/best_of_n.py` |
-| **28 Deterministic Zero-Token Rails** | `ast-grep` polyglot rewrite, `LibCST` codemods, `Z3` SMT solver, `Hypothesis` property fuzzing, `OpenAPI`/`SQL` codegen, `DuckDB`/`osquery` SQL, `fastmft` NTFS/Casimir radar, double-entry `Decimal` ledger audit, and persistent `LSP` diagnostics | `execution/deterministic_offloader.py`, `perception/lsp_client.py` |
-| **Hierarchical Teams** | Automatic severity scoring (`0–10`) selecting 1 solo agent, a 4-agent Dev Squad, or a 9-agent Executive Fleet across 4 dependency waves with live RAM-scaled concurrency | `execution/subagent_bus.py`, `cognition/personas.py` |
+| **Autonomous Coding Loop** | ReAct, SPARC (`S/P/A/R/C`), and Hierarchical DAG workflows; Turn-0 inventory; `Plan`/`Act` gate (`PlanningFileEditorGate`); `.omni_todo.md` anchor; Action→Observation JSONL replay; 5-pattern `OpenHandsStuckDetector`; `V4AMultiFilePatchEngine` + `AiderFuzzySearchReplaceEngine` + `UndoEditHistory`; `TrajectoryCritic` & `Self-Review Diff Gate`; parallel `git worktree` Best-of-N | `execution/agent_loop.py`, `execution/loop_policies.py`, `execution/openhands_organs.py`, `execution/apex_codeact_fuzzy.py` |
+| **150 Deterministic Zero-Token Rails** | Sub-millisecond zero-token rails spanning `ast-grep`, `LibCST`, `Comby`, `LLMLingua` token pruning, `Z3` SMT, `Hypothesis`, `ddmin`, `Ochiai` SBFL fault localization, `Agentless` 3-phase localization, `AutoCodeRover` AST guard synthesis, `CodeAct` AST sandbox, `TLA+` bounded TLC model checker, `Raft/Paxos` self-healing, `CPU` cache/Roofline telemetry, Windows/Browser playbooks, and `fastmft`/Casimir radar | `execution/deterministic_offloader.py`, `execution/deterministic_matrix_100.py`, `execution/token_latency_savers.py`, `execution/apex_fault_localizer.py`, `execution/tla_formal_verifier.py`, `execution/raft_paxos_healing.py`, `execution/cpu_cache_telemetry.py` |
+| **HyperFleet & Hierarchical Teams** | In-process `HyperFleet` executing **1,000+ concurrent agents** at **`0.173 KB` RAM/agent** with Go-style `SingleFlightCoalescer`, `begin_generation` zero-erasure chaining, hard USD budget gate, `ResourceLockManager` (`FIFOLock`), plus severity-scored (`0–10`) Dev Squad / Executive Fleet waves | `execution/subagent_bus.py`, `execution/openhands_organs.py`, `cognition/personas.py` |
 | **Code Intelligence** | Polyglot AST/parser symbol map ranked with weighted PageRank (`Python`, `JS/TS`, `Rust`, `Go`); vectorless Merkle-tree index (`sync_incremental`) with ACL/RBAC scoping & Mermaid graph export; persistent stdio LSP client | `perception/polyglot_repomap.py`, `perception/knowledge_index.py`, `perception/lsp_client.py`, `perception/silicon_radar.py` |
 | **Browser Automation** | Isolated Chromium via Playwright/CDP with `[1..N]` indexed interactive elements, self-healing multi-strategy locators, payment/checkout hard-stop guard (`block_on_payment`), same-URL idempotence, and SSRF-guarded `web_fetch` | `gui/cdp_browser.py`, `gui/verified_browser_adapter.py` |
 | **Desktop Automation (Windows)** | Closed-loop Win32 UI Automation + Set-of-Mark visual tagging + OCR + window/process/port/clipboard control protected by a process-wide exclusive GUI lock | `execution/pc_automation.py` |
@@ -186,12 +186,12 @@ $env:OPENROUTER_API_KEY = "<your-openrouter-key>"
 ```powershell
 .\omni-executor.cmd doctor     # Multi-organ readiness, SHA-256 seal, SQLite-WAL & host headroom
 .\omni-executor.cmd shield .   # Built-in static analysis (secrets, MCP configs, hooks, SAST)
-pytest tests -q                # Automated suite (75 unit & integration tests)
+pytest tests -q                # Full automated suite (105 unit & integration tests)
 ```
 
 ---
 
-## Complete CLI Reference (All 19 Subcommands)
+## Complete CLI Reference (All 21 Subcommands)
 
 Every capability is accessible through `.\omni-executor.cmd <command> [args]` (or `python -m am_ua.cli <command>`).
 
@@ -199,7 +199,9 @@ Every capability is accessible through `.\omni-executor.cmd <command> [args]` (o
 | :--- | :--- | :--- |
 | **`doctor`** | Full readiness audit: single state owner, constitutional SHA-256 seal, topology compliance, memory layers, and host RAM/disk headroom | None (`exit 0` if healthy and topology valid) |
 | **`shield`** | Static security scanner covering secrets, MCP configs, hook injection, dangerous permissions, and unsafe code sinks | `[target]` (default repo root); prints JSON score + grade `A`–`F` |
-| **`det`** | Programmable Deterministic Command Hub: list or invoke any of the 28 zero-token deterministic rails (`ast_syntax_sweep`, `z3_constraint_solve`, `hypothesis_property_test`, `fastmft_radar`, `ledger_audit`, `lsp_diagnostics`, etc.) | `list\|run` `[rail]` `--workspace DIR` `--params JSON` |
+| **`det`** | Programmable Deterministic Command Hub: list or invoke any of the **150 zero-token deterministic rails** (`ast_syntax_sweep`, `sbfl_ochiai_fault_localize`, `tla_bounded_model_checker`, `raft_partition_self_healer`, `cache_line_false_sharing_audit`, `omega_150_supreme_frontier_sweep`, etc.) | `list\|run` `[rail]` `--workspace DIR` `--params JSON` |
+| **`fleet`** | Launch `HyperFleet` high-density in-process concurrent agent swarm (`1,000+` agents at `<1 KB` RAM/agent, `SingleFlight` coalescing & USD cap) | `--count N` `--max-usd FLOAT` `--concurrency N` `--objective TEXT` `--workspace DIR` |
+| **`swebench`** | Official SWE-bench instance/prediction validation & deterministic evaluation harness | `validate-predictions` `--predictions PATH` `--workspace DIR` |
 | **`lsp`** | Query `PersistentLSPClient` diagnostics or symbol `goto_definition` (JSON-RPC 2.0 stdio with instant Python AST fallback) | `diagnostics\|definition` `<target>` `--workspace DIR` `--language LANG` |
 | **`daemon`** | Interact with the crash-safe SQLite-WAL `DurableDaemonQueue` for always-on queued tasks & webhooks | `enqueue\|stats\|claim` `--objective TEXT` `--workspace DIR` `--priority N` `--worker-id ID` `--db PATH` |
 | **`a2a-serve`** | Serve `GET /.well-known/agent.json` AgentCard and `POST /a2a` (`tasks/send`, `tasks/get`, `tasks/cancel`) or print AgentCard | `--host HOST` `--port PORT` `--auth-token TOK` `--card-only` |
