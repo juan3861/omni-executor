@@ -199,6 +199,20 @@ BUILTIN_DETERMINISTIC_RAILS: Dict[str, DeterministicRailSpec] = {
     ),
 }
 
+from am_ua.execution.deterministic_matrix_100 import (  # noqa: E402
+    MATRIX_69_SPECS,
+    execute_matrix_69_rail,
+    match_matrix_69_rail,
+)
+
+for _m_name, (_m_desc, _m_tok, _m_mut) in MATRIX_69_SPECS.items():
+    BUILTIN_DETERMINISTIC_RAILS[_m_name] = DeterministicRailSpec(
+        name=_m_name,
+        description=_m_desc,
+        estimated_tokens_saved=_m_tok,
+        mutates_workspace=_m_mut,
+    )
+
 # Never intercept tasks that ask to modify, create, fix, or refactor code.
 _MUTATION_INTENT_RX = re.compile(
     r"\b(fix|implement|create|write|add|edit|modify|refactor|update|patch|build|remove|delete|"
@@ -312,6 +326,9 @@ class DeterministicTaskOffloader:
             return "fastmft_radar"
         if verify_cmd and any(k in low for k in ("only run verify", "run tests only", "rodar testes apenas", "somente verificar")):
             return "verify_only_check"
+        matched_matrix = match_matrix_69_rail(low)
+        if matched_matrix:
+            return matched_matrix
         return None
 
     @staticmethod
@@ -1810,6 +1827,8 @@ class DeterministicTaskOffloader:
                 new_text=str(args.get("new_text", "")),
                 apply=bool(args.get("apply", False)),
             )
+        if rail_name in MATRIX_69_SPECS:
+            return execute_matrix_69_rail(rail_name, ws, args, execute_rail_fn=cls.execute_rail)
         return cls.run_preflight_bundle(ws, max_chars=int(args.get("max_chars", 3500)))
 
     @classmethod
