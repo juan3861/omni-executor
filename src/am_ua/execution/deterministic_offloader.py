@@ -176,6 +176,11 @@ BUILTIN_DETERMINISTIC_RAILS: Dict[str, DeterministicRailSpec] = {
         description="Deterministic double-entry accounting ledger verifier using exact Decimal math (zero floating-point error) for journal balance and reconciliation.",
         estimated_tokens_saved=4500,
     ),
+    "lsp_diagnostics": DeterministicRailSpec(
+        name="lsp_diagnostics",
+        description="Persistent LSP JSON-RPC (with instant AST fallback) file diagnostics and go-to-definition lookup in 0 LLM tokens.",
+        estimated_tokens_saved=3500,
+    ),
 }
 
 # Never intercept tasks that ask to modify, create, fix, or refactor code.
@@ -1754,6 +1759,17 @@ class DeterministicTaskOffloader:
                 file_path=args.get("file_path"),
                 workspace=ws,
             )
+        if rail_name == "lsp_diagnostics":
+            from am_ua.perception.lsp_client import PersistentLSPClient
+
+            lsp = PersistentLSPClient(ws, language=str(args.get("language", "python")))
+            lsp.start(prefer_external=bool(args.get("prefer_external", False)))
+            try:
+                if args.get("symbol"):
+                    return lsp.goto_definition(str(args["symbol"]), target_dir=str(args.get("target", ".")))
+                return lsp.get_diagnostics(str(args.get("file_path") or args.get("target") or ""))
+            finally:
+                lsp.shutdown()
         return cls.run_preflight_bundle(ws, max_chars=int(args.get("max_chars", 3500)))
 
     @classmethod

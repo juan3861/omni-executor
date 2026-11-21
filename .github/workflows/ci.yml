@@ -159,6 +159,6 @@ jobs:
           print("ALL_PORTABLE_CI_CHECKS_PASSED")
           PY
 
-      - name: Pytest v5.0 & v5.1 live wiring, 7-layer gears, LSP & Daemon Queue
+      - name: Pytest v5.0, v5.1 & v5.2 live wiring, 7-layer gears, modular policies, LSP & Daemon Queue
         run: |
-          pytest tests/test_v50_seven_layers_300_gears.py tests/test_v51_live_wiring_lsp_daemon.py -v
+          pytest tests/test_v50_seven_layers_300_gears.py tests/test_v51_live_wiring_lsp_daemon.py tests/test_v52_tier1_modular_lsp_daemon_cli.py -v

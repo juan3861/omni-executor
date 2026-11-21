@@ -141,7 +141,48 @@ def main(argv: list[str] | None = None) -> int:
     p_a2a.add_argument("--auth-token", default=None)
     p_a2a.add_argument("--card-only", action="store_true", help="Print /.well-known/agent.json AgentCard and exit")
 
+    p_lsp = sub.add_parser("lsp", help="Persistent LSP diagnostics & go-to-definition (with instant AST fallback)")
+    p_lsp.add_argument("action", choices=["diagnostics", "definition"], help="LSP action")
+    p_lsp.add_argument("target", help="File path (for diagnostics) or symbol name (for definition)")
+    p_lsp.add_argument("--workspace", default=str(ROOT), help="Target workspace directory")
+    p_lsp.add_argument("--language", default="python")
+
+    p_daemon = sub.add_parser("daemon", help="Always-on durable SQLite WAL task & webhook queue")
+    p_daemon.add_argument("action", choices=["enqueue", "stats", "claim"], help="Daemon queue action")
+    p_daemon.add_argument("--objective", default="", help="Objective for enqueue")
+    p_daemon.add_argument("--workspace", default=str(ROOT), help="Workspace path")
+    p_daemon.add_argument("--priority", type=int, default=50)
+    p_daemon.add_argument("--worker-id", default="cli-worker")
+    p_daemon.add_argument("--db", default="", help="Optional custom SQLite DB path")
+
     args = parser.parse_args(argv)
+    if args.cmd == "lsp":
+        from am_ua.perception.lsp_client import PersistentLSPClient
+        lsp = PersistentLSPClient(args.workspace, language=args.language)
+        lsp.start(prefer_external=False)
+        try:
+            res = lsp.get_diagnostics(args.target) if args.action == "diagnostics" else lsp.goto_definition(args.target)
+        finally:
+            lsp.shutdown()
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        return 0 if res.get("ok") else 1
+
+    if args.cmd == "daemon":
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
+        from am_ua.runtime.daemon_queue import DurableDaemonQueue
+        db_p = Path(args.db) if args.db else (resolve_omni_temp_dir("daemon") / "queue.db")
+        q = DurableDaemonQueue(db_p)
+        if args.action == "enqueue":
+            tid = q.enqueue(args.objective or "Scheduled check", args.workspace, priority=args.priority)
+            print(json.dumps({"ok": True, "task_id": tid, "db": str(db_p)}, indent=2))
+            return 0
+        if args.action == "claim":
+            task = q.claim_next(args.worker_id)
+            print(json.dumps({"ok": task is not None, "task": task}, indent=2, default=str))
+            return 0
+        print(json.dumps({"ok": True, "db": str(db_p), "stats": q.stats()}, indent=2))
+        return 0
+
     if args.cmd == "a2a-serve":
         from am_ua.execution.a2a_protocol import AgentCard, OmniA2AServer
         srv = OmniA2AServer(card=AgentCard(url=f"http://{args.host}:{args.port}"))
