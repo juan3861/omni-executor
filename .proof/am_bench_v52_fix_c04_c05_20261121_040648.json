@@ -1,0 +1,122 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "v52_fix_c04_c05",
+  "workflow": "react",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\v52_fix_c04_c05_20261121_040648",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 2,
+  "selected": 2,
+  "summary": {
+    "overall": {
+      "n": 2,
+      "passed": 2,
+      "pass_rate": 1.0,
+      "tokens": 143865,
+      "llm_calls": 40,
+      "elapsed_s": 301.1
+    },
+    "code": {
+      "n": 2,
+      "passed": 2,
+      "pass_rate": 1.0,
+      "tokens": 143865,
+      "llm_calls": 40,
+      "elapsed_s": 301.1
+    }
+  },
+  "results": [
+    {
+      "task_id": "c04_money_rounding",
+      "category": "code",
+      "agent_status": "VERIFIED_AFTER_BUDGET",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "groq",
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "write_file",
+        "run",
+        "run",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "run",
+        "replace_in_file",
+        "read_file",
+        "write_file",
+        "replace_in_file",
+        "run",
+        "run",
+        "run",
+        "read_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.57s\n",
+      "elapsed_s": 245.7,
+      "llm_calls": 20,
+      "prompt_tokens": 74821,
+      "completion_tokens": 3293
+    },
+    {
+      "task_id": "c05_multi_file_rename",
+      "category": "code",
+      "agent_status": "VERIFIED_AFTER_BUDGET",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "replace_in_file",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "search",
+        "run",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "run",
+        "search",
+        "read_file",
+        "read_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.70s\n",
+      "elapsed_s": 55.4,
+      "llm_calls": 20,
+      "prompt_tokens": 63351,
+      "completion_tokens": 2400
+    }
+  ]
+}

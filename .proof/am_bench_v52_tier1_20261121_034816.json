@@ -1,0 +1,478 @@
+{
+  "schema": "AM_BENCH_RESULT/v1",
+  "label": "v52_tier1",
+  "workflow": "react",
+  "run_dir": "F:\\AetherMind_Temp\\am_bench\\v52_tier1_20261121_034816",
+  "providers_configured": [
+    [
+      "groq",
+      "openai/gpt-oss-120b"
+    ],
+    [
+      "openrouter",
+      "cohere/north-mini-code:free"
+    ],
+    [
+      "openai",
+      "gpt-5-mini"
+    ]
+  ],
+  "completed": 15,
+  "selected": 15,
+  "summary": {
+    "overall": {
+      "n": 15,
+      "passed": 13,
+      "pass_rate": 0.867,
+      "tokens": 655336,
+      "llm_calls": 195,
+      "elapsed_s": 893.7
+    },
+    "code": {
+      "n": 15,
+      "passed": 13,
+      "pass_rate": 0.867,
+      "tokens": 655336,
+      "llm_calls": 195,
+      "elapsed_s": 893.7
+    }
+  },
+  "results": [
+    {
+      "task_id": "c01_off_by_one",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 6,
+      "providers": [
+        "groq",
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "replace_in_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.58s\n",
+      "elapsed_s": 29.0,
+      "llm_calls": 6,
+      "prompt_tokens": 12829,
+      "completion_tokens": 1195
+    },
+    {
+      "task_id": "c02_mutable_default",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 5,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.57s\n",
+      "elapsed_s": 22.3,
+      "llm_calls": 5,
+      "prompt_tokens": 10554,
+      "completion_tokens": 720
+    },
+    {
+      "task_id": "c03_slugify_unicode",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 6,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "write_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.56s\n",
+      "elapsed_s": 25.0,
+      "llm_calls": 6,
+      "prompt_tokens": 13251,
+      "completion_tokens": 1246
+    },
+    {
+      "task_id": "c04_money_rounding",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 8,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "write_file",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": false,
+      "hidden_exit_code": 1,
+      "visible_tampered": [],
+      "hidden_output_tail": "F                                                                        [100%]\n================================== FAILURES ===================================\n__________________________________ test_all ___________________________________\n\n    def test_all():\n        assert total(['0.10','0.20']) == '0.30'\n        assert total(['0.105']) == '0.11'\n        assert total(['2.675']) == '2.68'\n>       assert total([]) == '0.00'\n               ^^^^^^^^^\n\ntests_hidden\\test_h.py:8: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\nprices = []\n\n    def total(prices):\n>       return str(sum(Decimal(p) for p in prices).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       AttributeError: 'int' object has no attribute 'quantize'\n\nmoney.py:5: AttributeError\n=========================== short test summary info ===========================\nFAILED tests_hidden/test_h.py::test_all - AttributeError: 'int' object has no...\n1 failed in 0.90s\n",
+      "adaptive_escalated": true,
+      "elapsed_s": 65.6,
+      "llm_calls": 15,
+      "prompt_tokens": 46024,
+      "completion_tokens": 4368
+    },
+    {
+      "task_id": "c05_multi_file_rename",
+      "category": "code",
+      "agent_status": "BUDGET_EXHAUSTED",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "list_dir",
+        "read_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "search",
+        "replace_in_file",
+        "replace_in_file",
+        "replace_in_file",
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "search",
+        "run",
+        "read_file",
+        "read_file",
+        "replace_in_file"
+      ],
+      "passed": false,
+      "hidden_exit_code": 2,
+      "visible_tampered": [],
+      "hidden_output_tail": "\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\importlib\\__init__.py:126: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n<frozen importlib._bootstrap>:1204: in _gcd_import\n    ???\n<frozen importlib._bootstrap>:1176: in _find_and_load\n    ???\n<frozen importlib._bootstrap>:1147: in _find_and_load_unlocked\n    ???\n<frozen importlib._bootstrap>:690: in _load_unlocked\n    ???\nC:\\Users\\juanp\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\_pytest\\assertion\\rewrite.py:188: in exec_module\n    exec(co, module.__dict__)\ntests_hidden\\test_h.py:4: in <module>\n    from shop.cart import cart_total\nE     File \"F:\\AetherMind_Temp\\am_bench\\v52_tier1_20261121_034816\\c05_multi_file_rename\\shop\\cart.py\", line 2\nE       from shop.core import compute_total\\n\\ndef cart_total(cart):\nE                                           ^\nE   SyntaxError: unexpected character after line continuation character\n=========================== short test summary info ===========================\nERROR tests_hidden/test_h.py\n!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 1.66s\n",
+      "adaptive_escalated": true,
+      "elapsed_s": 149.7,
+      "llm_calls": 40,
+      "prompt_tokens": 117140,
+      "completion_tokens": 15040
+    },
+    {
+      "task_id": "c06_cli_flag",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 9,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "read_file",
+        "write_file",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.56s\n",
+      "elapsed_s": 40.8,
+      "llm_calls": 9,
+      "prompt_tokens": 25849,
+      "completion_tokens": 1684
+    },
+    {
+      "task_id": "c07_fib_performance",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 10,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "write_file",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.56s\n",
+      "elapsed_s": 48.0,
+      "llm_calls": 10,
+      "prompt_tokens": 29364,
+      "completion_tokens": 2723
+    },
+    {
+      "task_id": "c08_csv_quotes",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 14,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "run",
+        "replace_in_file",
+        "run",
+        "run",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.56s\n",
+      "elapsed_s": 48.6,
+      "llm_calls": 14,
+      "prompt_tokens": 43631,
+      "completion_tokens": 2539
+    },
+    {
+      "task_id": "c09_br_date",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 6,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "write_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.59s\n",
+      "elapsed_s": 26.3,
+      "llm_calls": 6,
+      "prompt_tokens": 13771,
+      "completion_tokens": 1230
+    },
+    {
+      "task_id": "c10_stack_errors",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 7,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "list_dir",
+        "read_file",
+        "read_file",
+        "write_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.57s\n",
+      "elapsed_s": 25.9,
+      "llm_calls": 7,
+      "prompt_tokens": 15586,
+      "completion_tokens": 944
+    },
+    {
+      "task_id": "c11_deep_merge",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 6,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "write_file",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.56s\n",
+      "elapsed_s": 21.1,
+      "llm_calls": 6,
+      "prompt_tokens": 13603,
+      "completion_tokens": 1094
+    },
+    {
+      "task_id": "c12_email_regex",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 6,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.55s\n",
+      "elapsed_s": 29.9,
+      "llm_calls": 6,
+      "prompt_tokens": 14582,
+      "completion_tokens": 2473
+    },
+    {
+      "task_id": "c13_sort_key",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 11,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "read_file",
+        "read_file",
+        "replace_in_file",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.55s\n",
+      "adaptive_escalated": true,
+      "elapsed_s": 134.8,
+      "llm_calls": 31,
+      "prompt_tokens": 119087,
+      "completion_tokens": 6998
+    },
+    {
+      "task_id": "c14_lru_cache",
+      "category": "code",
+      "agent_status": "VERIFIED",
+      "stop_reason": "finish",
+      "turns": 14,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "write_file",
+        "run",
+        "run",
+        "run",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "run"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.55s\n",
+      "elapsed_s": 103.0,
+      "llm_calls": 14,
+      "prompt_tokens": 42484,
+      "completion_tokens": 7865
+    },
+    {
+      "task_id": "c15_safe_join",
+      "category": "code",
+      "agent_status": "VERIFIED_AFTER_BUDGET",
+      "stop_reason": "max_turns",
+      "turns": 20,
+      "providers": [
+        "openrouter"
+      ],
+      "tools": [
+        "list_dir",
+        "read_file",
+        "read_file",
+        "run",
+        "write_file",
+        "write_file",
+        "run",
+        "run",
+        "read_file",
+        "run",
+        "run",
+        "run",
+        "run",
+        "write_file",
+        "run",
+        "run",
+        "run",
+        "write_file"
+      ],
+      "passed": true,
+      "hidden_exit_code": 0,
+      "visible_tampered": [],
+      "hidden_output_tail": ".                                                                        [100%]\n1 passed in 0.59s\n",
+      "elapsed_s": 123.7,
+      "llm_calls": 20,
+      "prompt_tokens": 74088,
+      "completion_tokens": 13374
+    }
+  ]
+}

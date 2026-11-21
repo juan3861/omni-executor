@@ -112,8 +112,70 @@ def replay_event_stream(jsonl_path: Path) -> Dict[str, Any]:
     }
 
 
-def run_self_review_diff_gate(workspace: Path) -> Dict[str, Any]:
-    """Mandatory pre-finish self-review gate (AST syntax + SAST + git diff)."""
+def _probe_mutated_edge_bugs(ws: Path, mutated_py_files: List[str]) -> List[Dict[str, Any]]:
+    """Run zero-token empty/boundary edge check on safe pure 1-arg Python functions to catch AttributeError/NameError."""
+    import ast
+    import importlib.util
+
+    bugs: List[Dict[str, Any]] = []
+    skip_names = {"main", "cli", "setup", "run"}
+    for rel in mutated_py_files[:8]:
+        norm = rel.replace("\\", "/")
+        if norm.startswith(("tests", "test_")) or Path(norm).name.startswith("test_"):
+            continue
+        fp = (ws / rel).resolve()
+        if not fp.is_file():
+            continue
+        try:
+            src = fp.read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(src, filename=str(fp))
+        except (OSError, SyntaxError):
+            continue
+        # Only probe pure modules without subprocess/network/file-deletion side effects
+        if any(tok in src for tok in ("subprocess", "rmtree", "unlink", "urllib", "requests", "socket")):
+            continue
+        one_arg_fns = [
+            n.name
+            for n in tree.body
+            if isinstance(n, ast.FunctionDef)
+            and n.name not in skip_names
+            and not n.name.startswith("_")
+            and len(n.args.args) == 1
+            and not n.args.vararg
+            and not n.args.kwarg
+        ]
+        if not one_arg_fns:
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location(f"_am_sr_{fp.stem}", str(fp))
+            if spec is None or spec.loader is None:
+                continue
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        except Exception:
+            continue
+        for fn_name in one_arg_fns[:5]:
+            fn = getattr(mod, fn_name, None)
+            if not callable(fn):
+                continue
+            for probe_in in ([], "", {}):
+                try:
+                    fn(probe_in)
+                except (AttributeError, NameError, UnboundLocalError) as exc:
+                    bugs.append({
+                        "file": norm,
+                        "function": fn_name,
+                        "input": repr(probe_in),
+                        "error": f"{type(exc).__name__}: {exc}",
+                    })
+                    break
+                except Exception:
+                    continue
+    return bugs
+
+
+def run_self_review_diff_gate(workspace: Path, *, mutated_py_files: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Mandatory pre-finish self-review gate (AST syntax + SAST + boundary edge check + git diff)."""
     from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
     from am_ua.security.agent_shield import AgentShieldAuditor
 
@@ -121,12 +183,14 @@ def run_self_review_diff_gate(workspace: Path) -> Dict[str, Any]:
     syn = DeterministicTaskOffloader.ast_syntax_sweep(ws)
     shield = AgentShieldAuditor().scan_directory(ws, include_source_sast=True)
     git_info = DeterministicTaskOffloader.git_forensics(ws)
-    passed = bool(syn.get("ok")) and bool(shield.passed)
+    edge_bugs = _probe_mutated_edge_bugs(ws, list(mutated_py_files or [])) if syn.get("ok") else []
+    passed = bool(syn.get("ok")) and bool(shield.passed) and not edge_bugs
     return {
         "ok": passed,
         "passed": passed,
         "syntax_ok": bool(syn.get("ok")),
         "syntax_errors": syn.get("syntax_errors", []),
+        "edge_bugs": edge_bugs,
         "shield_grade": shield.grade,
         "shield_findings": len(shield.findings),
         "git_diff_stat": git_info.get("diff_stat", ""),

@@ -68,3 +68,43 @@ def test_v52_cli_lsp_daemon_and_a2a_subcommands(tmp_path: Path, capsys) -> None:
     rc_a2a = cli_main(["a2a-serve", "--card-only"])
     out_a2a = json.loads(capsys.readouterr().out)
     assert rc_a2a == 0 and out_a2a["name"] == "omni-executor"
+
+
+def test_v52_self_review_boundary_probe_and_replace_newline_heal(tmp_path: Path) -> None:
+    """Verify Self-Review catches empty-input AttributeError (c04) and replace_in_file heals literal \\n (c05)."""
+    from am_ua.execution.agent_loop import AgentLoop, WorkspaceTools
+    from am_ua.governance.seal_guard import ConstitutionSealGuard
+
+    guard = ConstitutionSealGuard()
+    guard.policy = dict(guard.policy)
+    guard.policy["hardware_safety_locks"] = {**guard.policy.get("hardware_safety_locks", {}), "safe_temp_root": str(tmp_path)}
+
+    ws = tmp_path / "heal_ws"
+    ws.mkdir()
+    (ws / "money.py").write_text(
+        "from decimal import Decimal, ROUND_HALF_UP\n"
+        "def total(prices):\n"
+        "    return str(sum(Decimal(p) for p in prices).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))\n",
+        encoding="utf-8",
+    )
+    sr_bad = AgentLoop.run_self_review_diff_gate(ws, mutated_py_files=["money.py"])
+    assert sr_bad["ok"] is False and any("AttributeError" in b["error"] for b in sr_bad["edge_bugs"])
+
+    (ws / "money.py").write_text(
+        "from decimal import Decimal, ROUND_HALF_UP\n"
+        "def total(prices):\n"
+        "    return str(sum((Decimal(p) for p in prices), Decimal('0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))\n",
+        encoding="utf-8",
+    )
+    sr_ok = AgentLoop.run_self_review_diff_gate(ws, mutated_py_files=["money.py"])
+    assert sr_ok["ok"] is True and not sr_ok["edge_bugs"]
+
+    (ws / "cart.py").write_text("from core import calc_total\n\ndef cart_total(c):\n    return calc_total(c)\n", encoding="utf-8")
+    wt = WorkspaceTools(ws, guard)
+    rep_res = wt.replace_in_file({
+        "path": str(ws / "cart.py"),
+        "old": "from core import calc_total",
+        "new": "from core import compute_total\\n\\n# renamed",
+    })
+    assert "syntax_error" not in rep_res
+    assert "from core import compute_total\n\n# renamed" in (ws / "cart.py").read_text(encoding="utf-8")
