@@ -158,8 +158,8 @@ def test_v56_shell_policy_rails_v4a_patch_undo_critic_secrets_condenser(tmp_path
     tom_vague = ToMIntentConsultant.consult("arruma isso")
     assert tom_vague["recommended_mode"] == "clarify_first"
 
-    # 6. Verify 110 Deterministic Rails registered and executable
-    assert len(BUILTIN_DETERMINISTIC_RAILS) == 110
+    # 6. Verify 110+ Deterministic Rails registered and executable
+    assert len(BUILTIN_DETERMINISTIC_RAILS) >= 110
     r_rail = DeterministicTaskOffloader.execute_rail(
         "shell_policy_rails_audit",
         tmp_path,

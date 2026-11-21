@@ -137,6 +137,17 @@ MATRIX_69_SPECS: Dict[str, Tuple[str, int, bool]] = {
     "planning_file_editor_rail": ("Strictly edit only PLAN.md / .omni_todo.md during PLAN mode while blocking code edits.", 3500, True),
     "stateful_python_kernel_rail": ("Execute Python expressions inside a persistent stateful session kernel preserving variables.", 4500, False),
     "inbound_debounce_triage": ("Coalesce rapid burst inbound user messages and audit plan review readiness (OpenHuman style).", 4000, False),
+    # Domain H: Sub-Millisecond Token & Latency Savers from Top 100 Mature Repos (111-120)
+    "ast_skeleton_compress": ("Fold Python function bodies into 1-line summaries preserving full API signatures (-80% tokens in <1ms).", 5500, False),
+    "comby_template_rewrite": ("Balanced-hole :[var] structural template search & rewrite across any language (<1ms).", 4500, False),
+    "prompt_token_pruner": ("Strip ANSI escapes, deduplicate log lines, and prune conversational filler (-60% tokens in <1ms).", 5000, False),
+    "grammar_json_repair": ("Deterministically heal truncated, fenced, trailing-comma, or Python-literal JSON (<0.5ms, 0 retries).", 4500, False),
+    "delta_debug_minimizer": ("Isolate the 1-minimal failing subset of lines/inputs in O(log N) steps via Zeller's ddmin.", 5500, False),
+    "dom_semantic_distiller": ("Distill noisy raw HTML into a compact headings + interactive controls + content digest (-95% tokens).", 6000, False),
+    "pyupgrade_modernizer": ("Upgrade legacy Python typing and super() idioms deterministically with AST validation.", 3500, False),
+    "gitleaks_precommit_gate": ("Sub-millisecond pre-commit credential & private-key blocker (AWS, GitHub, OpenAI, PEM, Slack).", 4500, False),
+    "semantic_cache_lookup": ("64-bit trigram SimHash near-duplicate prompt cache lookup (<0.1ms, -100% tokens on hit).", 6500, False),
+    "pytest_affected_test_selector": ("Select only pytest files affected by modified source files via static import graph (-85% test latency).", 5000, False),
 }
 
 
@@ -1147,5 +1158,78 @@ def execute_matrix_69_rail(
                 debounce_window_s=float(args.get("debounce_window_s", 2.5)),
             )
         return {"rail": rail_name, **res}
+
+    # --- DOMAIN H: SUB-MILLISECOND TOKEN & LATENCY SAVERS (111-120) ---
+    if rail_name == "ast_skeleton_compress":
+        from am_ua.execution.token_latency_savers import ast_skeleton_compress
+
+        src = str(args.get("source_code") or "")
+        if not src and args.get("file_path"):
+            src = _safe_path(ws, str(args["file_path"])).read_text(encoding="utf-8", errors="replace")
+        return {"rail": rail_name, **ast_skeleton_compress(src)}
+
+    if rail_name == "comby_template_rewrite":
+        from am_ua.execution.token_latency_savers import comby_template_rewrite
+
+        return {
+            "rail": rail_name,
+            **comby_template_rewrite(
+                str(args.get("source_text") or ""),
+                str(args.get("match_template") or ""),
+                str(args.get("rewrite_template") or ""),
+            ),
+        }
+
+    if rail_name == "prompt_token_pruner":
+        from am_ua.execution.token_latency_savers import prompt_token_pruner
+
+        return {"rail": rail_name, **prompt_token_pruner(str(args.get("text") or ""))}
+
+    if rail_name == "grammar_json_repair":
+        from am_ua.execution.token_latency_savers import grammar_json_repair
+
+        return {"rail": rail_name, **grammar_json_repair(str(args.get("malformed_text") or ""))}
+
+    if rail_name == "delta_debug_minimizer":
+        from am_ua.execution.token_latency_savers import delta_debug_minimizer
+
+        return {
+            "rail": rail_name,
+            **delta_debug_minimizer(
+                list(args.get("items") or []),
+                fail_trigger_substring=str(args.get("fail_trigger_substring") or "ERROR"),
+            ),
+        }
+
+    if rail_name == "dom_semantic_distiller":
+        from am_ua.execution.token_latency_savers import dom_semantic_distiller
+
+        return {"rail": rail_name, **dom_semantic_distiller(str(args.get("html") or ""))}
+
+    if rail_name == "pyupgrade_modernizer":
+        from am_ua.execution.token_latency_savers import pyupgrade_modernizer
+
+        return {"rail": rail_name, **pyupgrade_modernizer(str(args.get("source_code") or ""))}
+
+    if rail_name == "gitleaks_precommit_gate":
+        from am_ua.execution.token_latency_savers import gitleaks_precommit_gate
+
+        return {"rail": rail_name, **gitleaks_precommit_gate(str(args.get("text") or ""))}
+
+    if rail_name == "semantic_cache_lookup":
+        from am_ua.execution.token_latency_savers import SimHashSemanticCache
+
+        cache = SimHashSemanticCache(max_hamming_distance=int(args.get("max_hamming_distance", 4)))
+        for entry in list(args.get("seed_entries") or []):
+            cache.put(str(entry.get("prompt") or ""), entry.get("response"))
+        return {"rail": rail_name, **cache.lookup(str(args.get("prompt") or ""))}
+
+    if rail_name == "pytest_affected_test_selector":
+        from am_ua.execution.token_latency_savers import pytest_affected_test_selector
+
+        return {
+            "rail": rail_name,
+            **pytest_affected_test_selector(ws, list(args.get("modified_files") or [])),
+        }
 
     return {"ok": False, "rail": rail_name, "error": f"Unhandled matrix rail: {rail_name}"}
