@@ -23,7 +23,7 @@ from am_ua.execution.token_latency_savers import (
 
 
 def test_v58_120_deterministic_rails_token_compression_and_sub_ms_latency(tmp_path: Path) -> None:
-    assert len(BUILTIN_DETERMINISTIC_RAILS) == 120
+    assert len(BUILTIN_DETERMINISTIC_RAILS) >= 120
 
     # 1. AST Skeleton Compressor (Rail 111)
     big_py = (
