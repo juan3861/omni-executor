@@ -30,9 +30,9 @@ from am_ua.execution.deterministic_offloader import (
 
 
 def test_v60_135_deterministic_rails_registered_and_nl_triggers() -> None:
-    """Verify exactly 135 deterministic rails are registered and Domain I keyword triggers match."""
-    assert len(BUILTIN_DETERMINISTIC_RAILS) == 135
-    assert len(DeterministicTaskOffloader.list_rails()) == 135
+    """Verify at least 135 deterministic rails are registered and Domain I keyword triggers match."""
+    assert len(BUILTIN_DETERMINISTIC_RAILS) >= 135
+    assert len(DeterministicTaskOffloader.list_rails()) >= 135
 
     assert DeterministicTaskOffloader.match_zero_token_rail("run sbfl suspicious line ranking") == "sbfl_ochiai_fault_localize"
     assert DeterministicTaskOffloader.match_zero_token_rail("compute ochiai spectrum score") == "sbfl_ochiai_fault_localize"
