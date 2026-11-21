@@ -126,6 +126,12 @@ MATRIX_69_SPECS: Dict[str, Tuple[str, int, bool]] = {
     "rbac_policy_simulator": ("Simulate deterministic RBAC/ACL permission decisions for principal/action/resource.", 4000, False),
     "sandbox_escape_auditor": ("Audit code or shell scripts for path traversal, privileged calls, and escape vectors.", 4500, False),
     "deterministic_batch_pipeline": ("Execute a sequence of deterministic rails in a single zero-token pipeline.", 6000, False),
+    # Domain G: OpenHands v1 SDK Maximum Extraction Organs (101-105)
+    "stuck_loop_detector": ("Analyze Action/Observation event stream for all 5 OpenHands stuck loop patterns.", 4500, False),
+    "shell_policy_rails_audit": ("Evaluate shell command pipelines against structural policy rails (fetch-to-exec, raw-disk-op, catastrophic-delete).", 5000, False),
+    "v4a_multifile_patch": ("Atomically validate and apply OpenHands/GPT-5 V4A multi-file patches with AST check and undo history.", 5500, True),
+    "trajectory_critic_eval": ("Score agent execution trajectory via composite AgentFinished + EmptyPatch + Verification critic.", 4500, False),
+    "tom_intent_consultant": ("Theory-of-Mind user intent & ambiguity profiler (0-token ToM consultation).", 3500, False),
 }
 
 
@@ -1046,5 +1052,48 @@ def execute_matrix_69_rail(
             if execute_rail_fn is not None and r_name and r_name != "deterministic_batch_pipeline":
                 results.append(execute_rail_fn(r_name, ws, params=r_params))
         return {"ok": all(r.get("ok", False) for r in results), "rail": rail_name, "steps_executed": len(results), "results": results}
+
+    # --- DOMAIN G: OPENHANDS V1 SDK MAXIMUM EXTRACTION ORGANS (101-105) ---
+    if rail_name == "stuck_loop_detector":
+        from am_ua.execution.openhands_organs import OpenHandsStuckDetector
+
+        res = OpenHandsStuckDetector().analyze(list(args.get("events") or []))
+        return {"rail": rail_name, **res.to_dict()}
+
+    if rail_name == "shell_policy_rails_audit":
+        from am_ua.execution.openhands_organs import ShellSemanticPolicyRails
+
+        res = ShellSemanticPolicyRails.analyze_command(str(args.get("command") or ""))
+        return {"rail": rail_name, **res}
+
+    if rail_name == "v4a_multifile_patch":
+        from am_ua.execution.openhands_organs import V4AMultiFilePatchEngine
+
+        res = V4AMultiFilePatchEngine.apply_patch(
+            ws,
+            str(args.get("patch_text") or ""),
+            dry_run=bool(args.get("dry_run", False)),
+        )
+        return {"rail": rail_name, **res}
+
+    if rail_name == "trajectory_critic_eval":
+        from am_ua.execution.openhands_organs import TrajectoryCritic
+
+        res = TrajectoryCritic().evaluate(
+            list(args.get("events") or []),
+            git_patch=args.get("git_patch"),
+            require_patch=bool(args.get("require_patch", True)),
+            verify_passed=args.get("verify_passed"),
+        )
+        return {"rail": rail_name, **res.to_dict()}
+
+    if rail_name == "tom_intent_consultant":
+        from am_ua.execution.openhands_organs import ToMIntentConsultant
+
+        res = ToMIntentConsultant.consult(
+            str(args.get("user_message") or ""),
+            prior_preferences=args.get("prior_preferences"),
+        )
+        return {"rail": rail_name, **res}
 
     return {"ok": False, "rail": rail_name, "error": f"Unhandled matrix rail: {rail_name}"}

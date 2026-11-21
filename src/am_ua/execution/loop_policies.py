@@ -230,6 +230,13 @@ def evaluate_pre_critic(
             issues.append("verification_failed")
 
     final_score = round(max(0.0, min(1.0, score)), 3)
+    from am_ua.execution.openhands_organs import OpenHandsStuckDetector
+
+    stuck_rep = OpenHandsStuckDetector().analyze(tool_calls)
+    if stuck_rep.is_stuck and stuck_rep.loop_type:
+        issues.append(f"stuck_{stuck_rep.loop_type}")
+        final_score = round(max(0.0, final_score - 0.25), 3)
+
     return {
         "score": final_score,
         "success": final_score >= 0.5,
@@ -238,6 +245,7 @@ def evaluate_pre_critic(
             "clean_finish": clean_finish,
             "verification_passed": verif_passed,
             "agent_behavioral_issues": issues,
+            "stuck_analysis": stuck_rep.to_dict(),
         },
     }
 
