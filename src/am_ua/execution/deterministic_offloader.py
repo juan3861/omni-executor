@@ -206,7 +206,7 @@ _MUTATION_INTENT_RX = re.compile(
     re.IGNORECASE,
 )
 
-_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".pytest_cache", ".mypy_cache"}
+_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".pytest_cache", ".mypy_cache", "vendor", "HANDOFF_PACK"}
 
 
 def _iter_py_files(workspace: Path) -> List[Path]:

@@ -159,6 +159,6 @@ jobs:
           print("ALL_PORTABLE_CI_CHECKS_PASSED")
           PY
 
-      - name: Pytest v5.0, v5.1, v5.2 & v5.3 live wiring, 7-layer gears, 31 rails, SWE-bench & Daemon Worker
+      - name: Pytest v5.0, v5.1, v5.2, v5.3 & v5.4 HyperFleet (1,000+ agents), 31 rails, SWE-bench & Daemon
         run: |
-          pytest tests/test_v50_seven_layers_300_gears.py tests/test_v51_live_wiring_lsp_daemon.py tests/test_v52_tier1_modular_lsp_daemon_cli.py tests/test_v53_swebench_rail29_daemon_worker_fs.py -v
+          pytest tests/test_v50_seven_layers_300_gears.py tests/test_v51_live_wiring_lsp_daemon.py tests/test_v52_tier1_modular_lsp_daemon_cli.py tests/test_v53_swebench_rail29_daemon_worker_fs.py tests/test_v54_hyperfleet_1000_agents_zero_copy.py -v

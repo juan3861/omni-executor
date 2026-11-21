@@ -159,7 +159,31 @@ def main(argv: list[str] | None = None) -> int:
     p_swe.add_argument("action", choices=["validate-predictions"], help="SWE-bench action")
     p_swe.add_argument("predictions_path", help="Path to predictions.json")
 
+    p_fleet = sub.add_parser("fleet", help="Run v5.4 HyperFleet (500 to 1,000+ concurrent in-process agents under a hard USD budget)")
+    p_fleet.add_argument("--count", type=int, default=500, help="Number of concurrent agents to run (default 500)")
+    p_fleet.add_argument("--max-usd", type=float, default=10.0, help="Hard USD budget cap (default $10.0)")
+    p_fleet.add_argument("--concurrency", type=int, default=128, help="In-process worker concurrency")
+    p_fleet.add_argument("--objective", default="syntax check python files", help="Base objective or deterministic rail task")
+    p_fleet.add_argument("--workspace", default=str(ROOT), help="Target workspace directory")
+
     args = parser.parse_args(argv)
+    if args.cmd == "fleet":
+        from am_ua.execution.subagent_bus import SubAgentSessionBus
+        bus = SubAgentSessionBus()
+        tasks = [
+            {"id": f"fleet-{i + 1:04d}", "role": "worker", "objective": args.objective}
+            for i in range(max(1, int(args.count)))
+        ]
+        res = bus.run_hyper_fleet(
+            tasks,
+            workspace=args.workspace,
+            max_concurrency=args.concurrency,
+            max_budget_usd=args.max_usd,
+            prefer_deterministic=True,
+        )
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        return 0 if res.get("ok") else 1
+
     if args.cmd == "swebench":
         p_file = Path(args.predictions_path).resolve()
         data = json.loads(p_file.read_text(encoding="utf-8"))
