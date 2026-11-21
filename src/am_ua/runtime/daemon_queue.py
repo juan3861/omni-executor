@@ -178,3 +178,44 @@ class DurableDaemonQueue:
             for r in rows:
                 out[str(r["status"])] = int(r["cnt"])
             return out
+
+    def recover_stale_leases(self, *, stale_after_s: float = 300.0, now_ts: Optional[float] = None) -> int:
+        """Re-queue running tasks whose worker lease has exceeded `stale_after_s` without completion."""
+        now = time.time() if now_ts is None else float(now_ts)
+        cutoff = now - max(1.0, float(stale_after_s))
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE daemon_tasks
+                SET status = 'queued', worker_id = NULL, updated_at = ?
+                WHERE status = 'running' AND updated_at <= ?
+                """,
+                (now, cutoff),
+            )
+            return int(cur.rowcount or 0)
+
+    def run_worker_once(
+        self,
+        worker_id: str,
+        executor_fn: Optional[Any] = None,
+        *,
+        retry_delay_s: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Claim the next due task, execute `executor_fn(task_dict)`, and record completion or failure."""
+        task = self.claim_next(worker_id)
+        if task is None:
+            return {"ok": True, "claimed": False, "task_id": None}
+        tid = str(task["task_id"])
+        try:
+            if executor_fn is not None:
+                res = executor_fn(task)
+            else:
+                res = {"ok": True, "executed_by": worker_id, "objective": task["objective"]}
+            if isinstance(res, dict) and not res.get("ok", True):
+                self.fail(tid, str(res.get("error") or "executor returned ok=False"), retry_delay_s=retry_delay_s)
+                return {"ok": False, "claimed": True, "task_id": tid, "status": "failed", "result": res}
+            self.complete(tid, res if isinstance(res, dict) else {"result": str(res)})
+            return {"ok": True, "claimed": True, "task_id": tid, "status": "completed", "result": res}
+        except Exception as exc:
+            self.fail(tid, f"{type(exc).__name__}: {exc}", retry_delay_s=retry_delay_s)
+            return {"ok": False, "claimed": True, "task_id": tid, "status": "failed", "error": str(exc)}

@@ -181,6 +181,22 @@ BUILTIN_DETERMINISTIC_RAILS: Dict[str, DeterministicRailSpec] = {
         description="Persistent LSP JSON-RPC (with instant AST fallback) file diagnostics and go-to-definition lookup in 0 LLM tokens.",
         estimated_tokens_saved=3500,
     ),
+    "windows_system_rail": DeterministicRailSpec(
+        name="windows_system_rail",
+        description="Pre-built 0-token Windows Desktop & OS rail: window list/find, UIA/OCR probe, process & TCP port owner inspection, clipboard, and Casimir storage/RAM health.",
+        estimated_tokens_saved=5000,
+    ),
+    "browser_playbook_rail": DeterministicRailSpec(
+        name="browser_playbook_rail",
+        description="Pre-built 0-token Browser & Web rail: SSRF/domain guard verification, clean HTML/form/link/table extraction, and deterministic multi-step CDP playbook execution.",
+        estimated_tokens_saved=5500,
+    ),
+    "patch_validate_and_apply": DeterministicRailSpec(
+        name="patch_validate_and_apply",
+        description="Deterministically validate and optionally apply a unified diff patch with in-memory Python AST syntax verification before disk write.",
+        estimated_tokens_saved=4500,
+        mutates_workspace=True,
+    ),
 }
 
 # Never intercept tasks that ask to modify, create, fix, or refactor code.
@@ -1770,7 +1786,202 @@ class DeterministicTaskOffloader:
                 return lsp.get_diagnostics(str(args.get("file_path") or args.get("target") or ""))
             finally:
                 lsp.shutdown()
+        if rail_name == "windows_system_rail":
+            return cls.windows_system_rail(
+                ws,
+                sub_action=str(args.get("sub_action") or args.get("action") or "probe"),
+                target=str(args.get("target", "")),
+                port=args.get("port"),
+            )
+        if rail_name == "browser_playbook_rail":
+            return cls.browser_playbook_rail(
+                ws,
+                sub_action=str(args.get("sub_action") or args.get("action") or "extract_links_forms"),
+                file_path=args.get("file_path"),
+                html=args.get("html"),
+                url=args.get("url"),
+                allowed_domains=args.get("allowed_domains"),
+            )
+        if rail_name == "patch_validate_and_apply":
+            return cls.patch_validate_and_apply(
+                ws,
+                file_path=str(args.get("file_path", "")),
+                old_text=str(args.get("old_text", "")),
+                new_text=str(args.get("new_text", "")),
+                apply=bool(args.get("apply", False)),
+            )
         return cls.run_preflight_bundle(ws, max_chars=int(args.get("max_chars", 3500)))
+
+    @classmethod
+    def windows_system_rail(
+        cls,
+        workspace: Path,
+        *,
+        sub_action: str = "probe",
+        target: str = "",
+        port: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Pre-built 0-token Windows Desktop & OS rail (UIA/windows/processes/ports/storage/Casimir)."""
+        from am_ua.governance.homeostasis import casimir_bistable_diagnostics
+
+        act = (sub_action or "probe").strip().lower()
+        du = shutil.disk_usage(workspace)
+        cas = casimir_bistable_diagnostics(du.free, du.total)
+        if act == "storage_health":
+            return {"ok": True, "backend": "windows_system_rail", "sub_action": act, "casimir": cas}
+
+        if os.name == "nt":
+            try:
+                from am_ua.execution.pc_automation import PCAutomationEngine
+
+                pc = PCAutomationEngine()
+                if act == "windows":
+                    return {"ok": True, "backend": "win32_uia", "sub_action": act, "windows": pc.list_windows(filter_text=target)[:40]}
+                if act == "processes":
+                    return {"ok": True, "backend": "win32_proc", "sub_action": act, "processes": pc.window_organ.list_processes(name_filter=target)[:40]}
+                if act == "port_owner" and port is not None:
+                    return {"ok": True, "backend": "win32_net", "sub_action": act, "port_info": pc.window_organ.find_port_owner(int(port))}
+                probe = pc.probe_capabilities()
+                return {"ok": True, "backend": "win32_pc_automation", "sub_action": "probe", "capabilities": probe, "casimir": cas}
+            except Exception as exc:
+                return {"ok": True, "backend": "portable_os_probe", "sub_action": act, "note": str(exc)[:200], "casimir": cas}
+
+        return {
+            "ok": True,
+            "backend": "portable_os_probe",
+            "sub_action": act,
+            "platform": sys.platform,
+            "casimir": cas,
+        }
+
+    @classmethod
+    def browser_playbook_rail(
+        cls,
+        workspace: Path,
+        *,
+        sub_action: str = "extract_links_forms",
+        file_path: Optional[str] = None,
+        html: Optional[str] = None,
+        url: Optional[str] = None,
+        allowed_domains: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Pre-built 0-token Browser & Web extraction/guard rail (links, inputs, forms, tables, domain check)."""
+        from html.parser import HTMLParser
+
+        act = (sub_action or "extract_links_forms").strip().lower()
+        if act == "domain_check" and url:
+            import ipaddress
+            from urllib.parse import urlparse
+
+            host = (urlparse(str(url)).hostname or "").strip().lower()
+            if not host:
+                return {"ok": False, "backend": "deterministic_domain_guard", "url": url, "allowed": False, "reason": "missing hostname"}
+            try:
+                ip = ipaddress.ip_address(host.strip("[]"))
+                if ip.is_private or ip.is_loopback or ip.is_link_local:
+                    return {"ok": False, "backend": "deterministic_domain_guard", "url": url, "allowed": False, "reason": "private/loopback IP blocked"}
+            except ValueError:
+                pass
+            allow_list = [d.strip().lower() for d in (allowed_domains or []) if d and d.strip()]
+            if allow_list and not any(host == d or host.endswith("." + d.lstrip("*.")) for d in allow_list):
+                return {"ok": False, "backend": "deterministic_domain_guard", "url": url, "allowed": False, "reason": f"host '{host}' not in allowed_domains"}
+            return {"ok": True, "backend": "deterministic_domain_guard", "url": url, "allowed": True, "reason": "allowed"}
+
+        raw_html = str(html or "")
+        if not raw_html and file_path:
+            p = _resolve_in_workspace(Path(workspace).resolve(), str(file_path))
+            if not p.is_file():
+                return {"ok": False, "error": f"HTML file not found: {file_path}"}
+            raw_html = p.read_text(encoding="utf-8", errors="replace")
+
+        class _DOMExtractor(HTMLParser):
+            def __init__(self) -> None:
+                super().__init__()
+                self.links: List[Dict[str, str]] = []
+                self.inputs: List[Dict[str, str]] = []
+                self.buttons: List[Dict[str, str]] = []
+                self._cur_btn: Optional[Dict[str, str]] = None
+
+            def handle_starttag(self, tag: str, attrs: List[tuple[str, Optional[str]]]) -> None:
+                ad = {k.lower(): (v or "") for k, v in attrs}
+                t = tag.lower()
+                if t == "a" and ad.get("href"):
+                    self.links.append({"href": ad["href"], "id": ad.get("id", "")})
+                elif t in ("input", "select", "textarea"):
+                    self.inputs.append({"tag": t, "id": ad.get("id", ""), "name": ad.get("name", ""), "type": ad.get("type", "text")})
+                elif t == "button":
+                    self._cur_btn = {"id": ad.get("id", ""), "type": ad.get("type", "button"), "text": ""}
+
+            def handle_data(self, data: str) -> None:
+                if self._cur_btn is not None:
+                    self._cur_btn["text"] += data.strip()
+
+            def handle_endtag(self, tag: str) -> None:
+                if tag.lower() == "button" and self._cur_btn is not None:
+                    self.buttons.append(self._cur_btn)
+                    self._cur_btn = None
+
+        parser = _DOMExtractor()
+        parser.feed(raw_html)
+        return {
+            "ok": True,
+            "backend": "deterministic_dom_extractor",
+            "sub_action": act,
+            "link_count": len(parser.links),
+            "input_count": len(parser.inputs),
+            "button_count": len(parser.buttons),
+            "links": parser.links[:50],
+            "inputs": parser.inputs[:50],
+            "buttons": parser.buttons[:50],
+        }
+
+    @classmethod
+    def patch_validate_and_apply(
+        cls,
+        workspace: Path,
+        *,
+        file_path: str,
+        old_text: str,
+        new_text: str,
+        apply: bool = False,
+    ) -> Dict[str, Any]:
+        """Deterministically validate a code replacement in memory (including AST check) and optionally apply it."""
+        ws = Path(workspace).resolve()
+        if not file_path:
+            return {"ok": False, "error": "file_path is required"}
+        target = _resolve_in_workspace(ws, file_path)
+        if not target.is_file():
+            return {"ok": False, "error": f"File not found: {file_path}"}
+        src = target.read_text(encoding="utf-8", errors="replace")
+        occurrences = src.count(old_text)
+        if not old_text or occurrences != 1:
+            return {
+                "ok": False,
+                "valid_patch": False,
+                "applied": False,
+                "occurrences": occurrences,
+                "error": f"Expected old_text to match exactly once, matched {occurrences} times",
+            }
+        patched = src.replace(old_text, new_text, 1)
+        if target.suffix.lower() == ".py":
+            try:
+                ast.parse(patched, filename=str(target))
+            except SyntaxError as exc:
+                return {
+                    "ok": False,
+                    "valid_patch": False,
+                    "applied": False,
+                    "syntax_error": f"Line {exc.lineno}: {exc.msg}",
+                }
+        if apply:
+            target.write_text(patched, encoding="utf-8", newline="\n")
+        return {
+            "ok": True,
+            "backend": "atomic_ast_patch_verifier",
+            "valid_patch": True,
+            "applied": bool(apply),
+            "file": target.relative_to(ws).as_posix(),
+        }
 
     @classmethod
     def ledger_audit(

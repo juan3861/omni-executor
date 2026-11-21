@@ -148,14 +148,28 @@ def main(argv: list[str] | None = None) -> int:
     p_lsp.add_argument("--language", default="python")
 
     p_daemon = sub.add_parser("daemon", help="Always-on durable SQLite WAL task & webhook queue")
-    p_daemon.add_argument("action", choices=["enqueue", "stats", "claim"], help="Daemon queue action")
+    p_daemon.add_argument("action", choices=["enqueue", "stats", "claim", "run-once", "recover"], help="Daemon queue action")
     p_daemon.add_argument("--objective", default="", help="Objective for enqueue")
     p_daemon.add_argument("--workspace", default=str(ROOT), help="Workspace path")
     p_daemon.add_argument("--priority", type=int, default=50)
     p_daemon.add_argument("--worker-id", default="cli-worker")
     p_daemon.add_argument("--db", default="", help="Optional custom SQLite DB path")
 
+    p_swe = sub.add_parser("swebench", help="SWE-bench compatibility harness & predictions validator")
+    p_swe.add_argument("action", choices=["validate-predictions"], help="SWE-bench action")
+    p_swe.add_argument("predictions_path", help="Path to predictions.json")
+
     args = parser.parse_args(argv)
+    if args.cmd == "swebench":
+        p_file = Path(args.predictions_path).resolve()
+        data = json.loads(p_file.read_text(encoding="utf-8"))
+        valid = isinstance(data, list) and all(
+            isinstance(x, dict) and "instance_id" in x and "model_patch" in x and "model_name_or_path" in x
+            for x in data
+        )
+        print(json.dumps({"ok": valid, "count": len(data) if isinstance(data, list) else 0, "path": str(p_file)}, indent=2))
+        return 0 if valid else 1
+
     if args.cmd == "lsp":
         from am_ua.perception.lsp_client import PersistentLSPClient
         lsp = PersistentLSPClient(args.workspace, language=args.language)
@@ -179,6 +193,14 @@ def main(argv: list[str] | None = None) -> int:
         if args.action == "claim":
             task = q.claim_next(args.worker_id)
             print(json.dumps({"ok": task is not None, "task": task}, indent=2, default=str))
+            return 0
+        if args.action == "run-once":
+            res = q.run_worker_once(args.worker_id)
+            print(json.dumps(res, indent=2, default=str))
+            return 0 if res.get("ok") else 1
+        if args.action == "recover":
+            rec_cnt = q.recover_stale_leases(stale_after_s=300.0)
+            print(json.dumps({"ok": True, "recovered_count": rec_cnt}, indent=2))
             return 0
         print(json.dumps({"ok": True, "db": str(db_p), "stats": q.stats()}, indent=2))
         return 0

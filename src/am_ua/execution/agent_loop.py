@@ -235,15 +235,9 @@ class WorkspaceTools:
 
     @staticmethod
     def _strip_fences(content: str) -> str:
-        s = str(content).strip()
-        if s.startswith("```"):
-            lines = s.splitlines()
-            if lines and lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip().startswith("```"):
-                lines = lines[:-1]
-            return "\n".join(lines) + "\n"
-        return str(content)
+        from am_ua.execution.workspace_fs import strip_code_fences
+
+        return strip_code_fences(content)
 
     def write_file(self, args: Dict[str, Any]) -> Dict[str, Any]:
         p = Path(str(args["path"]))  # already absolute + gate-checked by LastMileSecurityGate
@@ -253,6 +247,8 @@ class WorkspaceTools:
         return {"written": p.relative_to(self.ws).as_posix(), "bytes": p.stat().st_size}
 
     def replace_in_file(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        from am_ua.execution.workspace_fs import apply_hunks_safely
+
         p = Path(str(args["path"]))
         text = p.read_text(encoding="utf-8")
         raw_hunks = args.get("hunks")
@@ -269,49 +265,11 @@ class WorkspaceTools:
                 raise ValueError("replace_in_file requires ('old', 'new') or non-empty 'hunks'")
             hunks = [(str(args["old"]), str(args["new"]))]
 
-        working = text
-        for idx, (old_s, new_s) in enumerate(hunks, 1):
-            old = self._strip_fences(old_s) if (old_s not in working and old_s.strip().startswith("```")) else old_s
-            new = self._strip_fences(new_s)
-            unescaped = False
-            if old not in working and "\\n" in old:
-                cand_old = old.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", "\t")
-                if cand_old in working:
-                    old = cand_old
-                    unescaped = True
-            count = working.count(old)
-            if count != 1:
-                raise ValueError(f"Hunk #{idx} 'old' must match exactly once, matched {count} times")
-            if (unescaped or (p.suffix == ".py" and "\n" not in old and "\\n" in new)) and "\\n" in new:
-                cand_new = new.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", "\t")
-                if p.suffix == ".py":
-                    try:
-                        ast.parse(working.replace(old, cand_new, 1))
-                        new = cand_new
-                    except SyntaxError:
-                        pass
-                else:
-                    new = cand_new
-            working = working.replace(old, new, 1)
-
-        if p.suffix == ".py" and "\\n" in working:
-            try:
-                ast.parse(working)
-            except SyntaxError:
-                healed = working.replace("\\r\\n", "\n").replace("\\n", "\n")
-                try:
-                    ast.parse(healed)
-                    working = healed
-                except SyntaxError:
-                    pass
-
+        working, syn_err = apply_hunks_safely(text, hunks, is_python=(p.suffix == ".py"))
         p.write_text(working, encoding="utf-8", newline="\n")
         res: Dict[str, Any] = {"replaced_in": p.relative_to(self.ws).as_posix(), "hunks_applied": len(hunks)}
-        if p.suffix == ".py":
-            try:
-                ast.parse(working)
-            except SyntaxError as exc:
-                res["syntax_error"] = f"SyntaxError line {exc.lineno}: {exc.msg}"
+        if syn_err:
+            res["syntax_error"] = syn_err
         return res
 
     _TASK_STATUS_ALIASES = {
