@@ -126,12 +126,17 @@ MATRIX_69_SPECS: Dict[str, Tuple[str, int, bool]] = {
     "rbac_policy_simulator": ("Simulate deterministic RBAC/ACL permission decisions for principal/action/resource.", 4000, False),
     "sandbox_escape_auditor": ("Audit code or shell scripts for path traversal, privileged calls, and escape vectors.", 4500, False),
     "deterministic_batch_pipeline": ("Execute a sequence of deterministic rails in a single zero-token pipeline.", 6000, False),
-    # Domain G: OpenHands v1 SDK Maximum Extraction Organs (101-105)
+    # Domain G: OpenHands v1 SDK & OpenHuman Core Maximum Extraction Organs (101-110)
     "stuck_loop_detector": ("Analyze Action/Observation event stream for all 5 OpenHands stuck loop patterns.", 4500, False),
     "shell_policy_rails_audit": ("Evaluate shell command pipelines against structural policy rails (fetch-to-exec, raw-disk-op, catastrophic-delete).", 5000, False),
     "v4a_multifile_patch": ("Atomically validate and apply OpenHands/GPT-5 V4A multi-file patches with AST check and undo history.", 5500, True),
     "trajectory_critic_eval": ("Score agent execution trajectory via composite AgentFinished + EmptyPatch + Verification critic.", 4500, False),
     "tom_intent_consultant": ("Theory-of-Mind user intent & ambiguity profiler (0-token ToM consultation).", 3500, False),
+    "sleeptime_compute_indexer": ("Consolidate idle-time agent trajectories into persistent hot-files and user preference profile.", 4500, True),
+    "ask_oracle_dilemma": ("Distill architectural dilemma into compact brief and provide deterministic second-opinion guidance.", 5000, False),
+    "planning_file_editor_rail": ("Strictly edit only PLAN.md / .omni_todo.md during PLAN mode while blocking code edits.", 3500, True),
+    "stateful_python_kernel_rail": ("Execute Python expressions inside a persistent stateful session kernel preserving variables.", 4500, False),
+    "inbound_debounce_triage": ("Coalesce rapid burst inbound user messages and audit plan review readiness (OpenHuman style).", 4000, False),
 }
 
 
@@ -1094,6 +1099,53 @@ def execute_matrix_69_rail(
             str(args.get("user_message") or ""),
             prior_preferences=args.get("prior_preferences"),
         )
+        return {"rail": rail_name, **res}
+
+    if rail_name == "sleeptime_compute_indexer":
+        from am_ua.execution.openhands_organs import SleeptimeComputeEngine
+
+        res = SleeptimeComputeEngine.index_trajectories(
+            ws,
+            list(args.get("trajectories") or []),
+            out_rel_path=str(args.get("out_rel_path") or ".omni_sleeptime_profile.json"),
+        )
+        return {"rail": rail_name, **res}
+
+    if rail_name == "ask_oracle_dilemma":
+        from am_ua.execution.openhands_organs import AskOracleConsultant
+
+        res = AskOracleConsultant.consult_oracle(
+            str(args.get("question") or ""),
+            context=args.get("context"),
+            approaches_tried=args.get("approaches_tried"),
+        )
+        return {"rail": rail_name, **res}
+
+    if rail_name == "planning_file_editor_rail":
+        from am_ua.execution.openhands_organs import PlanningFileEditorGate
+
+        gate = PlanningFileEditorGate(ws)
+        res = gate.edit_plan_file(str(args.get("plan_path") or "PLAN.md"), str(args.get("content") or "# Plan\n"))
+        return {"rail": rail_name, **res}
+
+    if rail_name == "stateful_python_kernel_rail":
+        from am_ua.execution.openhands_organs import StatefulPythonSessionKernel
+
+        kernel = StatefulPythonSessionKernel(ws)
+        for cell in list(args.get("cells") or [str(args.get("code") or "x = 40 + 2")]):
+            last = kernel.run_cell(str(cell))
+        return {"rail": rail_name, **last}
+
+    if rail_name == "inbound_debounce_triage":
+        from am_ua.execution.openhands_organs import InboundDebounceTriageEngine
+
+        if args.get("plan_markdown"):
+            res = InboundDebounceTriageEngine.audit_plan_review(str(args["plan_markdown"]))
+        else:
+            res = InboundDebounceTriageEngine.coalesce_burst_messages(
+                list(args.get("messages") or []),
+                debounce_window_s=float(args.get("debounce_window_s", 2.5)),
+            )
         return {"rail": rail_name, **res}
 
     return {"ok": False, "rail": rail_name, "error": f"Unhandled matrix rail: {rail_name}"}

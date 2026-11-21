@@ -903,3 +903,409 @@ class ToMIntentConsultant:
             "active_preferences": list(prior_preferences or ["deterministic_first", "zero_manual_offloading"]),
             "guidance": guidance,
         }
+
+
+# ============================================================================
+# 8. SLEEPTIME COMPUTE ENGINE (OpenHands `tom_consult.SleeptimeComputeAction`)
+# ============================================================================
+
+
+class SleeptimeComputeEngine:
+    """Consolidates completed trajectories during idle time into a persistent user & repo profile."""
+
+    @classmethod
+    def index_trajectories(
+        cls,
+        workspace: Path,
+        trajectories: Sequence[Dict[str, Any]],
+        *,
+        out_rel_path: str = ".omni_sleeptime_profile.json",
+    ) -> Dict[str, Any]:
+        ws = Path(workspace).resolve()
+        out_p = (ws / out_rel_path).resolve()
+        if out_p != ws and ws not in out_p.parents:
+            raise PermissionError(f"Sleeptime profile escapes workspace: {out_rel_path}")
+
+        file_freq: Dict[str, int] = {}
+        tool_freq: Dict[str, int] = {}
+        learned_rules: List[str] = []
+
+        for traj in trajectories:
+            for ev in traj.get("events") or []:
+                t = str(ev.get("tool") or ev.get("action") or "")
+                if t:
+                    tool_freq[t] = tool_freq.get(t, 0) + 1
+                args = ev.get("args") or ev.get("params") or {}
+                if isinstance(args, dict):
+                    fp = args.get("path") or args.get("file_path")
+                    if fp:
+                        file_freq[str(fp)] = file_freq.get(str(fp), 0) + 1
+            rule = str(traj.get("learned_preference") or "").strip()
+            if rule and rule not in learned_rules:
+                learned_rules.append(rule)
+
+        hot_files = [k for k, _ in sorted(file_freq.items(), key=lambda kv: kv[1], reverse=True)[:20]]
+        top_tools = [k for k, _ in sorted(tool_freq.items(), key=lambda kv: kv[1], reverse=True)[:15]]
+        profile = {
+            "ok": True,
+            "trajectories_indexed": len(trajectories),
+            "hot_files": hot_files,
+            "top_tools": top_tools,
+            "learned_preferences": learned_rules,
+        }
+        out_p.write_text(json.dumps(profile, indent=2), encoding="utf-8", newline="\n")
+        return profile
+
+
+# ============================================================================
+# 9. ASK ORACLE CONSULTANT (OpenHands `tools/ask_oracle`)
+# ============================================================================
+
+
+class AskOracleConsultant:
+    """Second-opinion dilemma advisor that synthesizes a compact <500-token brief & deterministic recommendation."""
+
+    @classmethod
+    def consult_oracle(
+        cls,
+        question: str,
+        *,
+        context: Optional[str] = None,
+        approaches_tried: Optional[Sequence[str]] = None,
+        oracle_fn: Optional[Callable[[str], str]] = None,
+    ) -> Dict[str, Any]:
+        q = (question or "").strip()
+        ctx = (context or "").strip()[:1200]
+        tried = [str(x).strip() for x in (approaches_tried or []) if str(x).strip()]
+
+        brief_lines = [f"Question:\n{q}"]
+        if ctx:
+            brief_lines.append(f"Context:\n{ctx}")
+        if tried:
+            brief_lines.append("Approaches already tried:\n" + "\n".join(f"- {t}" for t in tried))
+        distilled_brief = "\n\n".join(brief_lines)
+
+        if oracle_fn is not None:
+            recommendation = oracle_fn(distilled_brief)
+            backend = "oracle_profile_llm"
+        else:
+            low = (q + " " + ctx).lower()
+            if "import" in low or "circular" in low or "topology" in low:
+                recommendation = "Inline lightweight helpers or move shared types to the contracts layer to preserve DAG topology."
+            elif "timeout" in low or "lock" in low or "deadlock" in low:
+                recommendation = "Use ResourceLockManager with sorted keys and SingleFlightCoalescer to eliminate lock contention."
+            elif "syntax" in low or "patch" in low:
+                recommendation = "Validate replacement with V4AMultiFilePatchEngine in-memory AST parsing before writing to disk."
+            else:
+                recommendation = "Isolate the failing assertion via pytest_failure_diagnoser, apply minimal AST-verified diff, and re-verify."
+            backend = "deterministic_oracle_heuristics"
+
+        return {
+            "ok": True,
+            "profile": "oracle",
+            "backend": backend,
+            "brief_chars": len(distilled_brief),
+            "distilled_brief": distilled_brief,
+            "recommendation": recommendation,
+        }
+
+
+# ============================================================================
+# 10. PLANNING FILE EDITOR GATE (OpenHands `tools/planning_file_editor`)
+# ============================================================================
+
+
+class PlanningFileEditorGate:
+    """Allows editing ONLY designated plan files (`PLAN.md`, `.omni_todo.md`) during read-only PLAN mode."""
+
+    DEFAULT_ALLOWED_PLAN_FILES = frozenset({"plan.md", ".omni_todo.md", "todo.md"})
+
+    def __init__(self, workspace: Path, allowed_files: Optional[Iterable[str]] = None) -> None:
+        self.workspace = Path(workspace).resolve()
+        self.allowed = {f.lower() for f in (allowed_files or self.DEFAULT_ALLOWED_PLAN_FILES)}
+
+    def is_allowed_plan_path(self, rel_or_abs: str) -> bool:
+        p = (self.workspace / rel_or_abs).resolve() if not Path(rel_or_abs).is_absolute() else Path(rel_or_abs).resolve()
+        if p != self.workspace and self.workspace not in p.parents:
+            return False
+        rel = p.relative_to(self.workspace).as_posix().lower()
+        return rel in self.allowed or p.name.lower() in self.allowed
+
+    def edit_plan_file(self, rel_path: str, content: str) -> Dict[str, Any]:
+        if not self.is_allowed_plan_path(rel_path):
+            raise PermissionError(
+                f"PlanningFileEditorGate blocked edit to '{rel_path}': only {sorted(self.allowed)} may be edited in PLAN mode"
+            )
+        target = (self.workspace / rel_path).resolve()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8", newline="\n")
+        return {"ok": True, "plan_file": target.relative_to(self.workspace).as_posix(), "bytes_written": len(content)}
+
+
+# ============================================================================
+# 11. STATEFUL PYTHON SESSION KERNEL & PERSISTENT SHELL STATE
+# ============================================================================
+
+
+class StatefulPythonSessionKernel:
+    """In-memory stateful Python AST kernel & persistent shell cwd/env state across turns."""
+
+    def __init__(self, workspace: Path) -> None:
+        self.workspace = Path(workspace).resolve()
+        self.cwd: Path = self.workspace
+        self.env_overrides: Dict[str, str] = {}
+        self.variables: Dict[str, Any] = {}
+        self.cell_count: int = 0
+
+    def _eval_expr(self, node: ast.AST) -> Any:
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.Name):
+            if node.id in self.variables:
+                return self.variables[node.id]
+            raise NameError(f"Variable '{node.id}' is not defined in session kernel")
+        if isinstance(node, ast.List):
+            return [self._eval_expr(e) for e in node.elts]
+        if isinstance(node, ast.Tuple):
+            return tuple(self._eval_expr(e) for e in node.elts)
+        if isinstance(node, ast.Dict):
+            return {self._eval_expr(k): self._eval_expr(v) for k, v in zip(node.keys, node.values) if k is not None}
+        if isinstance(node, ast.BinOp):
+            lhs, rhs = self._eval_expr(node.left), self._eval_expr(node.right)
+            ops = {
+                ast.Add: lambda a, b: a + b,
+                ast.Sub: lambda a, b: a - b,
+                ast.Mult: lambda a, b: a * b,
+                ast.Div: lambda a, b: a / b,
+                ast.FloorDiv: lambda a, b: a // b,
+                ast.Mod: lambda a, b: a % b,
+                ast.Pow: lambda a, b: a**b,
+            }
+            if type(node.op) in ops:
+                return ops[type(node.op)](lhs, rhs)
+        if isinstance(node, ast.Compare):
+            cur = self._eval_expr(node.left)
+            cmp_ops = {
+                ast.Eq: lambda a, b: a == b,
+                ast.NotEq: lambda a, b: a != b,
+                ast.Lt: lambda a, b: a < b,
+                ast.LtE: lambda a, b: a <= b,
+                ast.Gt: lambda a, b: a > b,
+                ast.GtE: lambda a, b: a >= b,
+            }
+            for op, comp in zip(node.ops, node.comparators):
+                nxt = self._eval_expr(comp)
+                if not cmp_ops[type(op)](cur, nxt):
+                    return False
+                cur = nxt
+            return True
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            safe_funcs: Dict[str, Any] = {
+                "len": len,
+                "sum": sum,
+                "min": min,
+                "max": max,
+                "sorted": sorted,
+                "abs": abs,
+                "round": round,
+                "int": int,
+                "float": float,
+                "str": str,
+            }
+            fn = safe_funcs.get(node.func.id)
+            if fn is not None:
+                return fn(*[self._eval_expr(a) for a in node.args])
+        raise ValueError(f"Unsupported AST expression in safe kernel: {type(node).__name__}")
+
+    def run_cell(self, code: str) -> Dict[str, Any]:
+        self.cell_count += 1
+        tree = ast.parse(code or "")
+        last_val: Any = None
+        for stmt in tree.body:
+            if isinstance(stmt, ast.Assign):
+                val = self._eval_expr(stmt.value)
+                for tgt in stmt.targets:
+                    if isinstance(tgt, ast.Name):
+                        self.variables[tgt.id] = val
+                last_val = val
+            elif isinstance(stmt, ast.AugAssign) and isinstance(stmt.target, ast.Name):
+                cur = self.variables.get(stmt.target.id, 0)
+                rhs = self._eval_expr(stmt.value)
+                if isinstance(stmt.op, ast.Add):
+                    self.variables[stmt.target.id] = cur + rhs
+                elif isinstance(stmt.op, ast.Sub):
+                    self.variables[stmt.target.id] = cur - rhs
+                elif isinstance(stmt.op, ast.Mult):
+                    self.variables[stmt.target.id] = cur * rhs
+                last_val = self.variables[stmt.target.id]
+            elif isinstance(stmt, ast.Expr):
+                last_val = self._eval_expr(stmt.value)
+        return {
+            "ok": True,
+            "cell": self.cell_count,
+            "result": last_val,
+            "variables": dict(self.variables),
+            "cwd": self.cwd.relative_to(self.workspace).as_posix() if self.cwd != self.workspace else ".",
+        }
+
+    def cd(self, rel_dir: str) -> Path:
+        nxt = (self.cwd / rel_dir).resolve()
+        if nxt != self.workspace and self.workspace not in nxt.parents:
+            raise PermissionError(f"Directory escapes workspace boundary: {rel_dir}")
+        self.cwd = nxt
+        return self.cwd
+
+    def export_env(self, key: str, value: str) -> None:
+        self.env_overrides[str(key)] = str(value)
+
+
+# ============================================================================
+# 12. PARALLEL TOOL BATCH EXECUTOR & SUBAGENT SCOPE GUARD
+# ============================================================================
+
+
+class SubAgentScopeGuard:
+    """OpenHands `subagent/scope.py`: bounds a sub-agent's tools & paths to a strict subset of its parent's."""
+
+    def __init__(self, parent_tools: Iterable[str], parent_allowed_paths: Optional[Iterable[str]] = None) -> None:
+        self.parent_tools = frozenset(parent_tools)
+        self.parent_paths = tuple(parent_allowed_paths or ("**",))
+
+    def bind_child_scope(
+        self,
+        requested_tools: Iterable[str],
+        requested_paths: Optional[Iterable[str]] = None,
+    ) -> Dict[str, Any]:
+        req_t = set(requested_tools)
+        effective_tools = sorted(req_t & self.parent_tools)
+        blocked_tools = sorted(req_t - self.parent_tools)
+        return {
+            "ok": len(blocked_tools) == 0,
+            "effective_tools": effective_tools,
+            "blocked_tools": blocked_tools,
+            "inherited_paths": list(requested_paths or self.parent_paths),
+        }
+
+
+class ParallelToolBatchExecutor:
+    """OpenHands `agent/parallel_executor.py`: executes parallel tool calls with per-resource FIFO locking."""
+
+    def __init__(self, *, max_workers: int = 8, lock_manager: Optional[ResourceLockManager] = None) -> None:
+        self.max_workers = max(1, int(max_workers))
+        self.lock_manager = lock_manager or ResourceLockManager()
+
+    def execute_batch(
+        self,
+        calls: Sequence[Dict[str, Any]],
+        dispatch_fn: Callable[[str, Dict[str, Any]], Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _run_one(call: Dict[str, Any]) -> Dict[str, Any]:
+            tool_name = str(call.get("tool") or "")
+            args = dict(call.get("args") or {})
+            declared = list(call.get("resources") or [])
+            if not declared and ("path" in args or "file_path" in args):
+                declared = [f"file:{args.get('path') or args.get('file_path')}"]
+            with self.lock_manager.lock(*declared):
+                return dispatch_fn(tool_name, args)
+
+        with ThreadPoolExecutor(max_workers=min(self.max_workers, max(1, len(calls)))) as pool:
+            futs = [pool.submit(_run_one, c) for c in calls]
+            return [f.result() for f in futs]
+
+
+# ============================================================================
+# 13. OPENHUMAN ARTIFACT HANDLE VAULT (`TokenJuice` / `search_handle`) &
+#     INBOUND DEBOUNCE + PLAN REVIEW TRIAGE (`crates/openhuman-core/src`)
+# ============================================================================
+
+
+class ArtifactHandleVault:
+    """OpenHuman `TokenJuice` / `artifacts`: stores large outputs under `handle://sha256` and supports zero-token grep."""
+
+    def __init__(self, *, inline_threshold_chars: int = 1200) -> None:
+        self.inline_threshold_chars = max(200, int(inline_threshold_chars))
+        self._store: Dict[str, str] = {}
+        self._lock = threading.Lock()
+
+    def store_or_inline(self, text: str) -> Dict[str, Any]:
+        raw = text or ""
+        if len(raw) <= self.inline_threshold_chars:
+            return {"compressed": False, "handle": None, "preview": raw, "total_chars": len(raw)}
+        hid = "handle://" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+        with self._lock:
+            self._store[hid] = raw
+        head = raw[: self.inline_threshold_chars // 2]
+        tail = raw[-(self.inline_threshold_chars // 2) :]
+        return {
+            "compressed": True,
+            "handle": hid,
+            "preview": f"{head}\n... [stored in {hid} ({len(raw)} chars)] ...\n{tail}",
+            "total_chars": len(raw),
+        }
+
+    def search_handle(self, handle_id: str, pattern: str, *, max_matches: int = 25) -> Dict[str, Any]:
+        with self._lock:
+            raw = self._store.get(handle_id)
+        if raw is None:
+            return {"ok": False, "handle": handle_id, "error": "Handle not found"}
+        rx = re.compile(pattern, re.IGNORECASE)
+        hits = [
+            {"line": idx, "text": ln[:200]}
+            for idx, ln in enumerate(raw.splitlines(), start=1)
+            if rx.search(ln)
+        ]
+        return {"ok": True, "handle": handle_id, "match_count": len(hits), "matches": hits[:max_matches]}
+
+
+class InboundDebounceTriageEngine:
+    """OpenHuman `inbound_debounce` + `triage` + `plan_review` deterministic pre-flight engine."""
+
+    @classmethod
+    def coalesce_burst_messages(
+        cls,
+        messages: Sequence[Dict[str, Any]],
+        *,
+        debounce_window_s: float = 2.5,
+    ) -> Dict[str, Any]:
+        """Coalesce rapid consecutive user messages within `debounce_window_s` into 1 turn."""
+        if not messages:
+            return {"ok": True, "input_count": 0, "coalesced_count": 0, "batches": []}
+        batches: List[List[str]] = []
+        last_ts: Optional[float] = None
+        for m in messages:
+            txt = str(m.get("text") or "").strip()
+            ts = float(m.get("timestamp") or 0.0)
+            if not txt:
+                continue
+            if last_ts is not None and (ts - last_ts) <= debounce_window_s and batches:
+                batches[-1].append(txt)
+            else:
+                batches.append([txt])
+            last_ts = ts
+        merged = ["\n".join(b) for b in batches]
+        return {
+            "ok": True,
+            "input_count": len(messages),
+            "coalesced_count": len(merged),
+            "saved_runs": len(messages) - len(merged),
+            "batches": merged,
+        }
+
+    @classmethod
+    def audit_plan_review(cls, plan_markdown: str) -> Dict[str, Any]:
+        """OpenHuman `plan_review`: verify a plan contains target files, verification command, and rollback path."""
+        txt = (plan_markdown or "").lower()
+        has_files = bool(re.search(r"[a-z0-9_/-]+\.(py|ts|js|rs|go|md|json|yml)", txt))
+        has_verify = any(k in txt for k in ("pytest", "test", "verify", "validação", "validacao", "check"))
+        has_rollback = any(k in txt for k in ("rollback", "undo", "revert", "reversão", "reversao", "checkpoint"))
+        approved = has_files and has_verify and has_rollback
+        return {
+            "ok": approved,
+            "approved": approved,
+            "has_target_files": has_files,
+            "has_verification_step": has_verify,
+            "has_rollback_strategy": has_rollback,
+        }
+

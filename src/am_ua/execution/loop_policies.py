@@ -50,10 +50,19 @@ def transition_state(current: str, target: str) -> str:
     return target
 
 
-def assert_tool_allowed_in_mode(tool_name: str, mode: str = "act") -> None:
-    """Strict Plan vs Act execution gate at kernel level."""
+def assert_tool_allowed_in_mode(
+    tool_name: str,
+    mode: str = "act",
+    *,
+    target_path: Optional[str] = None,
+) -> None:
+    """Strict Plan vs Act execution gate at kernel level (with OpenHands PlanningFileEditor exception for PLAN.md)."""
     m = (mode or "act").strip().lower()
     if m == "plan" and tool_name in PLAN_MODE_FORBIDDEN_TOOLS:
+        if tool_name in ("write_file", "replace_in_file") and target_path:
+            base = Path(str(target_path)).name.lower()
+            if base in ("plan.md", ".omni_todo.md", "todo.md"):
+                return
         raise PermissionError(f"Tool '{tool_name}' is strictly blocked in PLAN (read-only) mode")
 
 
