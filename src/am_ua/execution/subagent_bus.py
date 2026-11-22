@@ -1142,3 +1142,65 @@ class SubAgentSessionBus:
             "elapsed_s": elapsed_s,
             "agents_per_second": round(total_n / max(0.001, elapsed_s), 1),
         }
+
+    def spawn_live_worker_fleet(
+        self,
+        tasks: Sequence[Dict[str, Any]],
+        *,
+        workspace: Path | str = ".",
+        max_workers: int = 4,
+        merge_results: bool = True,
+        final_verify_cmd: Optional[str] = None,
+        worker_runner_fn: Optional[Callable[[Dict[str, Any], Path], Dict[str, Any]]] = None,
+        conflict_resolver_fn: Optional[Callable[[Path, List[str], str], bool]] = None,
+        llm: Any = None,
+        seal_guard: Any = None,
+        memory_provider: Any = None,
+        timeout_s: float = 300.0,
+    ) -> Dict[str, Any]:
+        """Run concurrent real coding workers across isolated `git worktree` branches and 3-way merge."""
+        from am_ua.execution.worktree_swarm import WorktreeSwarmCoordinator
+
+        coord = WorktreeSwarmCoordinator(
+            workspace,
+            max_workers=max_workers,
+            llm=llm,
+            seal_guard=seal_guard,
+            memory_provider=memory_provider,
+        )
+        res = coord.run_swarm(
+            tasks,
+            worker_runner_fn=worker_runner_fn,
+            merge_results=merge_results,
+            conflict_resolver_fn=conflict_resolver_fn,
+            final_verify_cmd=final_verify_cmd,
+            timeout_s=timeout_s,
+        )
+        now = time.time()
+        rows = [
+            (
+                f"wt-{w['worker_id']}-{uuid.uuid4().hex[:6]}",
+                "worktree-swarm-coordinator",
+                1,
+                w.get("role", "general_engineer"),
+                str(w.get("objective", ""))[:300],
+                str(Path(workspace).resolve()),
+                "COMPLETED" if w.get("ok") else "FAILED",
+                now,
+                now,
+                json.dumps(w, ensure_ascii=False, default=str),
+                int(w.get("tokens_used", 0)),
+            )
+            for w in res.get("workers", [])
+        ]
+        if rows:
+            with self._db_lock, self._connect() as conn:
+                conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO subagent_sessions
+                    (session_id, parent_id, depth, role, objective, workspace, status, created_at, finished_at, result_json, tokens_used)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
+        return res

@@ -23,6 +23,7 @@ if VENDOR_HERMES.is_dir() and str(VENDOR_HERMES) not in sys.path:
 from agent.memory_provider import MemoryProvider  # type: ignore[import-untyped]
 
 from .core_blocks import CoreMemoryBlockStore
+from .hybrid_vector_index import HybridVectorIndex
 from .mnemos_connector import MnemosBiTemporalAdapter
 from .msea_client import MSEAFrankensteinClient
 
@@ -69,11 +70,19 @@ class ScopedMemoryFacade:
             confidence=confidence,
             source=f"ns://{self._namespace}",
         )
+        hv_rec = self._provider.hybrid_index.add(
+            scoped_content,
+            namespace=self._namespace,
+            kind=memory_type,
+            importance=max(0.1, min(1.0, float(confidence))),
+            metadata={"msea_id": ms_atom.get("id")},
+        )
         return {
             "ok": True,
             "namespace": self._namespace,
             "mnemos_record": mn_rec,
             "msea_atom": ms_atom,
+            "hybrid_doc": hv_rec,
         }
 
     def recall(self, query: str, *, limit: int = 4, **ignored_metadata: Any) -> Dict[str, Any]:
@@ -116,16 +125,18 @@ class TriadMemoryProvider(MemoryProvider):
         self.core_blocks = CoreMemoryBlockStore(base_dir / "core_blocks.json")
         self.mnemos = MnemosBiTemporalAdapter(base_dir / "mnemos_triad.db", embedding_dim=embedding_dim)
         self.msea = MSEAFrankensteinClient(base_dir / "msea_atoms.json")
+        self.hybrid_index = HybridVectorIndex(base_dir / "hybrid_vectors.db", dim=min(256, max(64, int(embedding_dim))))
         self._session_id: str = "default"
         self._agent_context: str = "primary"
         self._prefetched_cache: Dict[str, str] = {}
+        self._last_recalled_msea_ids: Dict[str, List[str]] = {}
 
     @property
     def name(self) -> str:
         return "aethermind_triad"
 
     def is_available(self) -> bool:
-        return self.msea.bridge_script.is_file() and self.msea.msea_root.is_dir()
+        return True
 
     def initialize(self, session_id: str, **kwargs: Any) -> None:
         self._session_id = session_id or "default"
@@ -135,9 +146,10 @@ class TriadMemoryProvider(MemoryProvider):
         return self.core_blocks.compile_system_prompt()
 
     def recall_triad(self, query: str, *, limit: int = 4) -> Dict[str, Any]:
-        """Cross-tier retrieval combining Mnemos bi-temporal + MSEA Q-utility + conflicts."""
+        """Cross-tier retrieval combining Mnemos bi-temporal + MSEA Q-utility + Hybrid BM25/Vector RRF + conflicts."""
         mnemos_res = self.mnemos.retrieve(query, limit=limit)
         msea_res = self.msea.retrieve(query, limit=limit)
+        hybrid_hits = self.hybrid_index.query(query, top_k=limit)
         all_atoms = self.msea.inspect_atoms(include_inactive=False)
         unresolved_conflicts = [
             {
@@ -152,6 +164,7 @@ class TriadMemoryProvider(MemoryProvider):
         return {
             "mnemos": mnemos_res,
             "msea": msea_res,
+            "hybrid": hybrid_hits,
             "unresolved_conflicts": unresolved_conflicts,
         }
 
@@ -162,6 +175,7 @@ class TriadMemoryProvider(MemoryProvider):
         if not query or not query.strip():
             return ""
         recalled = self.recall_triad(query, limit=3)
+        recalled_ids: List[str] = []
         lines: List[str] = ["<triad_memory_recall>"]
         for item in recalled["mnemos"]["items"]:
             lines.append(
@@ -169,9 +183,16 @@ class TriadMemoryProvider(MemoryProvider):
             )
         for hit in recalled["msea"].get("hits", []):
             atom = hit.get("atom", hit)
+            aid = str(atom.get("id", ""))
+            if aid:
+                recalled_ids.append(aid)
             q_val = float(atom.get("qValue", 0.0))
             lines.append(
-                f"  <msea id='{str(atom.get('id', ''))[:8]}' q='{q_val:.3f}'>{atom.get('content', '')}</msea>"
+                f"  <msea id='{aid[:8]}' q='{q_val:.3f}'>{atom.get('content', '')}</msea>"
+            )
+        for h_item in recalled.get("hybrid") or []:
+            lines.append(
+                f"  <hybrid id='{str(h_item.get('doc_id', ''))[:8]}' rrf='{float(h_item.get('rrf_score', 0.0)):.4f}'>{h_item.get('content', '')}</hybrid>"
             )
         for conf in recalled["unresolved_conflicts"]:
             lines.append(
@@ -180,6 +201,7 @@ class TriadMemoryProvider(MemoryProvider):
         lines.append("</triad_memory_recall>")
         rendered = "\n".join(lines) if len(lines) > 2 else ""
         self._prefetched_cache[sid] = rendered
+        self._last_recalled_msea_ids[sid] = recalled_ids
         return rendered
 
     def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
@@ -204,6 +226,17 @@ class TriadMemoryProvider(MemoryProvider):
             confidence=0.75,
             source=f"session://{session_id or self._session_id}",
         )
+        self.hybrid_index.add(
+            summary,
+            namespace="global",
+            kind="episodic",
+            importance=0.55,
+            metadata={"session_id": session_id or self._session_id},
+        )
+        sid = session_id or self._session_id
+        recalled_ids = self._last_recalled_msea_ids.pop(sid, [])
+        if recalled_ids and "[VERIFIED" in assistant_content:
+            self.msea.learn_outcome(recalled_ids, passed=True)
 
     def record_verified_fact(
         self,
@@ -233,6 +266,14 @@ class TriadMemoryProvider(MemoryProvider):
             source=f"triad://{trust_level.lower()}",
         )
         gov = self.msea.govern(confidence_threshold=0.25)
+        if trust_level != "UNTRUSTED_DATA" and confidence >= 0.25:
+            self.hybrid_index.add(
+                content,
+                namespace="global",
+                kind="semantic",
+                importance=max(0.1, min(1.0, confidence)),
+                metadata={"fact_key": fact_key, "msea_id": ms_atom.get("id")},
+            )
         return {"mnemos_record": mn_rec, "msea_atom": ms_atom, "governance": gov}
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:

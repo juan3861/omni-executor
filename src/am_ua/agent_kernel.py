@@ -64,6 +64,7 @@ from am_ua.execution.mcp_federation import AetherMindMCPServer, MCPFederationHub
 from am_ua.execution.modality_router import HybridModalityRouter
 from am_ua.execution.pc_automation import PCAutomationEngine
 from am_ua.execution.subagent_bus import SubAgentSessionBus
+from am_ua.governance.alpha_c13 import StatefulSelectionLedger
 from am_ua.governance.homeostasis import HomeostasisGovernor
 from am_ua.governance.seal_guard import ConstitutionSealGuard, compute_content_sha256
 from am_ua.gui import (
@@ -392,6 +393,7 @@ class AetherMindUniversalAgent:
         # 1. Governance & Safety
         self.seal_guard = ConstitutionSealGuard(self.root)
         self.homeostasis = HomeostasisGovernor()
+        self.selection_ledger = StatefulSelectionLedger(self.data_dir / "alpha_c13_ledger.db")
 
         # 2. Epistemic & Security Contracts
         self.framing_gate = ProblemFramingGate()
@@ -757,8 +759,46 @@ class AetherMindUniversalAgent:
                 browser_factory=_make_browser,
                 repo_mapper_factory=_make_repomap,
                 knowledge_factory=_make_knowledge,
+                memory_provider=self.memory,
             )
         return self._agent_loop
+
+    def run_worktree_swarm(
+        self,
+        tasks: List[Dict[str, Any]],
+        *,
+        workspace: Path | str,
+        max_workers: int = 4,
+        merge_results: bool = True,
+        final_verify_cmd: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Execute parallel isolated `AgentLoop` workers across `git worktree` branches and 3-way merge."""
+        return self.subagent_bus.spawn_live_worker_fleet(
+            tasks,
+            workspace=workspace,
+            max_workers=max_workers,
+            merge_results=merge_results,
+            final_verify_cmd=final_verify_cmd,
+            llm=self.agent_loop.llm,
+            seal_guard=self.seal_guard,
+            memory_provider=self.memory,
+        )
+
+    def run_deterministic_rail(
+        self,
+        rail: str,
+        *,
+        workspace: Optional[Path | str] = None,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Dispatch any of the 220 deterministic zero-token rails directly through the Kernel."""
+        from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
+
+        return DeterministicTaskOffloader.execute_rail(
+            rail,
+            Path(workspace or self.root).resolve(),
+            params=params or {},
+        )
 
     def run_agent_mission(
         self,

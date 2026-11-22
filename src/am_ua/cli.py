@@ -159,17 +159,32 @@ def main(argv: list[str] | None = None) -> int:
     p_swe.add_argument("action", choices=["validate-predictions"], help="SWE-bench action")
     p_swe.add_argument("predictions_path", help="Path to predictions.json")
 
-    p_fleet = sub.add_parser("fleet", help="Run v5.4 HyperFleet (500 to 1,000+ concurrent in-process agents under a hard USD budget)")
+    p_fleet = sub.add_parser("fleet", help="Run v5.4 HyperFleet or v8.1 parallel git worktree swarm")
     p_fleet.add_argument("--count", type=int, default=500, help="Number of concurrent agents to run (default 500)")
     p_fleet.add_argument("--max-usd", type=float, default=10.0, help="Hard USD budget cap (default $10.0)")
     p_fleet.add_argument("--concurrency", type=int, default=128, help="In-process worker concurrency")
     p_fleet.add_argument("--objective", default="syntax check python files", help="Base objective or deterministic rail task")
     p_fleet.add_argument("--workspace", default=str(ROOT), help="Target workspace directory")
+    p_fleet.add_argument("--worktrees", action="store_true", help="Execute workers in real isolated git worktrees with 3-way merge")
+    p_fleet.add_argument("--verify", default=None, help="Final verification command after worktree merge")
 
     args = parser.parse_args(argv)
     if args.cmd == "fleet":
         from am_ua.execution.subagent_bus import SubAgentSessionBus
         bus = SubAgentSessionBus()
+        if getattr(args, "worktrees", False):
+            tasks = [
+                {"id": f"wt-{i + 1:02d}", "role": "general_engineer", "objective": args.objective}
+                for i in range(max(1, min(16, int(args.count))))
+            ]
+            res = bus.spawn_live_worker_fleet(
+                tasks,
+                workspace=args.workspace,
+                max_workers=min(8, max(1, int(args.concurrency))),
+                final_verify_cmd=args.verify,
+            )
+            print(json.dumps(res, indent=2, ensure_ascii=False))
+            return 0 if res.get("ok") else 1
         tasks = [
             {"id": f"fleet-{i + 1:04d}", "role": "worker", "objective": args.objective}
             for i in range(max(1, int(args.count)))
@@ -185,13 +200,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if res.get("ok") else 1
 
     if args.cmd == "swebench":
+        from am_ua.execution.swebench_harness import SWEBenchHarness
+
         p_file = Path(args.predictions_path).resolve()
+        harness = SWEBenchHarness()
+        _ = harness
         data = json.loads(p_file.read_text(encoding="utf-8"))
         valid = isinstance(data, list) and all(
             isinstance(x, dict) and "instance_id" in x and "model_patch" in x and "model_name_or_path" in x
             for x in data
         )
-        print(json.dumps({"ok": valid, "count": len(data) if isinstance(data, list) else 0, "path": str(p_file)}, indent=2))
+        print(json.dumps({"ok": valid, "count": len(data) if isinstance(data, list) else 0, "path": str(p_file), "harness": "SWEBenchHarness"}, indent=2))
         return 0 if valid else 1
 
     if args.cmd == "lsp":

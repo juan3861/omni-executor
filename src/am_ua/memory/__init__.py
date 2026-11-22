@@ -8,14 +8,18 @@ Unites:
 """
 
 from .core_blocks import CoreMemoryBlock, CoreMemoryBlockStore
+from .hybrid_vector_index import HybridVectorIndex
 from .mnemos_connector import MnemosBiTemporalAdapter
 from .msea_client import MSEAFrankensteinClient
+from .msea_native import NativeMSEAEngine
 from .triad_provider import TriadMemoryProvider
 
 __all__ = [
     "CoreMemoryBlock",
     "CoreMemoryBlockStore",
+    "HybridVectorIndex",
     "MnemosBiTemporalAdapter",
     "MSEAFrankensteinClient",
+    "NativeMSEAEngine",
     "TriadMemoryProvider",
 ]

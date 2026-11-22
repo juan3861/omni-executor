@@ -222,6 +222,7 @@ class AgentLoop:
         hook_engine: Optional[DeterministicHookEngine] = None,
         repo_mapper_factory: Optional[Callable[[Path], Any]] = None,
         knowledge_factory: Optional[Callable[[Path], Any]] = None,
+        memory_provider: Optional[Any] = None,
     ) -> None:
         self.engine = engine
         self.seal_guard = seal_guard
@@ -243,6 +244,7 @@ class AgentLoop:
         self.hook_engine = hook_engine or DeterministicHookEngine()
         self.repo_mapper_factory = repo_mapper_factory
         self.knowledge_factory = knowledge_factory
+        self.memory_provider = memory_provider
         self.subagent_bus = subagent_bus or SubAgentSessionBus()
         self.mcp_hub = mcp_hub or MCPFederationHub()
         self._active: Optional[WorkspaceTools] = None
@@ -486,6 +488,7 @@ class AgentLoop:
         use_native_tools: bool = True,
         reasoning_effort: Optional[str] = None,
         parallel_read_workers: int = 6,
+        enable_memory_prefetch: bool = True,
     ) -> AgentRunResult:
         mission_id = mission_id or f"agent-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
         low_obj = (objective or "").lower()
@@ -616,12 +619,19 @@ class AgentLoop:
                     tools=sorted(mcp_routing.keys()),
                 )
 
-        # ReasoningBank trajectory grounding (few-shot experience replay)
+        # ReasoningBank trajectory grounding + TriadMemoryProvider semantic/hybrid prefetch
         task = ""
         if self.reasoning_bank:
             exemplar = self.reasoning_bank.format_trajectory_exemplar(objective)
             if exemplar:
                 task += f"{exemplar}\n"
+        if enable_memory_prefetch and self.memory_provider is not None and hasattr(self.memory_provider, "prefetch"):
+            try:
+                triad_ctx = str(self.memory_provider.prefetch(objective, session_id=mission_id) or "").strip()
+                if triad_ctx:
+                    task += f"{triad_ctx}\n"
+            except Exception:
+                pass
 
         if mcp_routing and not native_tools_active:
             mounted_list = ", ".join(sorted(mcp_routing.keys())[:20])
@@ -1445,6 +1455,12 @@ class AgentLoop:
             result.trace_path = str(tp)
         if self.reasoning_bank is not None:
             self.reasoning_bank.record_run(asdict(result))
+        if enable_memory_prefetch and self.memory_provider is not None and hasattr(self.memory_provider, "sync_turn"):
+            try:
+                if status.startswith("VERIFIED") or status == "COMPLETED_UNVERIFIED":
+                    self.memory_provider.sync_turn(objective, f"[{status}] {summary[:400]}", session_id=mission_id)
+            except Exception:
+                pass
         if created_local_bus:
             bus.close()
         ws.close()

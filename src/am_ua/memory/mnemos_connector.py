@@ -24,6 +24,11 @@ try:
 except ImportError:  # pragma: no cover
     msvcrt = None  # type: ignore[assignment]
 
+try:
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None  # type: ignore[assignment]
+
 MNEMOS_SRC = Path(r"F:\Mnemos\src")
 if MNEMOS_SRC.is_dir() and str(MNEMOS_SRC) not in sys.path:
     sys.path.insert(0, str(MNEMOS_SRC))
@@ -199,7 +204,8 @@ class MnemosBiTemporalAdapter:
     def _exclusive_db_lock(self) -> Iterator[None]:
         with self._lock:
             fh = self._lock_path.open("a+b")
-            locked = False
+            locked_msvcrt = False
+            locked_fcntl = False
             try:
                 if msvcrt is not None:
                     deadline = time.monotonic() + 30.0
@@ -207,18 +213,26 @@ class MnemosBiTemporalAdapter:
                         try:
                             fh.seek(0)
                             msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
-                            locked = True
+                            locked_msvcrt = True
                             break
                         except OSError:
                             if time.monotonic() >= deadline:
                                 raise TimeoutError(f"Timed out acquiring Mnemos lock {self._lock_path}")
                             time.sleep(0.015)
+                elif fcntl is not None:
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+                    locked_fcntl = True
                 yield
             finally:
-                if locked and msvcrt is not None:
+                if locked_msvcrt and msvcrt is not None:
                     try:
                         fh.seek(0)
                         msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                    except OSError:
+                        pass
+                if locked_fcntl and fcntl is not None:
+                    try:
+                        fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
                     except OSError:
                         pass
                 fh.close()
