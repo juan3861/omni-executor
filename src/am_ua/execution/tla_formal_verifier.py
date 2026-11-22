@@ -780,6 +780,60 @@ class BoundedTLCModelChecker:
             "elapsed_ms": round(elapsed_ms, 4),
         }
 
+    @classmethod
+    def verify_integer_invariant_z3(
+        cls,
+        *,
+        vars_bounds: Dict[str, Tuple[int, int]],
+        violation_expr: str,
+        max_fallback_grid: int = 25000,
+    ) -> Dict[str, Any]:
+        """Prove or find counterexample for an integer invariant via native `z3` (with bounded Python grid fallback)."""
+        from am_ua.execution.native_backends import NativeBackendRouter
+
+        z3_res = NativeBackendRouter.z3_check_integer_invariant(
+            vars_bounds=vars_bounds,
+            violation_expr=violation_expr,
+        )
+        if z3_res is not None:
+            return z3_res
+
+        import itertools
+
+        names = list(vars_bounds.keys())
+        if not all(n.isidentifier() for n in names):
+            return {"ok": False, "error": "Invalid variable identifier", "backend": "python_bounded_smt"}
+        ranges = [range(int(vars_bounds[n][0]), int(vars_bounds[n][1]) + 1) for n in names]
+        total = 1
+        for r in ranges:
+            total *= len(r)
+            if total > max_fallback_grid:
+                return {
+                    "ok": False,
+                    "error": f"State space ({total}) exceeds fallback grid limit without z3-solver installed",
+                    "backend": "python_bounded_smt",
+                }
+        for combo in itertools.product(*ranges):
+            env = dict(zip(names, combo))
+            try:
+                violated = bool(eval(violation_expr, {"__builtins__": {}}, env))
+            except Exception as exc:
+                return {"ok": False, "error": f"Expression error: {exc}", "backend": "python_bounded_smt"}
+            if violated:
+                return {
+                    "ok": False,
+                    "invariant_holds": False,
+                    "counterexample": env,
+                    "backend": "python_bounded_smt",
+                }
+        return {
+            "ok": True,
+            "invariant_holds": True,
+            "counterexample": None,
+            "checked_points": total,
+            "backend": "python_bounded_smt",
+        }
+
 
 class HoareTripleContractVerifier:
     """Deterministic verifier for Hoare logic triples `{P} C {Q}` and `UNCHANGED <<vars>>` frames."""

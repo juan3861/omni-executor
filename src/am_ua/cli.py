@@ -129,11 +129,14 @@ def main(argv: list[str] | None = None) -> int:
     p_shield = sub.add_parser("shield", help="Run AgentShield static security audit over a directory")
     p_shield.add_argument("target", nargs="?", default=str(ROOT))
 
-    p_det = sub.add_parser("det", help="Programmable Deterministic Command Hub (list or run 0-token deterministic rails)")
-    p_det.add_argument("action", choices=["list", "run"], help="List available rails or run a deterministic rail")
-    p_det.add_argument("rail", nargs="?", default="list_capabilities", help="Deterministic rail name for 'run'")
+    p_det = sub.add_parser("det", help="Programmable Deterministic Command Hub (rails & parametric playbooks)")
+    p_det.add_argument("action", choices=["list", "run", "list-playbooks", "run-playbook"], help="List or execute deterministic rails or parametric playbooks")
+    p_det.add_argument("rail", nargs="?", default="list_capabilities", help="Deterministic rail or playbook name")
     p_det.add_argument("--workspace", default=str(ROOT), help="Target workspace directory")
-    p_det.add_argument("--params", default="{}", help="JSON params object for the deterministic rail")
+    p_det.add_argument("--params", default="{}", help="JSON params/variables object")
+    p_det.add_argument("--playbook", default=None, help="Playbook name (optional alias for positional arg)")
+    p_det.add_argument("--domain", default=None, help="Filter playbooks by domain (code|windows|browser)")
+    p_det.add_argument("--vars", default=None, help="JSON runtime variables object for run-playbook")
 
     p_a2a = sub.add_parser("a2a-serve", help="Run Agent2Agent (A2A) interoperability server or emit AgentCard JSON")
     p_a2a.add_argument("--host", default="127.0.0.1")
@@ -155,9 +158,15 @@ def main(argv: list[str] | None = None) -> int:
     p_daemon.add_argument("--worker-id", default="cli-worker")
     p_daemon.add_argument("--db", default="", help="Optional custom SQLite DB path")
 
-    p_swe = sub.add_parser("swebench", help="SWE-bench compatibility harness & predictions validator")
-    p_swe.add_argument("action", choices=["validate-predictions"], help="SWE-bench action")
-    p_swe.add_argument("predictions_path", help="Path to predictions.json")
+    p_swe = sub.add_parser("swebench", help="SWE-bench real-world harness, dataset runner, & predictions validator")
+    p_swe.add_argument("action", choices=["validate-predictions", "run"], help="SWE-bench action")
+    p_swe.add_argument("predictions_path", nargs="?", default=None, help="Path to predictions.json (for validate-predictions)")
+    p_swe.add_argument("--dataset", default=None, help="Local JSON/JSONL file or HF dataset name (for run)")
+    p_swe.add_argument("--limit", type=int, default=5, help="Max instances to evaluate (default 5)")
+    p_swe.add_argument("--provider", default="groq", help="LLM provider prioritizing free tier (groq|openrouter|ollama)")
+    p_swe.add_argument("--workspace-root", default=None, help="Directory containing checked-out repo workspaces")
+    p_swe.add_argument("--max-cost-usd", type=float, default=None, help="Optional hard USD spending cap (unset = no ceiling)")
+    p_swe.add_argument("--out", default=None, help="Optional path to write predictions.json")
 
     p_fleet = sub.add_parser("fleet", help="Run v5.4 HyperFleet or v8.1 parallel git worktree swarm")
     p_fleet.add_argument("--count", type=int, default=500, help="Number of concurrent agents to run (default 500)")
@@ -202,16 +211,33 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "swebench":
         from am_ua.execution.swebench_harness import SWEBenchHarness
 
-        p_file = Path(args.predictions_path).resolve()
         harness = SWEBenchHarness()
-        _ = harness
-        data = json.loads(p_file.read_text(encoding="utf-8"))
-        valid = isinstance(data, list) and all(
-            isinstance(x, dict) and "instance_id" in x and "model_patch" in x and "model_name_or_path" in x
-            for x in data
+        if args.action == "validate-predictions":
+            if not args.predictions_path:
+                print(json.dumps({"ok": False, "error": "predictions_path required for validate-predictions"}))
+                return 1
+            p_file = Path(args.predictions_path).resolve()
+            data = json.loads(p_file.read_text(encoding="utf-8"))
+            valid = isinstance(data, list) and all(
+                isinstance(x, dict) and "instance_id" in x and "model_patch" in x and "model_name_or_path" in x
+                for x in data
+            )
+            print(json.dumps({"ok": valid, "count": len(data) if isinstance(data, list) else 0, "path": str(p_file), "harness": "SWEBenchHarness"}, indent=2))
+            return 0 if valid else 1
+
+        if not args.dataset:
+            print(json.dumps({"ok": False, "error": "--dataset path or HF dataset name required for 'swebench run'"}))
+            return 1
+        instances = harness.load_instances(args.dataset, limit=args.limit)
+        report = harness.run_dataset(
+            instances,
+            workspace_root=args.workspace_root,
+            provider=args.provider,
+            max_cost_usd=args.max_cost_usd,
+            out_predictions=args.out,
         )
-        print(json.dumps({"ok": valid, "count": len(data) if isinstance(data, list) else 0, "path": str(p_file), "harness": "SWEBenchHarness"}, indent=2))
-        return 0 if valid else 1
+        print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
+        return 0 if report.get("ok") else 1
 
     if args.cmd == "lsp":
         from am_ua.perception.lsp_client import PersistentLSPClient
@@ -300,10 +326,24 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "det":
         from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
+        from am_ua.execution.parametric_playbooks import DEFAULT_PLAYBOOK_ENGINE
+        from am_ua.execution.workspace_tools import WorkspaceTools
+        from am_ua.governance.seal_guard import ConstitutionSealGuard
+
         if args.action == "list":
             print(json.dumps(DeterministicTaskOffloader.probe_capabilities(), indent=2, ensure_ascii=False))
             return 0
+        if args.action == "list-playbooks":
+            print(json.dumps({"ok": True, "playbooks": DEFAULT_PLAYBOOK_ENGINE.list_playbooks(domain=args.domain)}, indent=2, ensure_ascii=False))
+            return 0
         ws_det = Path(args.workspace).resolve()
+        if args.action == "run-playbook":
+            pb_name = args.playbook or args.rail
+            vars_det = json.loads(args.vars or args.params or "{}")
+            ws_tools = WorkspaceTools(ws_det, ConstitutionSealGuard())
+            res_pb = ws_tools.run_playbook({"playbook": pb_name, "variables": vars_det})
+            print(json.dumps(res_pb, indent=2, ensure_ascii=False, default=str))
+            return 0 if res_pb.get("ok", True) else 1
         params_det = json.loads(args.params or "{}")
         res_det = DeterministicTaskOffloader.execute_rail(args.rail, ws_det, params=params_det)
         print(json.dumps(res_det, indent=2, ensure_ascii=False, default=str))

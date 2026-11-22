@@ -560,8 +560,12 @@ class AetherMindUniversalAgent:
             with self.omh_bridge.bind_request_browser_identity(session_id="doctor_probe") as bcap:
                 omh_browser_ok = bool(bcap.get("supported"))
             from am_ua.execution.hermetic_sandbox_bridge import HermeticSandboxBridge
+            from am_ua.execution.native_backends import NativeBackendRouter
+            from am_ua.execution.parametric_playbooks import DEFAULT_PLAYBOOK_ENGINE
 
             hs_status = HermeticSandboxBridge().status()
+            native_caps = NativeBackendRouter.probe_capabilities()
+            playbooks = DEFAULT_PLAYBOOK_ENGINE.list_playbooks()
             report = {
                 "single_state_owner": self.SINGLE_STATE_OWNER,
                 "homeostasis_healthy": homeo.healthy,
@@ -585,6 +589,8 @@ class AetherMindUniversalAgent:
                 "mcp_tools_count": len(self.mcp_server._tools),
                 "hermetic_sandbox_installed": hs_status["installed"],
                 "hermetic_sandbox_runtime_ready": hs_status["runtime_ready"],
+                "native_backends": native_caps,
+                "parametric_playbooks_count": len(playbooks),
             }
             sp["attributes"]["healthy"] = all(
                 [

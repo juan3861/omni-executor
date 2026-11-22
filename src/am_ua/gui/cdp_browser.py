@@ -355,8 +355,24 @@ class CDPIndexedBrowser:
 
         page = self._ensure_page()
 
-        if not self.last_elements:
+        if not self.last_elements or not self.last_observation:
             self.observe(wait_ms=50)
+
+        def _file_sha256(p_str: Any) -> str:
+            if not p_str:
+                return ""
+            try:
+                p_obj = Path(str(p_str))
+                if p_obj.is_file():
+                    return hashlib.sha256(p_obj.read_bytes()).hexdigest()
+            except OSError:
+                pass
+            return ""
+
+        pre_obs = dict(self.last_observation or {})
+        url_before = str(pre_obs.get("url") or getattr(page, "url", "") or "")
+        before_visual_sha256 = _file_sha256(pre_obs.get("visual_screenshot_path"))
+        before_dom_sha256 = _file_sha256(pre_obs.get("f12_dom_path"))
 
         resolved_idx = int(idx) if idx is not None else None
         self_healed = False
@@ -406,13 +422,24 @@ class CDPIndexedBrowser:
                 return {"ok": False, "action": act_name, "locator": locator_str, "error": str(exc)}
 
         post_obs = self.observe(wait_ms=100)
+        after_visual_sha256 = _file_sha256(post_obs.get("visual_screenshot_path"))
+        after_dom_sha256 = _file_sha256(post_obs.get("f12_dom_path"))
+        visual_state_changed = bool(before_visual_sha256 and after_visual_sha256 and before_visual_sha256 != after_visual_sha256)
+        dom_state_changed = bool(before_dom_sha256 and after_dom_sha256 and before_dom_sha256 != after_dom_sha256)
         receipt = {
             "schema": "BROWSER_PAF_RECEIPT/v1",
             "timestamp": time.time(),
             "action": act_name,
             "locator_used": locator_str,
             "self_healed": self_healed,
+            "url_before": url_before,
             "url_after": post_obs["url"],
+            "before_visual_sha256": before_visual_sha256,
+            "after_visual_sha256": after_visual_sha256,
+            "before_dom_sha256": before_dom_sha256,
+            "after_dom_sha256": after_dom_sha256,
+            "visual_state_changed": visual_state_changed,
+            "dom_state_changed": dom_state_changed or (url_before != post_obs["url"]),
             "f12_dom_path": post_obs["f12_dom_path"],
             "visual_screenshot_path": post_obs["visual_screenshot_path"],
             "elapsed_ms": round((time.perf_counter() - t0) * 1000.0, 2),

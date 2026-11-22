@@ -181,6 +181,7 @@ class AgentLoop:
         "code_sandbox": EffectClass.PURE_READ,
         "deterministic_preflight": EffectClass.PURE_READ,
         "deterministic_exec": EffectClass.COMPENSATABLE_MUTATION,
+        "run_playbook": EffectClass.COMPENSATABLE_MUTATION,
         "checkpoint": EffectClass.PURE_READ,
         "restore_checkpoint": EffectClass.COMPENSATABLE_MUTATION,
     }

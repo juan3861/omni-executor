@@ -100,7 +100,7 @@ TOOL_FAMILIES: Dict[str, Tuple[str, ...]] = {
     "core_code": (
         "list_dir", "read_file", "search", "write_file", "replace_in_file",
         "run", "repo_map", "knowledge_query", "task_tracker",
-        "spill_query", "code_sandbox", "deterministic_preflight", "deterministic_exec",
+        "spill_query", "code_sandbox", "deterministic_preflight", "deterministic_exec", "run_playbook",
         "checkpoint", "restore_checkpoint", "request_human", "finish",
     ),
     "readonly_audit": (
@@ -144,6 +144,8 @@ _TOOL_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     "repo_map": ("architecture", "map", "repomap", "symbols", "overview", "dependencies"),
     "knowledge_query": ("docs", "schema", "sql", "architecture", "index", "knowledge", "query"),
     "task_tracker": ("task", "plan", "todo", "checklist", "progress", "steps"),
+    "deterministic_exec": ("rail", "deterministic", "zero-token", "ast", "lint"),
+    "run_playbook": ("playbook", "workflow", "sequence", "refactor", "browser", "desktop", "window"),
     "checkpoint": ("checkpoint", "snapshot", "backup", "save"),
     "restore_checkpoint": ("restore", "rollback", "revert", "undo"),
     "browser_observe": ("browser", "playwright", "cdp", "http", "https", "url", "webpage", "website", "site", "dom"),

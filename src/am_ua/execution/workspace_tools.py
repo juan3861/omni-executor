@@ -118,8 +118,16 @@ class WorkspaceTools:
         return {"file": args["file"], "total_lines": len(lines), "content": clip(numbered)}
 
     def search(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        pattern = re.compile(str(args["pattern"]))
+        pat_str = str(args["pattern"])
         base = self.resolve(str(args.get("path", ".")))
+        if args.get("prefer_native", True):
+            from am_ua.execution.native_backends import NativeBackendRouter
+
+            native_res = NativeBackendRouter.ripgrep_search(self.ws, pat_str, target=base, max_hits=200)
+            if native_res is not None:
+                return native_res
+
+        pattern = re.compile(pat_str)
         hits: List[str] = []
         for root, dirs, files in os.walk(base):
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
@@ -132,10 +140,10 @@ class WorkspaceTools:
                         if pattern.search(line):
                             hits.append(f"{fp.relative_to(self.ws).as_posix()}:{n}: {line.strip()[:200]}")
                             if len(hits) >= 200:
-                                return {"hits": hits, "truncated": True}
+                                return {"hits": hits, "truncated": True, "backend": "python_regex"}
                 except OSError:
                     continue
-        return {"hits": hits, "truncated": False}
+        return {"hits": hits, "truncated": False, "backend": "python_regex"}
 
     @staticmethod
     def _strip_fences(content: str) -> str:
@@ -675,6 +683,38 @@ class WorkspaceTools:
             self.ws,
             params=params,
             run_fn=self.run,
+        )
+
+    def _prepare_playbook_args(self, tool_name: str, bound_args: Dict[str, Any], _ws_tools: Any) -> Dict[str, Any]:
+        out = dict(bound_args)
+        if tool_name in ("write_file", "replace_in_file"):
+            raw_p = str(out.get("path", out.get("file", "")))
+            resolved = self.resolve(raw_p)
+            self.seal_guard.assert_write_allowed(resolved, actor="agent_loop")
+            out["path"] = str(resolved)
+        return out
+
+    def run_playbook(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """List or execute a deterministic parametric playbook (Code / Windows / Browser)."""
+        from am_ua.execution.parametric_playbooks import DEFAULT_PLAYBOOK_ENGINE
+
+        action = str(args.get("action") or "").strip().lower()
+        playbook_name = str(args.get("playbook") or "").strip()
+        if action == "list" or playbook_name in ("", "list"):
+            domain = str(args.get("domain")).strip() if args.get("domain") else None
+            return {
+                "ok": True,
+                "playbooks": DEFAULT_PLAYBOOK_ENGINE.list_playbooks(domain=domain),
+            }
+
+        raw_vars = args.get("variables")
+        if not isinstance(raw_vars, dict):
+            raw_vars = args.get("vars") if isinstance(args.get("vars"), dict) else {}
+        return DEFAULT_PLAYBOOK_ENGINE.execute(
+            playbook_name,
+            dict(raw_vars),
+            self,
+            prepare_args_fn=self._prepare_playbook_args,
         )
 
     def code_sandbox(self, args: Dict[str, Any]) -> Dict[str, Any]:

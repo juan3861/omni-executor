@@ -181,6 +181,16 @@ TOOL_JSON_SCHEMAS: Dict[str, Dict[str, Any]] = {
         },
         additional_properties=True,
     ),
+    "run_playbook": _fn(
+        "run_playbook",
+        "List or execute a pre-fixed deterministic parametric playbook across Code, Windows, or Browser with runtime variables.",
+        {
+            "action": {"type": "string", "description": "Set 'list' to list playbooks or omit/'execute' to run."},
+            "playbook": {"type": "string", "description": "Registered playbook name (e.g. 'code_patch_and_verify', 'win_ui_sequence', 'web_navigate_fill_extract')."},
+            "domain": {"type": "string", "description": "Optional filter ('code'|'windows'|'browser') when action='list'."},
+            "variables": {"type": "object", "description": "Runtime variable bindings for {{var}} placeholders."},
+        },
+    ),
     "checkpoint": _fn(
         "checkpoint",
         "Create a workspace state snapshot checkpoint before risky edits.",
@@ -477,7 +487,7 @@ def build_native_tool_schemas(
         pool = list(ranked.get("selected_tools") or [])
         role_scope = ROLE_TOOL_SCOPES.get(role)
         # Ensure core workspace tools remain available whenever permitted by role
-        for core_t in ("list_dir", "read_file", "search", "replace_in_file", "write_file", "run", "deterministic_exec"):
+        for core_t in ("list_dir", "read_file", "search", "replace_in_file", "write_file", "run", "deterministic_exec", "run_playbook"):
             if core_t not in pool and (role_scope is None or core_t in role_scope):
                 pool.append(core_t)
 

@@ -19,8 +19,8 @@
 - Live AG-UI SSE Stream: `--agui-port <port>` (`src/am_ua/cognition/agui_protocol.py`)
 
 ## CLI Subcommands (21)
-- `det list|run`: Programmable 220-rail zero-token deterministic execution hub (AST, clones, SBFL, TLA+, Raft, live silicon CPU probe, BM25, SQL, JWT/Merkle).
-- `swebench validate-predictions`: Validate SWE-bench prediction JSONL/artifacts deterministically.
+- `det list|run|list-playbooks|run-playbook`: Programmable 220-rail zero-token matrix and pre-fixed parametric playbooks (`Code`/`Windows`/`Browser`) with safe variable binding.
+- `swebench validate-predictions|run`: On-demand SWE-bench dataset loader & evaluator (free-tier LLM default, optional USD cap) + predictions validator.
 - `fleet`: Run v5.4+ HyperFleet high-density concurrent multi-agent coordinator.
 - `lsp`: Persistent LSP diagnostics and go-to-definition engine with AST fallback.
 - `daemon`: Always-on SQLite WAL background task and webhook queue.

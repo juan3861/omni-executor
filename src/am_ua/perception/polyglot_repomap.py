@@ -88,6 +88,16 @@ class PolyglotRepoMapper:
     def __init__(self, repo_root: Path | str) -> None:
         self.root = Path(repo_root).resolve()
 
+    @staticmethod
+    def native_backends_status() -> Dict[str, bool]:
+        """Probe optional high-speed AST backends (`tree-sitter`, `ast-grep`) without cross-organ coupling."""
+        import importlib.util
+
+        return {
+            "ast_grep": bool(shutil.which("ast-grep") or shutil.which("sg")),
+            "tree_sitter": importlib.util.find_spec("tree_sitter") is not None,
+        }
+
     def _extract_python_symbols(self, rel_path: str, text: str) -> Tuple[List[SymbolDef], Set[str]]:
         defs: List[SymbolDef] = []
         refs: Set[str] = set()
