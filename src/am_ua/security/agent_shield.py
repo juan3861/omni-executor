@@ -88,7 +88,7 @@ _SAST_CODE_PATTERNS: Tuple[Tuple[str, str, str, re.Pattern[str]], ...] = (
     ("SHIELD-SAST-005", "HIGH", "Dynamic code execution via eval()/exec() (CWE-95)", re.compile(r"(?<!\.)\b(?:eval|exec)\s*\(")),
 )
 
-_SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "venv", "third_party", "vendor", "data"}
+_SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", ".ci_pytest_tmp", ".am_eval_runs", "node_modules", ".venv", "venv", "third_party", "vendor", "data"}
 _SCAN_EXTS = {".json", ".yaml", ".yml", ".toml", ".env", ".cmd", ".ps1", ".sh", ".md"}
 _CODE_EXTS = {".py", ".js", ".ts"}
 
@@ -213,7 +213,8 @@ class AgentShieldAuditor:
         for p in base.rglob("*"):
             if scanned >= max_files:
                 break
-            if any(part in _SKIP_DIRS for part in p.parts):
+            rel_obj = p.relative_to(base)
+            if any(part in _SKIP_DIRS for part in rel_obj.parts):
                 continue
             if not p.is_file():
                 continue

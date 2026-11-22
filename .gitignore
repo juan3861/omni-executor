@@ -6,6 +6,7 @@ data/*.jsonl
 __pycache__/
 *.pyc
 .pytest_cache/
+.ci_pytest_tmp/
 node_modules/
 # Local scratch / eval sandboxes
 .am_eval_runs/

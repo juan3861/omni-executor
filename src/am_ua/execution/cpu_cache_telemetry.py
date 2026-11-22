@@ -10,10 +10,13 @@ Provides four deterministic, zero-token hardware telemetry and cache-optimizatio
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import math
 import os
+from pathlib import Path
 import platform
 import struct
+import subprocess
 import sys
 import time
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
@@ -109,6 +112,109 @@ class CPUCacheTopologyProbe:
             "optimal_l2_fp64_tile_block_dim": optimal_l2_tile_dim,
             "l1_working_set_three_tiles_bytes": 3 * (optimal_l1_tile_dim ** 2) * cls.FP64_ELEMENT_BYTES,
         }
+
+    @classmethod
+    def probe_live_host_cache(cls) -> Dict[str, Any]:
+        """Query REAL host silicon L1/L2/L3 cache hierarchy (Win32 CIM or Linux sysfs) with analytical tile sizing."""
+        cpu_name = platform.processor() or platform.machine() or "unknown"
+        phys_cores = os.cpu_count() or 1
+        logical_cores = os.cpu_count() or 1
+        l1d_kb = 32
+        l2_kb = 512
+        l3_kb = 16384
+        source = "portable_defaults"
+
+        if os.name == "nt":
+            try:
+                ps = (
+                    "$p = Get-CimInstance Win32_Processor | Select-Object -First 1 Name,NumberOfCores,NumberOfLogicalProcessors,L2CacheSize,L3CacheSize; "
+                    "$c = Get-CimInstance Win32_CacheMemory | Select-Object Level,MaxCacheSize; "
+                    "@{proc=$p;cache=$c} | ConvertTo-Json -Compress"
+                )
+                proc = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", ps],
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=6,
+                    check=False,
+                )
+                if proc.returncode == 0 and proc.stdout.strip().startswith("{"):
+                    data = json.loads(proc.stdout)
+                    pinfo = data.get("proc") or {}
+                    cpu_name = str(pinfo.get("Name") or cpu_name).strip()
+                    phys_cores = max(1, int(pinfo.get("NumberOfCores") or phys_cores))
+                    logical_cores = max(1, int(pinfo.get("NumberOfLogicalProcessors") or logical_cores))
+                    if pinfo.get("L2CacheSize"):
+                        l2_kb = max(64, int(pinfo["L2CacheSize"]) // phys_cores)
+                    if pinfo.get("L3CacheSize"):
+                        l3_kb = max(256, int(pinfo["L3CacheSize"]))
+                    caches = data.get("cache") or []
+                    if isinstance(caches, dict):
+                        caches = [caches]
+                    for entry in caches:
+                        lvl = entry.get("Level")
+                        sz = entry.get("MaxCacheSize")
+                        if lvl == 3 and sz:
+                            # Win32 Level 3 = L1 total (I+D) across physical cores
+                            l1d_kb = max(16, (int(sz) // max(1, phys_cores)) // 2)
+                    source = "win32_cim_silicon_probe"
+            except Exception:
+                pass
+        else:
+            cache_root = Path("/sys/devices/system/cpu/cpu0/cache")
+            if cache_root.is_dir():
+                for idx_dir in sorted(cache_root.glob("index*")):
+                    try:
+                        lvl = int((idx_dir / "level").read_text(encoding="utf-8").strip())
+                        ctype = (idx_dir / "type").read_text(encoding="utf-8").strip().lower()
+                        sz_str = (idx_dir / "size").read_text(encoding="utf-8").strip().upper()
+                        sz_kb = int(sz_str[:-1]) * (1024 if sz_str.endswith("M") else 1)
+                        if lvl == 1 and "data" in ctype:
+                            l1d_kb = sz_kb
+                        elif lvl == 2:
+                            l2_kb = sz_kb
+                        elif lvl == 3:
+                            l3_kb = sz_kb
+                        source = "linux_sysfs_silicon_probe"
+                    except Exception:
+                        continue
+
+        base = cls.probe_hierarchy(l1d_kb=l1d_kb, l2_kb=l2_kb, l3_kb=l3_kb)
+        base.update({
+            "probe_source": source,
+            "cpu_model": cpu_name,
+            "physical_cores": phys_cores,
+            "logical_cores": logical_cores,
+            "smt_ratio": round(logical_cores / max(1, phys_cores), 2),
+        })
+        return base
+
+    @classmethod
+    def measure_memory_hierarchy_bandwidth(cls) -> Dict[str, Any]:
+        """Measure real L1-resident (16KB), L2-resident (256KB), and DRAM (4MB) copy throughput in MB/s."""
+        benchmarks: Dict[str, Dict[str, Any]] = {}
+        for tier, sz_bytes, iters in (
+            ("l1_16kb", 16 * 1024, 200),
+            ("l2_256kb", 256 * 1024, 40),
+            ("dram_4mb", 4 * 1024 * 1024, 6),
+        ):
+            src = bytearray(b"\x5a" * sz_bytes)
+            dst = bytearray(sz_bytes)
+            t0 = time.perf_counter()
+            for _ in range(iters):
+                dst[:] = src
+            dt = max(1e-6, time.perf_counter() - t0)
+            mb_moved = (sz_bytes * iters) / (1024.0 * 1024.0)
+            benchmarks[tier] = {
+                "working_set_bytes": sz_bytes,
+                "iterations": iters,
+                "elapsed_ms": round(dt * 1000.0, 3),
+                "bandwidth_mbps": round(mb_moved / dt, 1),
+            }
+        return {"ok": True, "tiers": benchmarks}
 
     @classmethod
     def compute_loop_tiling_plan(

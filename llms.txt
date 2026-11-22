@@ -3,7 +3,7 @@
 > Autonomous software engineering harness with a durable SQLite-WAL execution engine, executable verification oracle (`--verify`), pipe-aware fail-closed command gating, hierarchical multi-wave team orchestrator (`solo_specialist` -> `dev_squad` -> `executive_enterprise_fleet`), self-healing CDP browser engine, closed-loop Windows desktop RPA, AST-sealed adaptive Python skills, and native MCP / A2A v0.3 / AG-UI protocol support.
 
 ## Canonical Documentation
-- [README.md](README.md): Complete user & developer guide covering installation, 15 CLI subcommands, 32 workspace tools, 10 engineering personas, MCP/ACP/A2A/AG-UI integrations, 15 SAST rules, playbooks, benchmarks, and caveats.
+- [README.md](README.md): Complete user & developer guide covering installation, 21 CLI subcommands, 32 workspace tools, 220 deterministic zero-token rails, 10 engineering personas, MCP/ACP/A2A/AG-UI integrations, 15 SAST rules, playbooks, benchmarks, and caveats.
 - [docs/ENGINEERING_AND_MATH_MANUAL.md](docs/ENGINEERING_AND_MATH_MANUAL.md): Exact mathematical formulations (durable effect fencing, Brier autonomy tiers, PageRank code centrality, RAM worker scaling, Casimir storage pressure, UCB1 evolution, pipe-aware command classification, and two-stage tool probability selection).
 - [CONTRIBUTING.md](CONTRIBUTING.md): Setup, automated verification gate, constitutional seal boundaries, and extension points.
 - [SECURITY.md](SECURITY.md): Defense-in-depth security architecture, secret/SAST rules, symlink protection, and reporting policy.
@@ -17,7 +17,12 @@
 - A2A v0.3 & Channel Gateway: `SubAgentSessionBus.handle_a2a_rpc` / `ingest_channel_event` (`src/am_ua/execution/subagent_bus.py`)
 - Live AG-UI SSE Stream: `--agui-port <port>` (`src/am_ua/cognition/agui_protocol.py`)
 
-## CLI Subcommands (15)
+## CLI Subcommands (21)
+- `det list|run`: Programmable 220-rail zero-token deterministic execution hub (AST, clones, SBFL, TLA+, Raft, live silicon CPU probe, BM25, SQL, JWT/Merkle).
+- `swebench validate-predictions`: Validate SWE-bench prediction JSONL/artifacts deterministically.
+- `fleet`: Run v5.4+ HyperFleet high-density concurrent multi-agent coordinator.
+- `lsp`: Persistent LSP diagnostics and go-to-definition engine with AST fallback.
+- `daemon`: Always-on SQLite WAL background task and webhook queue.
 - `doctor`: Multi-organ readiness, SQLite-WAL single state owner, SHA-256 constitutional seal, and host headroom.
 - `shield [target]`: Static security & SAST scanner (`Grade A`–`F` across 15 rules).
 - `mission "<objective>"`: Autonomous coding/browser/desktop execution verified against `--verify` (`--workflow react|sparc|hierarchical`, `--role`, `--best-of-n`, `--wheel-timeout`, `--agui-port`).

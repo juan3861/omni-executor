@@ -193,6 +193,14 @@ MATRIX_69_SPECS: Dict[str, Tuple[str, int, bool]] = {
     "v62_top100_cross_parity_audit": ("Verify zero Windows stubs, live-wiring of Apex/OpenHands/TokenSavers inside AgentLoop, and 160 active rails.", 7500, False),
 }
 
+from am_ua.execution.deterministic_matrix_v70 import (  # noqa: E402
+    V70_60_SPECS,
+    execute_v70_60_rail,
+    match_v70_60_rail,
+)
+
+MATRIX_69_SPECS.update(V70_60_SPECS)
+
 _WORKSPACE_SNAPSHOT_GUARDS: Dict[str, Any] = {}
 
 
@@ -305,7 +313,7 @@ def match_matrix_69_rail(low: str) -> Optional[str]:
     for keys, r_name in keyword_map:
         if any(k in low for k in keys):
             return r_name
-    return None
+    return match_v70_60_rail(low)
 
 
 def execute_matrix_69_rail(
@@ -2215,5 +2223,8 @@ def execute_matrix_69_rail(
             "zero_windows_stubs": zero_stubs,
             "agent_loop_live_wired": live_wired_symbols,
         }
+
+    if rail_name in V70_60_SPECS:
+        return execute_v70_60_rail(rail_name, ws, args, execute_rail_fn=execute_rail_fn)
 
     return {"ok": False, "rail": rail_name, "error": f"Unhandled matrix rail: {rail_name}"}

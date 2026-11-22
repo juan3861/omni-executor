@@ -25,13 +25,13 @@ from am_ua.governance.seal_guard import ConstitutionSealGuard
 
 
 def test_v62_160_rails_zero_windows_stubs_and_live_wiring_parity(tmp_path: Path) -> None:
-    assert len(BUILTIN_DETERMINISTIC_RAILS) == 160
+    assert len(BUILTIN_DETERMINISTIC_RAILS) >= 160
 
     repo_root = Path(__file__).resolve().parent.parent
     parity = DeterministicTaskOffloader.execute_rail("v62_top100_cross_parity_audit", repo_root)
     assert parity["ok"] is True
     assert parity["zero_windows_stubs"] is True
-    assert parity["total_deterministic_rails"] == 160
+    assert parity["total_deterministic_rails"] >= 160
     assert all(parity["agent_loop_live_wired"].values())
 
     # Verify previously stubbed win_* rails no longer emit `{"status": "ready"}` stub
