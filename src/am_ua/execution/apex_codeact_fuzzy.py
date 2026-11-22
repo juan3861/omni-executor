@@ -281,7 +281,10 @@ class AiderFuzzySearchReplaceEngine:
             return None, 0, 1.0, l4_err
         if l4_hit is not None:
             sim, l4_idx, wlen = l4_hit
-            patched = _join_lines_preserving_nl(src_lines[:l4_idx] + r_lines + src_lines[l4_idx + wlen :], had_nl)
+            target_window = src_lines[l4_idx : l4_idx + wlen]
+            w_indent = _common_indent(target_window)
+            adj_r = _reindent_lines(r_lines, w_indent) if w_indent and not _common_indent(r_lines) else r_lines
+            patched = _join_lines_preserving_nl(src_lines[:l4_idx] + adj_r + src_lines[l4_idx + wlen :], had_nl)
             return patched, 4, sim, None
 
         return None, 0, 1.0, "No unique search_block match found across cascade levels 1..4"

@@ -265,7 +265,29 @@ class WorkspaceTools:
                 raise ValueError("replace_in_file requires ('old', 'new') or non-empty 'hunks'")
             hunks = [(str(args["old"]), str(args["new"]))]
 
-        working, syn_err = apply_hunks_safely(text, hunks, is_python=(p.suffix == ".py"))
+        try:
+            working, syn_err = apply_hunks_safely(text, hunks, is_python=(p.suffix == ".py"))
+        except ValueError:
+            if len(hunks) != 1:
+                raise
+            from am_ua.execution.apex_codeact_fuzzy import AiderFuzzySearchReplaceEngine
+
+            fuzzy = AiderFuzzySearchReplaceEngine.apply_search_replace(
+                self.ws,
+                file_path=str(p.relative_to(self.ws).as_posix()),
+                search_block=hunks[0][0],
+                replace_block=hunks[0][1],
+                apply=True,
+            )
+            if not fuzzy.get("ok"):
+                raise ValueError(str(fuzzy.get("error") or "Fuzzy search/replace did not match"))
+            res_f: Dict[str, Any] = {
+                "replaced_in": p.relative_to(self.ws).as_posix(),
+                "hunks_applied": 1,
+                "match_level": fuzzy.get("match_level"),
+                "fuzzy_healed": True,
+            }
+            return res_f
         p.write_text(working, encoding="utf-8", newline="\n")
         res: Dict[str, Any] = {"replaced_in": p.relative_to(self.ws).as_posix(), "hunks_applied": len(hunks)}
         if syn_err:
@@ -315,9 +337,16 @@ class WorkspaceTools:
         }
 
     def run(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        from am_ua.execution.openhands_organs import ShellSemanticPolicyRails
+
         cmd = str(args["command"]).strip()
         if DANGEROUS_CMD_RE.search(cmd):
             raise ConstitutionalViolationError(f"Command blocked by agent denylist: {cmd[:120]}")
+        policy_verdict = ShellSemanticPolicyRails.analyze_command(cmd)
+        if not policy_verdict.get("ok") and policy_verdict.get("risk") == "HIGH":
+            raise ConstitutionalViolationError(
+                f"Command blocked by ShellSemanticPolicyRails ({policy_verdict.get('matched_rail')}): {policy_verdict.get('reason')}"
+            )
         timeout = min(float(args.get("timeout_s", self.cmd_timeout_s)), 600.0)
         sandbox_mode = str(args.get("sandbox") or ("hermetic" if args.get("hermetic") else "")).strip().lower()
         if sandbox_mode == "hermetic":
@@ -1649,11 +1678,27 @@ class AgentLoop:
                 )
 
         task += self._build_turn0_inventory(ws, before)
+        if re.search(r"\b(traceback|error|fail|bug|exception|fix|corrija|erro)\b", objective, re.I):
+            try:
+                from am_ua.execution.apex_fault_localizer import AgentlessThreePhaseLocalizer
+
+                loc = AgentlessThreePhaseLocalizer.localize(ws.ws, query_or_traceback=objective, top_k_files=2, window=8)
+                top_files = [f.get("file") for f in (loc.get("phase1_ranked_files") or [])[:2] if f.get("file")]
+                if top_files:
+                    task += f"ZERO_TOKEN_FAULT_LOCALIZER_HINTS: suspicious_files={top_files}\n"
+            except Exception:
+                pass
         task += f"OBJECTIVE:\n{objective}\n\nWORKSPACE: {ws.ws}\n"
         task += f"ACCEPTANCE COMMAND (must exit 0): {verify_cmd}\n" if verify_cmd else "No acceptance command was provided; verify your work yourself.\n"
         messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}, {"role": "user", "content": task}]
 
+        from am_ua.execution.openhands_organs import OpenHandsStuckDetector
+        from am_ua.execution.token_latency_savers import SimHashSemanticCache, grammar_json_repair, prompt_token_pruner
+
         tool_log: List[Dict[str, Any]] = []
+        stuck_events_log: List[Dict[str, Any]] = []
+        stuck_detector = OpenHandsStuckDetector()
+        read_cache = SimHashSemanticCache(max_hamming_distance=0)
         providers_used: List[str] = []
         summary, confidence, stop_reason = "", None, "max_turns"
         parse_failures, turn = 0, 0
@@ -1687,7 +1732,13 @@ class AgentLoop:
                 providers_used.append(resp.provider)
             messages.append({"role": "assistant", "content": resp.text})
             try:
-                action = extract_json_object(resp.text)
+                try:
+                    action = extract_json_object(resp.text)
+                except ValueError:
+                    healed = grammar_json_repair(resp.text)
+                    if not healed.get("ok") or not isinstance(healed.get("parsed"), dict):
+                        raise
+                    action = healed["parsed"]
                 batch: List[Tuple[str, Dict[str, Any]]] = []
                 if isinstance(action.get("actions"), list) and action["actions"]:
                     for item in action["actions"][:6]:
@@ -1912,10 +1963,22 @@ class AgentLoop:
                         if not pre_dec.allowed:
                             ok, obs = False, {"error": pre_dec.reason, "blocked_by_hook": True}
                         else:
-                            step_id = f"t{turn}-{sub_idx}-{hashlib.sha256(json.dumps([tool, call_args], sort_keys=True, default=str).encode()).hexdigest()[:10]}"
-                            cp = self.engine.execute_step(run_id=mission_id, step_id=step_id, step_index=turn * 10 + sub_idx, tool_name=f"ws.{tool}",
-                                                          args=call_args, state={"mission_id": mission_id}, lease_epoch=epoch, envelope=envelope)
-                            obs = cp["output"]
+                            cache_key: Optional[str] = None
+                            if tool in ("read_file", "search", "repo_map"):
+                                cache_key = json.dumps([tool, call_args], sort_keys=True, default=str)
+                                hit = read_cache.lookup(cache_key)
+                                if hit.get("cache_hit") and isinstance(hit.get("response"), dict):
+                                    obs = dict(hit["response"])
+                                    obs["simhash_cache_hit"] = True
+                            if obs is None:
+                                step_id = f"t{turn}-{sub_idx}-{hashlib.sha256(json.dumps([tool, call_args], sort_keys=True, default=str).encode()).hexdigest()[:10]}"
+                                cp = self.engine.execute_step(run_id=mission_id, step_id=step_id, step_index=turn * 10 + sub_idx, tool_name=f"ws.{tool}",
+                                                              args=call_args, state={"mission_id": mission_id}, lease_epoch=epoch, envelope=envelope)
+                                obs = cp["output"]
+                                if cache_key is not None and isinstance(obs, dict) and not obs.get("error"):
+                                    read_cache.put(cache_key, dict(obs))
+                                elif self.TOOL_EFFECTS.get(tool) != EffectClass.PURE_READ:
+                                    read_cache._entries.clear()
                             if isinstance(obs, dict):
                                 if ok and tool in ("write_file", "replace_in_file") and call_args:
                                     edited_p = Path(str(call_args.get("path", "")))
@@ -1979,12 +2042,18 @@ class AgentLoop:
                 if ok:
                     turn_progress = True
                 tool_log.append({"turn": turn, "tool": tool, "args": {k: (v if len(str(v)) < 300 else str(v)[:300] + "...") for k, v in args.items()}, "ok": ok})
+                stuck_events_log.append({"tool": tool, "args": args, "is_error": not ok, "observation": str(obs)[:250]})
                 compressed = compressor.compress_tool_payload(tool, obs)
+                if len(compressed) > 1200:
+                    compressed = prompt_token_pruner(compressed).get("pruned_text", compressed)
                 prefix = f"[{sub_idx}:{tool}] " if len(batch) > 1 else ""
                 turn_obs_chunks.append(prefix + compressed)
 
             if should_break_loop:
                 break
+            stuck_verdict = stuck_detector.analyze(stuck_events_log)
+            if stuck_verdict.is_stuck and stuck_verdict.recovery_nudge:
+                turn_obs_chunks.append(f"[STUCK_DETECTOR_NUDGE ({stuck_verdict.loop_type}): {stuck_verdict.recovery_nudge}]")
             if reject_finish_msg is not None:
                 obs_head = ("\n".join(turn_obs_chunks) + "\n\n") if turn_obs_chunks else ""
                 messages.append({"role": "user", "content": obs_head + reject_finish_msg})

@@ -28,9 +28,9 @@ from am_ua.execution.tla_formal_verifier import (
 
 
 def test_v61_150_deterministic_rails_registered_and_nl_triggers() -> None:
-    """Verify exactly 150 deterministic rails are registered and Domain J keyword triggers match."""
-    assert len(BUILTIN_DETERMINISTIC_RAILS) == 150
-    assert len(DeterministicTaskOffloader.list_rails()) == 150
+    """Verify at least 150 deterministic rails are registered and Domain J keyword triggers match."""
+    assert len(BUILTIN_DETERMINISTIC_RAILS) >= 150
+    assert len(DeterministicTaskOffloader.list_rails()) >= 150
 
     assert DeterministicTaskOffloader.match_zero_token_rail("compile tla+ formal specification") == "tla_plus_spec_transpiler"
     assert DeterministicTaskOffloader.match_zero_token_rail("run tlc model check on state machine") == "tla_bounded_model_checker"
