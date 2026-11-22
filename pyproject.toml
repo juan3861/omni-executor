@@ -4,17 +4,27 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omni-executor"
-version = "7.0.0"
+version = "8.0.0"
 description = "OmniExecutor Agent: autonomous coding agent, hierarchical team orchestrator, self-healing browser and MCP/A2A/ACP harness"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = []
+
+[project.scripts]
+omni-executor = "am_ua.cli:main"
+omni = "am_ua.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "numpy"]
 deterministic = ["ruff", "mypy", "hypothesis", "z3-solver", "duckdb", "polars", "libcst", "tree-sitter", "trafilatura"]
 browser = ["playwright"]
 desktop = ["pywinauto", "Pillow"]
+tui = ["rich>=13.0", "prompt_toolkit>=3.0"]
+vectors = ["numpy>=1.26"]
+swebench = ["datasets>=2.18", "docker>=7.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"

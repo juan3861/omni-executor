@@ -11,6 +11,7 @@
 
 ## Entry Points
 - Public Python Facade: `from am_ua import OmniExecutorAgent` (`src/am_ua/__init__.py` -> `src/am_ua/agent_kernel.py`)
+- Installed Console CLI (`pyproject.toml` `[project.scripts]`): `omni-executor` / `omni` (`src/am_ua/cli.py`)
 - Windows CLI Wrapper: `omni-executor.cmd` (`src/am_ua/cli.py`)
 - MCP Server (`stdio`, JSON-RPC 2.0): `omni-executor.cmd mcp-serve` (`src/am_ua/execution/mcp_federation.py`)
 - ACP Server (`stdio`, JSON-RPC 2.0): `omni-executor.cmd acp-serve` (`src/am_ua/execution/acp_adapter.py`)
@@ -44,7 +45,8 @@
 - `governance/homeostasis.py`: RAM, disk pressure (`F_c(d)`), token budget, and stagnation governor.
 - `execution/durable_engine.py`: SQLite-WAL durable state owner, effect taxonomy, `OUTCOME_UNKNOWN` recovery, lease-epoch fencing, and time-travel `fork_run_from_step()`.
 - `execution/hook_engine.py`: Deterministic `PreToolUse`/`PostToolUse` hooks, `ToolOutputGuardrail` + `ToolGuardrailTripwireError` + `post_output_secret_redactor`, secret write blocker, `pre_write_test_tamper_guard`, Python AST checker, pipe-aware 5-class command classifier (`READ | WRITE | NETWORK | INSTALL | DESTRUCTIVE`), structural `PolicyRails` (`fetch-to-exec`, `raw-disk-op`, `catastrophic-delete`), opaque subshell escalation (`UNKNOWN`), and worst-case `evaluate_ensemble_risk`.
-- `execution/agent_loop.py`: ReAct/SPARC/Hierarchical loop, Turn-0 workspace inventory + `WorkspaceMarkerTrigger` toolchain hints, multi-hunk transactional `replace_in_file`, `task_tracker` (`view`/`plan`), `spill_query`, restricted AST `code_sandbox`, SSRF-guarded `web_fetch`, typed `output_schema` (`ModelRetry`), runtime `handoff_agent`, half-window tombstone condensation, `DeterministicPreCritic`, up to 6 batched actions/turn, symlink escape guard, `ROLE_TOOL_SCOPES`, and `rank_tools_for_objective` (`FamilyThenDecide` / `RetrieveThenDecide`).
+- `cognition/llm_client.py`: Multi-provider client (`OpenAI`, `Anthropic`, `Gemini Native`, `Groq`, `OpenRouter`, `Ollama`) with native `tools`/`tool_calls`, explicit `cache_control` prompt caching, `reasoning_effort` thinking budgets, and SSE tool-call streaming.
+- `execution/agent_loop.py` + `execution/workspace_tools.py` + `execution/tool_schemas.py`: Native tool-calling ReAct/SPARC/Hierarchical loop, parallel `ThreadPoolExecutor` dispatch for `PURE_READ` batches, dynamic first-class MCP tool mounting (`mcp__<server>__<tool>`), atomic `_condense` over `tool_calls` pairs, Turn-0 workspace inventory, multi-hunk transactional `replace_in_file`, `task_tracker`, `spill_query`, `code_sandbox`, SSRF-guarded `web_fetch`, typed `output_schema`, runtime `handoff_agent`, symlink escape guard, and `ROLE_TOOL_SCOPES`.
 - `cognition/reasoning_bank.py`: Hybrid Jaccard + SONA trajectory replay with `sleeptime_consolidate()` and `consult_tom()` background user-model synthesis.
 - `execution/subagent_bus.py`: 3-tier severity-scored team orchestration (`1 -> 4 -> 9` agents across 4 waves, max depth `2`, max `16` agents, exclusive GUI lock), `ROLE_PROVIDER_PROFILES`, dependency-aware `execute_dag()`, A2A v0.3 JSON-RPC, and inbound channel burst debouncing.
 - `gui/cdp_browser.py`: Indexed CDP browser with `allowed_domains`/`prohibited_domains`/`block_ip_addresses` domain guard, self-healing DOM recovery, and checkout/payment boundary hard stop.

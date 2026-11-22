@@ -1,30 +1,24 @@
-"""Real cognitive agent loop (am_ua.execution.agent_loop).
+"""Real cognitive agent loop (am_ua.execution.agent_loop — v8.0).
 
 Part of the Execution Organ (OMNI_TOPOLOGY_V2 compliant).
-Fixes bottlenecks B1 + B3 + B5:
-  - Multi-provider ReAct loop (LLM decides tool calls via JSON protocol)
-  - Tool calls execute through DurableExecutionEngine (checkpoints + lease fences + security gate)
-  - Status is VERIFIED only when an executable acceptance check exits 0
-  - Independent LLM judge on separate provider
-  - Honest token accounting and calibrated Brier score
+Unites:
+  - Multi-provider native tool-calling loop (OpenAI, Anthropic, Gemini, Ollama, Groq, OpenRouter)
+    with explicit prompt caching, reasoning effort, and transparent JSON-text fallback
+  - Parallel `ThreadPoolExecutor` dispatch for contiguous `PURE_READ` tool batches
+  - Dynamic first-class MCP tool mounting (`mcp__<server>__<tool>`)
+  - DurableExecutionEngine checkpoints + lease fences + Last-Mile security gate
+  - Independent LLM judge on separate provider + calibrated Brier score
 """
 
 from __future__ import annotations
 
-from collections import deque
-import ast
+from concurrent.futures import ThreadPoolExecutor
 import difflib
-import gzip
 import hashlib
-import ipaddress
+import inspect
 import json
-import math
-import os
 import re
-import socket
-import subprocess
 import time
-import urllib.parse
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -39,7 +33,7 @@ from am_ua.cognition.agui_protocol import (
     StderrPrettySink,
 )
 from am_ua.cognition.hierarchical_planner import ProactiveHierarchicalPlanner
-from am_ua.cognition.llm_client import LLMClient, LLMUnavailableError, extract_json_object
+from am_ua.cognition.llm_client import LLMClient, LLMUnavailableError, ToolCall, extract_json_object
 from am_ua.cognition.personas import PersonaManager
 from am_ua.cognition.reasoning_bank import ReasoningBank
 from am_ua.contracts.contracts import CognitiveEnvelope, EpistemicTag, TrustLevel, default_temp_dir
@@ -52,6 +46,8 @@ from am_ua.execution.modality_router import HybridModalityRouter
 from am_ua.execution.output_compressor import ToolOutputCompressor
 from am_ua.execution.pc_automation import PCAutomationEngine
 from am_ua.execution.subagent_bus import SubAgentSessionBus
+from am_ua.execution.tool_schemas import build_native_tool_schemas, discover_mcp_tool_schemas
+from am_ua.execution.workspace_tools import WorkspaceTools
 from am_ua.governance.homeostasis import HomeostasisGovernor, ResourceExhaustedError
 from am_ua.governance.seal_guard import ConstitutionSealGuard, ConstitutionalViolationError
 from am_ua.execution.loop_prompts_and_scopes import (
@@ -72,743 +68,24 @@ from am_ua.execution.loop_prompts_and_scopes import (
 )
 
 
-class WorkspaceTools:
-    """Tools confined to one workspace directory. Paths that escape the workspace are rejected."""
+def _llm_supports_native_tools(llm: Any) -> bool:
+    """Return True if `llm.chat` accepts a `tools` keyword argument (safe with mock FakeLLMs)."""
+    chat_fn = getattr(llm, "chat", None)
+    if chat_fn is None:
+        return False
+    try:
+        params = inspect.signature(chat_fn).parameters
+        return "tools" in params or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+    except (TypeError, ValueError):
+        return False
 
-    def __init__(
-        self,
-        workspace: Path,
-        seal_guard: ConstitutionSealGuard,
-        *,
-        cmd_timeout_s: float = 120.0,
-        pc_engine: Optional[PCAutomationEngine] = None,
-        skill_forge: Optional[AdaptiveSkillForge] = None,
-        llm_client: Optional[LLMClient] = None,
-        subagent_bus: Optional[SubAgentSessionBus] = None,
-        mcp_hub: Optional[MCPFederationHub] = None,
-        browser_factory: Optional[Callable[[bool], Any]] = None,
-        hook_engine: Optional[DeterministicHookEngine] = None,
-        repo_mapper_factory: Optional[Callable[[Path], Any]] = None,
-        knowledge_factory: Optional[Callable[[Path], Any]] = None,
-    ) -> None:
-        self.ws = workspace.resolve()
-        self.seal_guard = seal_guard
-        self.cmd_timeout_s = cmd_timeout_s
-        self._pc_engine = pc_engine or PCAutomationEngine()
-        self._skill_forge = skill_forge or AdaptiveSkillForge()
-        self._llm = llm_client
-        self._subagent_bus = subagent_bus
-        self._mcp_hub = mcp_hub
-        self._browser_factory = browser_factory
-        self._repo_mapper_factory = repo_mapper_factory
-        self._knowledge_factory = knowledge_factory
-        self._browser: Any = None
-        self._checkpoints: Dict[str, Dict[str, bytes]] = {}
-        self._task_list: List[Dict[str, str]] = []
-        # Workspace itself must be a constitutionally writable location (project root or safe temp root).
-        self.seal_guard.assert_write_allowed(self.ws / ".am_probe", actor="agent_loop")
 
-    def resolve(self, rel: str) -> Path:
-        raw_req = Path(rel)
-        raw_p = (self.ws / raw_req) if not raw_req.is_absolute() else raw_req
-        if not raw_req.is_absolute():
-            cur = self.ws
-            for part in raw_req.parts:
-                if part in ("", "."):
-                    continue
-                cur = cur / part
-                if cur.is_symlink():
-                    raise ConstitutionalViolationError(f"Symlink escapes workspace boundary check: {rel}")
-        if raw_p.is_symlink():
-            raise ConstitutionalViolationError(f"Symlink escapes workspace boundary check: {rel}")
-        p = raw_p.resolve()
-        if p != self.ws and self.ws not in p.parents:
-            raise ConstitutionalViolationError(f"Path escapes workspace: {rel}")
-        return p
-
-    # ---- tools (all return JSON-serializable dicts)
-    def list_dir(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        base = self.resolve(str(args.get("path", ".")))
-        depth = min(int(args.get("depth", 2)), 4)
-        out: List[str] = []
-        for root, dirs, files in os.walk(base):
-            rel_root = Path(root).relative_to(base)
-            if len(rel_root.parts) >= depth:
-                dirs[:] = []
-            dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
-            for f in sorted(files):
-                out.append(str((rel_root / f).as_posix()))
-                if len(out) >= 400:
-                    return {"entries": out, "truncated": True}
-        return {"entries": out, "truncated": False}
-
-    def read_file(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        p = self.resolve(str(args["file"]))
-        lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
-        start = max(1, int(args.get("start_line", 1)))
-        end = min(len(lines), int(args.get("end_line", start + 399)))
-        numbered = "\n".join(f"{i}: {lines[i - 1]}" for i in range(start, end + 1))
-        return {"file": args["file"], "total_lines": len(lines), "content": clip(numbered)}
-
-    def search(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        pattern = re.compile(str(args["pattern"]))
-        base = self.resolve(str(args.get("path", ".")))
-        hits: List[str] = []
-        for root, dirs, files in os.walk(base):
-            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
-            for f in files:
-                fp = Path(root) / f
-                if fp.stat().st_size > 1_000_000:
-                    continue
-                try:
-                    for n, line in enumerate(fp.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
-                        if pattern.search(line):
-                            hits.append(f"{fp.relative_to(self.ws).as_posix()}:{n}: {line.strip()[:200]}")
-                            if len(hits) >= 200:
-                                return {"hits": hits, "truncated": True}
-                except OSError:
-                    continue
-        return {"hits": hits, "truncated": False}
-
-    @staticmethod
-    def _strip_fences(content: str) -> str:
-        from am_ua.execution.workspace_fs import strip_code_fences
-
-        return strip_code_fences(content)
-
-    def write_file(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        p = Path(str(args["path"]))  # already absolute + gate-checked by LastMileSecurityGate
-        p.parent.mkdir(parents=True, exist_ok=True)
-        content = self._strip_fences(str(args["content"]))
-        p.write_text(content, encoding="utf-8", newline="\n")
-        return {"written": p.relative_to(self.ws).as_posix(), "bytes": p.stat().st_size}
-
-    def replace_in_file(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        from am_ua.execution.workspace_fs import apply_hunks_safely
-
-        p = Path(str(args["path"]))
-        text = p.read_text(encoding="utf-8")
-        raw_hunks = args.get("hunks")
-        if isinstance(raw_hunks, list) and raw_hunks:
-            hunks: List[Tuple[str, str]] = []
-            for h in raw_hunks:
-                if not isinstance(h, dict):
-                    raise ValueError("each entry in 'hunks' must be an object with 'old' and 'new'")
-                h_old = str(h.get("old", h.get("old_str", "")))
-                h_new = str(h.get("new", h.get("new_str", "")))
-                hunks.append((h_old, h_new))
-        else:
-            if "old" not in args or "new" not in args:
-                raise ValueError("replace_in_file requires ('old', 'new') or non-empty 'hunks'")
-            hunks = [(str(args["old"]), str(args["new"]))]
-
-        try:
-            working, syn_err = apply_hunks_safely(text, hunks, is_python=(p.suffix == ".py"))
-        except ValueError:
-            if len(hunks) != 1:
-                raise
-            from am_ua.execution.apex_codeact_fuzzy import AiderFuzzySearchReplaceEngine
-
-            fuzzy = AiderFuzzySearchReplaceEngine.apply_search_replace(
-                self.ws,
-                file_path=str(p.relative_to(self.ws).as_posix()),
-                search_block=hunks[0][0],
-                replace_block=hunks[0][1],
-                apply=True,
-            )
-            if not fuzzy.get("ok"):
-                raise ValueError(str(fuzzy.get("error") or "Fuzzy search/replace did not match"))
-            res_f: Dict[str, Any] = {
-                "replaced_in": p.relative_to(self.ws).as_posix(),
-                "hunks_applied": 1,
-                "match_level": fuzzy.get("match_level"),
-                "fuzzy_healed": True,
-            }
-            return res_f
-        p.write_text(working, encoding="utf-8", newline="\n")
-        res: Dict[str, Any] = {"replaced_in": p.relative_to(self.ws).as_posix(), "hunks_applied": len(hunks)}
-        if syn_err:
-            res["syntax_error"] = syn_err
-        return res
-
-    _TASK_STATUS_ALIASES = {
-        "pending": "todo",
-        "to_do": "todo",
-        "open": "todo",
-        "in-progress": "in_progress",
-        "working": "in_progress",
-        "active": "in_progress",
-        "completed": "done",
-        "complete": "done",
-        "finished": "done",
-    }
-
-    def task_tracker(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Track structured mission subtasks (`view` / `plan`) with status alias normalization."""
-        cmd = str(args.get("command", "view")).strip().lower()
-        if cmd not in ("view", "plan"):
-            raise ValueError(f"Unsupported task_tracker command: {cmd!r}")
-        if cmd == "plan":
-            raw_list = args.get("task_list")
-            if not isinstance(raw_list, list):
-                raise ValueError("'task_list' must be a list when command='plan'")
-            normalized: List[Dict[str, str]] = []
-            for item in raw_list:
-                if not isinstance(item, dict) or not str(item.get("title", "")).strip():
-                    raise ValueError("each task_list item must have a non-empty 'title'")
-                raw_st = str(item.get("status", "todo")).strip().lower().replace("-", "_").replace(" ", "_")
-                st = raw_st if raw_st in ("todo", "in_progress", "done") else self._TASK_STATUS_ALIASES.get(raw_st)
-                if st is None:
-                    raise ValueError(f"Invalid task status: {item.get('status')!r}")
-                normalized.append({
-                    "title": str(item["title"]).strip()[:200],
-                    "notes": str(item.get("notes", "")).strip()[:500],
-                    "status": st,
-                })
-            self._task_list = normalized
-        return {
-            "ok": True,
-            "command": cmd,
-            "count": len(self._task_list),
-            "tasks": list(self._task_list),
-        }
-
-    def run(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        from am_ua.execution.openhands_organs import ShellSemanticPolicyRails
-
-        cmd = str(args["command"]).strip()
-        if DANGEROUS_CMD_RE.search(cmd):
-            raise ConstitutionalViolationError(f"Command blocked by agent denylist: {cmd[:120]}")
-        policy_verdict = ShellSemanticPolicyRails.analyze_command(cmd)
-        if not policy_verdict.get("ok") and policy_verdict.get("risk") == "HIGH":
-            raise ConstitutionalViolationError(
-                f"Command blocked by ShellSemanticPolicyRails ({policy_verdict.get('matched_rail')}): {policy_verdict.get('reason')}"
-            )
-        timeout = min(float(args.get("timeout_s", self.cmd_timeout_s)), 600.0)
-        sandbox_mode = str(args.get("sandbox") or ("hermetic" if args.get("hermetic") else "")).strip().lower()
-        if sandbox_mode == "hermetic":
-            from am_ua.execution.hermetic_sandbox_bridge import HermeticSandboxBridge
-
-            return HermeticSandboxBridge().run_command(cmd, timeout_s=timeout)
-        if sandbox_mode == "docker":
-            import shutil
-
-            docker_bin = shutil.which("docker")
-            if not docker_bin:
-                return {"exit_code": 127, "output": "docker binary not found on host", "elapsed_s": 0.0}
-            t0_d = time.perf_counter()
-            d_proc = subprocess.run(
-                [docker_bin, "run", "--rm", "--network=none", "-v", f"{self.ws}:/ws", "-w", "/ws", "python:3.11-slim", "sh", "-lc", cmd],
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
-            )
-            d_out = (d_proc.stdout or "") + (("\n[stderr]\n" + d_proc.stderr) if d_proc.stderr else "")
-            return {"exit_code": d_proc.returncode, "output": clip(str(d_out)), "elapsed_s": round(time.perf_counter() - t0_d, 2), "sandbox": "docker"}
-        # In PowerShell, invoking a quoted path requires the call operator '&'
-        if os.name == "nt":
-            if cmd.startswith(('"', "'")) and not cmd.startswith("&"):
-                cmd = f"& {cmd}"
-            argv = ["pwsh", "-NoProfile", "-NonInteractive", "-Command", cmd]
-        else:
-            argv = ["bash", "-lc", cmd]
-        t0 = time.perf_counter()
-        try:
-            proc = subprocess.run(
-                argv,
-                cwd=str(self.ws), env=scrubbed_env(), capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=timeout,
-            )
-            code, out = proc.returncode, (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
-        except subprocess.TimeoutExpired as exc:
-            code, out = 124, f"TIMEOUT after {timeout}s\n{(exc.stdout or '')}"
-        return {"exit_code": code, "output": clip(str(out)), "elapsed_s": round(time.perf_counter() - t0, 2)}
-
-    # ---- PC Automation & Adaptive Skill Tools
-    def pc_observe(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        hwnd = args.get("hwnd")
-        window_title = args.get("window_title") or args.get("title")
-        include_ocr = bool(args.get("include_ocr", True))
-        max_elements = min(int(args.get("max_elements", 60)), 120)
-        return self._pc_engine.observe_desktop(
-            hwnd=int(hwnd) if hwnd is not None else None,
-            window_title=str(window_title) if window_title else None,
-            include_ocr=include_ocr,
-            max_elements=max_elements,
-        )
-
-    def pc_ground_vlm(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        target_desc = str(args.get("target") or args.get("description") or "")
-        if not target_desc:
-            return {"ok": False, "error": "target description is required"}
-        window_title = args.get("window_title") or args.get("title")
-        return self._pc_engine.ground_with_vlm(
-            target_desc,
-            self._llm,
-            refresh=bool(args.get("refresh", True)),
-            window_title=str(window_title) if window_title else None,
-        )
-
-    def pc_act(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        action_type = str(args.get("action_type", "click"))
-        return self._pc_engine.execute_gui_action(
-            action_type,
-            tag_id=int(args["tag_id"]) if args.get("tag_id") is not None else None,
-            target=str(args["target"]) if args.get("target") else None,
-            x=int(args["x"]) if args.get("x") is not None else None,
-            y=int(args["y"]) if args.get("y") is not None else None,
-            norm_x=float(args["norm_x"]) if args.get("norm_x") is not None else None,
-            norm_y=float(args["norm_y"]) if args.get("norm_y") is not None else None,
-            text=str(args["text"]) if args.get("text") is not None else None,
-            keys=args.get("keys"),
-            scroll_clicks=int(args.get("scroll_clicks", 0)),
-            button=str(args.get("button", "left")),
-            dry_run=bool(args.get("dry_run", False)),
-        )
-
-    def pc_window(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        action = str(args.get("action", "list")).lower().strip()
-        if action == "list":
-            filt = str(args.get("filter", args.get("locator", "")))
-            return {"ok": True, "windows": self._pc_engine.window_organ.list_windows(filt, limit=60)}
-        if action == "active":
-            return {"ok": True, "active_window": self._pc_engine.window_organ.get_active_window()}
-        if action == "find":
-            loc = str(args.get("locator", ""))
-            return {"ok": True, "windows": self._pc_engine.window_organ.find_windows_by_locator(loc)}
-        if action == "launch":
-            cmd_val = args.get("app_cmd") or args.get("cmd")
-            if not cmd_val:
-                return {"ok": False, "error": "launch requires 'app_cmd'"}
-            if DANGEROUS_CMD_RE.search(str(cmd_val)):
-                raise ConstitutionalViolationError(f"Blocked dangerous launch cmd: {str(cmd_val)[:120]}")
-            return self._pc_engine.window_organ.launch_isolated_app(
-                cmd_val, cwd=self.ws, wait_for_window_s=float(args.get("wait_s", 2.0))
-            )
-        if action == "cleanup":
-            return {"ok": True, **self._pc_engine.window_organ.cleanup_spawned_apps()}
-        loc = str(args.get("locator", args.get("title", "")))
-        rect_raw = args.get("rect")
-        rect = tuple(int(v) for v in rect_raw[:4]) if isinstance(rect_raw, list) and len(rect_raw) >= 4 else None
-        return self._pc_engine.window_organ.control_window(loc, action=action, rect=rect)  # type: ignore[arg-type]
-
-    def pc_clipboard(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        action = str(args.get("action", "get")).lower().strip()
-        if action == "set":
-            txt = str(args.get("text", ""))
-            ok = self._pc_engine.clipboard.set_text(txt)
-            return {"ok": ok, "length": len(txt)}
-        val = self._pc_engine.clipboard.get_text()
-        return {"ok": True, "text": clip(val, 4000)}
-
-    def pc_process(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        action = str(args.get("action", "list")).lower().strip()
-        if action == "port_owner":
-            return self._pc_engine.window_organ.find_port_owner(int(args.get("port", 80)))
-        filt = str(args.get("filter", ""))
-        return {"ok": True, "processes": self._pc_engine.window_organ.list_processes(filt, limit=40)}
-
-    def skill_forge(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        return self._skill_forge.forge_skill(
-            name=str(args["name"]),
-            description=str(args.get("description", "")),
-            code=str(args["code"]),
-            tags=args.get("tags"),
-            test_kwargs=args.get("test_kwargs"),
-        )
-
-    def skill_run(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        action = str(args.get("action", "run")).lower().strip()
-        if action == "list":
-            return {"ok": True, "skills": self._skill_forge.list_skills()}
-        if action == "search":
-            return {"ok": True, "skills": self._skill_forge.search_skills(str(args.get("query", "")))}
-        return self._skill_forge.run_skill(str(args["name"]), args.get("kwargs"))
-
-    def spawn_agent(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        if self._subagent_bus is None:
-            return {"ok": False, "error": "SubAgentSessionBus is not configured"}
-        obj = str(args.get("objective", "")).strip()
-        if not obj:
-            return {"ok": False, "error": "objective is required"}
-        role = str(args.get("role", "general_engineer"))
-        parent_id = str(args.get("parent_id", "root"))
-        current_depth = int(args.get("current_depth", 0))
-        ws = str(self.ws)
-
-        def _worker(sid: str, objective_txt: str, ws_path: Path) -> Dict[str, Any]:
-            return {"ok": True, "session_id": sid, "objective": objective_txt, "role": role, "workspace": str(ws_path)}
-
-        return self._subagent_bus.spawn_session(
-            obj,
-            _worker,
-            parent_id=parent_id,
-            current_depth=current_depth,
-            role=role,
-            workspace=ws,
-            run_async=not bool(args.get("wait", False)),
-        )
-
-    def send_agent(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        if self._subagent_bus is None:
-            return {"ok": False, "error": "SubAgentSessionBus is not configured"}
-        return self._subagent_bus.send_message(
-            sender_id=str(args.get("sender_id", "primary")),
-            recipient_id=str(args["recipient_id"]),
-            content=str(args.get("content", "")),
-        )
-
-    def await_agents(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        if self._subagent_bus is None:
-            return {"ok": False, "error": "SubAgentSessionBus is not configured"}
-        sids = args.get("session_ids") or []
-        if isinstance(sids, str):
-            sids = [sids]
-        return self._subagent_bus.await_sessions([str(x) for x in sids], timeout_s=float(args.get("timeout_s", 30.0)))
-
-    def spawn_team(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Assemble and execute a multi-wave hierarchical team (CEO -> Architect -> Devs -> Supervisor -> Auditors)."""
-        if self._subagent_bus is None:
-            return {"ok": False, "error": "SubAgentSessionBus is not configured"}
-        obj = str(args.get("objective", "")).strip()
-        if not obj:
-            return {"ok": False, "error": "missing required 'objective' for spawn_team"}
-        file_count = int(args.get("workspace_file_count", 0))
-        return self._subagent_bus.orchestrate_team(obj, workspace_file_count=file_count)
-
-    def mcp_call(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        if self._mcp_hub is None:
-            return {"ok": False, "error": "MCPFederationHub is not configured"}
-        action = str(args.get("action", "call")).lower().strip()
-        srv_name = str(args.get("server", "local"))
-        if action == "list":
-            return self._mcp_hub.list_server_tools(srv_name)
-        return self._mcp_hub.call_server_tool(
-            srv_name,
-            str(args["tool"]),
-            args.get("arguments") or {},
-        )
-
-    def _get_browser(self, *, headless: bool = True) -> Any:
-        if self._browser is None:
-            if self._browser_factory is None:
-                raise RuntimeError("browser_factory is not configured")
-            self._browser = self._browser_factory(headless)
-        return self._browser
-
-    def browser_observe(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        headless = bool(args.get("headless", True))
-        url = args.get("url")
-        wait_ms = int(args.get("wait_ms", 200))
-        force_reload = bool(args.get("force_reload", False))
-        return self._get_browser(headless=headless).observe(
-            url=str(url) if url else None,
-            wait_ms=wait_ms,
-            force_reload=force_reload,
-        )
-
-    def browser_act(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        action = str(args.get("action", "")).strip()
-        if not action:
-            return {"ok": False, "error": "missing required 'action'"}
-        idx = args.get("idx")
-        return self._get_browser(headless=bool(args.get("headless", True))).act(
-            action,
-            idx=int(idx) if idx is not None else None,
-            target=str(args["target"]) if args.get("target") else None,
-            text=str(args["text"]) if args.get("text") is not None else None,
-            url=str(args["url"]) if args.get("url") else None,
-        )
-
-    def browser_extract(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        selector = str(args.get("selector", "body"))
-        return self._get_browser(headless=bool(args.get("headless", True))).extract(selector=selector)
-
-    def repo_map(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        if self._repo_mapper_factory is None:
-            return {"ok": False, "error": "repo_mapper_factory is not configured"}
-        max_chars = min(int(args.get("max_chars", 3000)), 12000)
-        mapper = self._repo_mapper_factory(self.ws)
-        ranked, text = mapper.build_ranked_map(max_chars=max_chars)
-        return {
-            "ok": True,
-            "file_count": len(ranked),
-            "ranked_files": [{"path": r.rel_path, "pagerank": r.pagerank, "symbols": len(r.symbols)} for r in ranked[:15]],
-            "repomap": text,
-        }
-
-    def checkpoint(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        name = str(args.get("name", "default")).strip() or "default"
-        snap: Dict[str, bytes] = {}
-        for root, dirs, files in os.walk(self.ws):
-            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
-            for f in files:
-                fp = Path(root) / f
-                try:
-                    if fp.stat().st_size <= 512_000:
-                        rel = str(fp.relative_to(self.ws)).replace("\\", "/")
-                        snap[rel] = fp.read_bytes()
-                except OSError:
-                    continue
-        self._checkpoints[name] = snap
-        return {"ok": True, "checkpoint": name, "files_captured": len(snap)}
-
-    def knowledge_query(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        if self._knowledge_factory is None:
-            return {"ok": False, "error": "knowledge_factory is not configured"}
-        question = str(args.get("question", "")).strip()
-        top_k = min(int(args.get("top_k", 5)), 15)
-        idx = self._knowledge_factory(self.ws)
-        return idx.query(question, top_k=top_k)
-
-    @staticmethod
-    def _validate_ssrf_url(url: str) -> Optional[str]:
-        """Return an error string if `url` targets loopback/private/metadata IPs, else None."""
-        parsed = urllib.parse.urlparse(url)
-        if parsed.scheme == "file":
-            return None
-        if parsed.scheme not in ("http", "https"):
-            return "Only http://, https://, or file:// URLs are permitted"
-        host = (parsed.hostname or "").strip().lower()
-        if not host:
-            return "Missing hostname in URL"
-        if host in ("localhost", "metadata.google.internal", "metadata"):
-            return f"Host '{host}' blocked (SSRF protection)"
-
-        def _is_blocked_ip(ip_obj: ipaddress._BaseAddress) -> bool:
-            if isinstance(ip_obj, ipaddress.IPv6Address) and ip_obj.ipv4_mapped is not None:
-                ip_obj = ip_obj.ipv4_mapped
-            if (
-                ip_obj.is_private
-                or ip_obj.is_loopback
-                or ip_obj.is_link_local
-                or ip_obj.is_multicast
-                or ip_obj.is_reserved
-                or ip_obj.is_unspecified
-            ):
-                return True
-            if isinstance(ip_obj, ipaddress.IPv4Address):
-                # Carrier-grade NAT 100.64.0.0/10 & AWS/cloud metadata 169.254.0.0/16
-                if ip_obj in ipaddress.IPv4Network("100.64.0.0/10"):
-                    return True
-                if ip_obj in ipaddress.IPv4Network("169.254.0.0/16"):
-                    return True
-            return False
-
-        try:
-            literal_ip = ipaddress.ip_address(host)
-            if _is_blocked_ip(literal_ip):
-                return f"IP '{host}' blocked (SSRF protection)"
-            return None
-        except ValueError:
-            pass
-
-        try:
-            infos = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)
-        except OSError:
-            return None  # Let urlopen raise/report DNS error normally if unresolvable
-
-        for info in infos:
-            sockaddr = info[4]
-            if not sockaddr:
-                continue
-            addr_str = str(sockaddr[0]).split("%")[0]
-            try:
-                resolved_ip = ipaddress.ip_address(addr_str)
-                if _is_blocked_ip(resolved_ip):
-                    return f"Resolved IP '{addr_str}' for '{host}' blocked (SSRF protection)"
-            except ValueError:
-                continue
-        return None
-
-    def web_fetch(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Lightweight HTML/Text-to-Markdown fetcher (Crawl4AI/Agent-Reach style, R16 tainted)."""
-        import html as _html
-        import urllib.request
-
-        url = str(args.get("url", "")).strip()
-        ssrf_err = self._validate_ssrf_url(url)
-        if ssrf_err:
-            return {"ok": False, "url": url, "error": ssrf_err}
-        max_chars = min(int(args.get("max_chars", 6000)), 20_000)
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={
-                    "User-Agent": "OmniExecutor-WebFetch/4.4",
-                    "Accept-Encoding": "identity, gzip",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                raw_bytes = resp.read(256_000)
-                enc = (resp.headers.get("Content-Encoding") or "").lower()
-                if "gzip" in enc:
-                    try:
-                        raw_bytes = gzip.decompress(raw_bytes)
-                    except OSError:
-                        pass
-                raw = raw_bytes.decode("utf-8", errors="replace")
-            extracted: Optional[str] = None
-            if not url.startswith("file://"):
-                try:
-                    import trafilatura  # type: ignore[import-not-found]
-
-                    extracted = trafilatura.extract(raw, output_format="markdown")
-                except Exception:
-                    extracted = None
-            if extracted:
-                cleaned = extracted.strip()
-            else:
-                cleaned = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", raw)
-                cleaned = re.sub(r"(?is)<h([1-4])[^>]*>(.*?)</h\1>", lambda m: f"\n{'#' * int(m.group(1))} {re.sub(r'<[^>]+>', '', m.group(2)).strip()}\n", cleaned)
-                cleaned = re.sub(r"(?is)<[^>]+>", " ", cleaned)
-                cleaned = _html.unescape(re.sub(r"[ \t]+", " ", re.sub(r"\n{3,}", "\n\n", cleaned))).strip()
-            return {
-                "ok": True,
-                "url": url,
-                "taint": "UNTRUSTED_EXTERNAL",
-                "content": clip(cleaned, max_chars),
-            }
-        except Exception as exc:
-            return {"ok": False, "url": url, "error": f"{type(exc).__name__}: {str(exc)[:300]}"}
-
-    def spill_query(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Query or slice a spilled large tool output file on disk."""
-        from am_ua.execution.output_compressor import ToolOutputCompressor
-
-        spill_path = str(args.get("spill_path", "")).strip()
-        if not spill_path:
-            return {"ok": False, "error": "missing required 'spill_path'"}
-        pattern = args.get("pattern")
-        start_line = int(args.get("start_line", 1))
-        max_lines = min(int(args.get("max_lines", 80)), 200)
-        return ToolOutputCompressor().query_spill(
-            spill_path,
-            pattern=str(pattern) if pattern else None,
-            start_line=start_line,
-            max_lines=max_lines,
-        )
-
-    def deterministic_preflight(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Single-shot deterministic bundle: AST syntax sweep + AgentShield SAST + PageRank RepoMap."""
-        from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
-
-        max_chars = min(int(args.get("max_chars", 3500)), 12000)
-        return DeterministicTaskOffloader.run_preflight_bundle(self.ws, max_chars=max_chars)
-
-    def deterministic_exec(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute any programmable deterministic rail (ruff/AST lint, structural rename, mypy/contracts, edge fuzz, git forensics, SQL over CSV/JSON, SBOM, structural diff)."""
-        from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
-
-        action = str(args.get("action") or args.get("rail") or "list_capabilities").strip()
-        params = args.get("params") if isinstance(args.get("params"), dict) else {
-            k: v for k, v in args.items() if k not in ("action", "rail")
-        }
-        return DeterministicTaskOffloader.execute_rail(
-            action,
-            self.ws,
-            params=params,
-            run_fn=self.run,
-        )
-
-    def code_sandbox(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Pure-Python restricted AST evaluator for deterministic math, JSON, and assertions (~1 ms)."""
-        code = str(args.get("code", "")).strip()
-        if not code:
-            return {"ok": False, "error": "missing required 'code'"}
-        if len(code) > 8000:
-            return {"ok": False, "error": "code exceeds 8000 char sandbox limit"}
-
-        allowed_builtins: Dict[str, Any] = {
-            "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
-            "enumerate": enumerate, "float": float, "int": int, "len": len,
-            "list": list, "max": max, "min": min, "pow": pow, "range": range,
-            "round": round, "set": set, "sorted": sorted, "str": str,
-            "sum": sum, "tuple": tuple, "zip": zip, "True": True, "False": False, "None": None,
-        }
-        allowed_modules: Dict[str, Any] = {"math": math, "json": json}
-
-        try:
-            tree = ast.parse(code, mode="exec")
-        except SyntaxError as exc:
-            return {"ok": False, "error": f"SyntaxError: {exc}"}
-
-        forbidden_nodes = (ast.Import, ast.ImportFrom, ast.Global, ast.Nonlocal, ast.With, ast.AsyncWith, ast.Try, ast.Raise, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.While)
-        for node in ast.walk(tree):
-            if isinstance(node, forbidden_nodes):
-                return {"ok": False, "error": f"Forbidden AST construct: {type(node).__name__}"}
-            if isinstance(node, ast.Name) and node.id.startswith("__"):
-                return {"ok": False, "error": f"Forbidden dunder name: {node.id}"}
-            if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
-                return {"ok": False, "error": f"Forbidden private attribute: {node.attr}"}
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-                if node.func.id in ("open", "eval", "exec", "compile", "__import__", "getattr", "setattr", "delattr", "globals", "locals"):
-                    return {"ok": False, "error": f"Forbidden call: {node.func.id}"}
-
-        # Execute with restricted __builtins__ and bounded range size
-        def _safe_range(*r_args: int) -> range:
-            r = range(*r_args)
-            if len(r) > 5000:
-                raise ValueError("range exceeds 5000 step sandbox limit")
-            return r
-
-        env_globals: Dict[str, Any] = {
-            "__builtins__": {**allowed_builtins, "range": _safe_range},
-            **allowed_modules,
-        }
-        env_locals: Dict[str, Any] = {}
-        try:
-            # If last statement is an Expr, capture its value as `result`
-            last_expr = None
-            if tree.body and isinstance(tree.body[-1], ast.Expr):
-                last_expr = ast.Expression(body=tree.body.pop().value)
-            if tree.body:
-                exec(compile(tree, "<code_sandbox>", "exec"), env_globals, env_locals)
-            val = eval(compile(last_expr, "<code_sandbox>", "eval"), env_globals, env_locals) if last_expr is not None else env_locals.get("result")
-            return {"ok": True, "result": val, "locals": {k: v for k, v in env_locals.items() if not k.startswith("_")}}
-        except Exception as exc:
-            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-
-    def restore_checkpoint(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        name = str(args.get("name", "default")).strip() or "default"
-        snap = self._checkpoints.get(name)
-        if snap is None:
-            return {"ok": False, "error": f"unknown checkpoint '{name}'"}
-        restored: List[str] = []
-        for rel, data in snap.items():
-            fp = self.resolve(rel)
-            self.seal_guard.assert_write_allowed(fp, actor="agent_loop")
-            fp.parent.mkdir(parents=True, exist_ok=True)
-            fp.write_bytes(data)
-            restored.append(rel)
-        return {"ok": True, "checkpoint": name, "restored_files": restored}
-
-    def close(self) -> None:
-        if self._browser is not None:
-            try:
-                self._browser.close()
-            except Exception:
-                pass
-            self._browser = None
-
-    # ---- snapshot for evidence diffs
-    def snapshot(self) -> Dict[str, Tuple[str, Optional[str]]]:
-        snap: Dict[str, Tuple[str, Optional[str]]] = {}
-        for root, dirs, files in os.walk(self.ws):
-            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
-            for f in files:
-                fp = Path(root) / f
-                try:
-                    data = fp.read_bytes() if fp.stat().st_size <= 512_000 else b""
-                except OSError:
-                    continue
-                rel = fp.relative_to(self.ws).as_posix()
-                try:
-                    txt: Optional[str] = data.decode("utf-8")
-                except UnicodeDecodeError:
-                    txt = None
-                snap[rel] = (hashlib.sha256(data).hexdigest(), txt)
-                if len(snap) >= 5000:
-                    return snap
-        return snap
+def _msg_char_len(msg: Dict[str, Any]) -> int:
+    content = msg.get("content")
+    n = len(content) if isinstance(content, str) else len(json.dumps(content, default=str)) if content else 0
+    if msg.get("tool_calls"):
+        n += len(json.dumps(msg["tool_calls"], default=str))
+    return n
 
 
 @dataclass
@@ -908,6 +185,18 @@ class AgentLoop:
         "restore_checkpoint": EffectClass.COMPENSATABLE_MUTATION,
     }
 
+    PARALLEL_READ_TOOLS: frozenset[str] = frozenset({
+        "list_dir",
+        "read_file",
+        "search",
+        "repo_map",
+        "knowledge_query",
+        "web_fetch",
+        "spill_query",
+        "deterministic_preflight",
+        "checkpoint",
+    })
+
     def __init__(
         self,
         *,
@@ -998,7 +287,13 @@ class AgentLoop:
     rank_tools_for_objective = staticmethod(rank_tools_for_objective)
 
     @staticmethod
-    def _compose_system_prompt(base_prompt: str, objective: str, *, role: str = "general_engineer") -> str:
+    def _compose_system_prompt(
+        base_prompt: str,
+        objective: str,
+        *,
+        role: str = "general_engineer",
+        native_tools: bool = False,
+    ) -> str:
         """Progressive tool-surface pruning (`HostOnly` role scopes + family relevance) + surgical discipline."""
         low = (objective or "").lower()
         need_browser = any(k in low for k in ("browser", "http://", "https://", "file://", ".html", "cdp", "playwright", "click", "url", "dom", "webpage", "website", "site"))
@@ -1011,10 +306,18 @@ class AgentLoop:
         for ln in base_prompt.splitlines():
             if ln.strip() == "Tools:":
                 in_tools = True
-                kept.append(ln)
+                if not native_tools:
+                    kept.append(ln)
                 continue
             if ln.strip() == "Rules:":
                 in_tools = False
+                kept.append(ln)
+                continue
+            if native_tools:
+                if in_tools:
+                    continue
+                if ln.startswith('{"thought":') or "EXACTLY ONE JSON object" in ln:
+                    continue
                 kept.append(ln)
                 continue
             if in_tools and ln.startswith("- "):
@@ -1034,16 +337,24 @@ class AgentLoop:
             kept.append(ln)
 
         out = "\n".join(kept)
-        out += (
-            "\n10. SPEED & BATCHING: You may execute up to 6 independent tool calls in ONE turn via "
-            '{"thought": "...", "actions": [{"tool": "...", "args": {...}}, ...]} (e.g. multiple read_file, '
-            "replace_in_file, or browser_act steps). Always prefer surgical replace_in_file over full write_file; "
-            "for multi-file symbol renames across Python files, prefer deterministic_exec "
-            '{"action": "libcst_safe_codemod", "params": {"file_path": ..., "symbol_old": ..., "symbol_new": ...}} '
-            'or {"action": "structural_search_replace", ...}; never emit literal \\\\n instead of real newlines in Python edits; '
-            "run ad-hoc checks via `python -c` instead of creating scratch files in workspace; on command failure, "
-            "diagnose root cause before editing again."
-        )
+        if native_tools:
+            out += (
+                "\n11. NATIVE PARALLEL TOOL CALLING: Invoke tools directly via native tool calls (emit multiple "
+                "parallel read_file/search/list_dir calls in one turn to inspect files concurrently). Prefer surgical "
+                "replace_in_file over write_file; never emit literal \\\\n instead of real newlines; run ad-hoc checks "
+                "via `python -c`; call `finish` only after verification passes."
+            )
+        else:
+            out += (
+                "\n10. SPEED & BATCHING: You may execute up to 6 independent tool calls in ONE turn via "
+                '{"thought": "...", "actions": [{"tool": "...", "args": {...}}, ...]} (e.g. multiple read_file, '
+                "replace_in_file, or browser_act steps). Always prefer surgical replace_in_file over full write_file; "
+                "for multi-file symbol renames across Python files, prefer deterministic_exec "
+                '{"action": "libcst_safe_codemod", "params": {"file_path": ..., "symbol_old": ..., "symbol_new": ...}} '
+                'or {"action": "structural_search_replace", ...}; never emit literal \\\\n instead of real newlines in Python edits; '
+                "run ad-hoc checks via `python -c` instead of creating scratch files in workspace; on command failure, "
+                "diagnose root cause before editing again."
+            )
         return out
 
     @staticmethod
@@ -1172,6 +483,9 @@ class AgentLoop:
         enable_self_review_gate: bool = True,
         enable_dlp_supervisor: bool = True,
         auto_compile_skill: bool = False,
+        use_native_tools: bool = True,
+        reasoning_effort: Optional[str] = None,
+        parallel_read_workers: int = 6,
     ) -> AgentRunResult:
         mission_id = mission_id or f"agent-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
         low_obj = (objective or "").lower()
@@ -1274,11 +588,33 @@ class AgentLoop:
             verify_cmd=verify_cmd,
         )
 
+        # v8.0 Dynamic MCP tool mounting + Native Tool Calling schema construction
+        mcp_schemas, mcp_routing = (
+            discover_mcp_tool_schemas(self.mcp_hub) if self.mcp_hub.list_servers() else ([], {})
+        )
+        native_tools_active = bool(use_native_tools and _llm_supports_native_tools(self.llm))
+
         # SPARC vs ReAct base prompt selection, tool-surface pruning & Persona contract injection
         role = self.auto_select_role(objective, role)
         base_prompt = SPARC_SYSTEM_PROMPT if (workflow or "").lower() == "sparc" else SYSTEM_PROMPT
-        base_prompt = self._compose_system_prompt(base_prompt, objective, role=role)
+        base_prompt = self._compose_system_prompt(base_prompt, objective, role=role, native_tools=native_tools_active)
         system_prompt = self.persona_mgr.inject_persona(base_prompt, role)
+
+        native_tools: Optional[List[Dict[str, Any]]] = None
+        if native_tools_active:
+            native_tools = build_native_tool_schemas(
+                objective=objective,
+                role=role,
+                execution_mode=execution_mode,
+                mcp_schemas=mcp_schemas,
+            )
+            if mcp_routing:
+                bus.emit(
+                    AGUIEventType.CUSTOM,
+                    name="MCP_TOOLS_MOUNTED",
+                    count=len(mcp_routing),
+                    tools=sorted(mcp_routing.keys()),
+                )
 
         # ReasoningBank trajectory grounding (few-shot experience replay)
         task = ""
@@ -1286,6 +622,10 @@ class AgentLoop:
             exemplar = self.reasoning_bank.format_trajectory_exemplar(objective)
             if exemplar:
                 task += f"{exemplar}\n"
+
+        if mcp_routing and not native_tools_active:
+            mounted_list = ", ".join(sorted(mcp_routing.keys())[:20])
+            task += f"MOUNTED_MCP_TOOLS (invoke directly as tool names): {mounted_list}\n"
 
         if (workflow or "").lower() == "hierarchical":
             obj_low = objective.lower()
@@ -1335,7 +675,7 @@ class AgentLoop:
                 pass
         task += f"OBJECTIVE:\n{objective}\n\nWORKSPACE: {ws.ws}\n"
         task += f"ACCEPTANCE COMMAND (must exit 0): {verify_cmd}\n" if verify_cmd else "No acceptance command was provided; verify your work yourself.\n"
-        messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}, {"role": "user", "content": task}]
+        messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}, {"role": "user", "content": task}]
 
         from am_ua.execution.openhands_organs import OpenHandsStuckDetector
         from am_ua.execution.token_latency_savers import SimHashSemanticCache, grammar_json_repair, prompt_token_pruner
@@ -1352,67 +692,173 @@ class AgentLoop:
         structured_output: Optional[Any] = None
         active_role = role
         compressor = ToolOutputCompressor()
+        effective_reasoning = reasoning_effort or ("medium" if cog_sys == "SYSTEM_2" else None)
+
+        def _finalize_tool_result(
+            sub_idx: int,
+            tool: str,
+            args: Dict[str, Any],
+            tc_id: str,
+            call_args: Optional[Dict[str, Any]],
+            ok: bool,
+            obs: Any,
+            total_batch_len: int,
+        ) -> Tuple[bool, str]:
+            bus.emit(
+                AGUIEventType.TOOL_CALL_END,
+                toolCallId=tc_id,
+                toolName=tool,
+            )
+            bus.emit(
+                AGUIEventType.TOOL_CALL_RESULT,
+                toolCallId=tc_id,
+                ok=ok,
+                result=clip(json.dumps(obs, ensure_ascii=False, default=str), 1500),
+            )
+            if ok and tool in ("write_file", "replace_in_file") and call_args:
+                rel_path = str(call_args.get("path", ""))
+                try:
+                    rel_path = Path(rel_path).relative_to(ws.ws).as_posix()
+                except ValueError:
+                    pass
+                bus.emit(
+                    AGUIEventType.STATE_DELTA,
+                    deltas=[{"op": "replace", "path": f"/files/{rel_path}"}],
+                )
+            elif ok and tool == "task_tracker" and isinstance(obs, dict):
+                bus.emit(
+                    AGUIEventType.STATE_DELTA,
+                    deltas=[{"op": "replace", "path": "/tasks", "value": obs.get("tasks", [])}],
+                )
+            tool_log.append(
+                {
+                    "turn": turn,
+                    "tool": tool,
+                    "args": {k: (v if len(str(v)) < 300 else str(v)[:300] + "...") for k, v in args.items()},
+                    "ok": ok,
+                }
+            )
+            stuck_events_log.append({"tool": tool, "args": args, "is_error": not ok, "observation": str(obs)[:250]})
+            compressed = compressor.compress_tool_payload(tool, obs)
+            if len(compressed) > 1200:
+                compressed = prompt_token_pruner(compressed).get("pruned_text", compressed)
+            prefix = f"[{sub_idx}:{tool}] " if total_batch_len > 1 else ""
+            return ok, prefix + compressed
+
         for turn in range(1, max_turns + 1):
             messages = self._condense(messages)
             try:
                 if event_bus is not None and hasattr(self.llm, "chat_stream"):
-                    resp = self.llm.chat_stream(
-                        messages,
-                        max_tokens=4096,
-                        temperature=0.2,
-                        json_mode=True,
-                        prefer=actor_provider,
-                        on_delta=lambda d: bus.emit(
-                            AGUIEventType.TEXT_MESSAGE_CONTENT,
-                            messageId=f"msg-{turn}",
-                            delta=d,
-                        ),
-                    )
+                    if native_tools_active and native_tools:
+                        resp = self.llm.chat_stream(
+                            messages,
+                            max_tokens=4096,
+                            temperature=0.2,
+                            json_mode=False,
+                            prefer=actor_provider,
+                            tools=native_tools,
+                            tool_choice="auto",
+                            enable_prompt_cache=True,
+                            reasoning_effort=effective_reasoning,
+                            on_delta=lambda d: bus.emit(
+                                AGUIEventType.TEXT_MESSAGE_CONTENT,
+                                messageId=f"msg-{turn}",
+                                delta=d,
+                            ),
+                        )
+                    else:
+                        resp = self.llm.chat_stream(
+                            messages,
+                            max_tokens=4096,
+                            temperature=0.2,
+                            json_mode=True,
+                            prefer=actor_provider,
+                            on_delta=lambda d: bus.emit(
+                                AGUIEventType.TEXT_MESSAGE_CONTENT,
+                                messageId=f"msg-{turn}",
+                                delta=d,
+                            ),
+                        )
                 else:
-                    resp = self.llm.chat(messages, max_tokens=4096, temperature=0.2, json_mode=True, prefer=actor_provider)
+                    if native_tools_active and native_tools:
+                        resp = self.llm.chat(
+                            messages,
+                            max_tokens=4096,
+                            temperature=0.2,
+                            json_mode=False,
+                            prefer=actor_provider,
+                            tools=native_tools,
+                            tool_choice="auto",
+                            enable_prompt_cache=True,
+                            reasoning_effort=effective_reasoning,
+                        )
+                    else:
+                        resp = self.llm.chat(messages, max_tokens=4096, temperature=0.2, json_mode=True, prefer=actor_provider)
             except LLMUnavailableError as exc:
                 stop_reason = f"llm_unavailable: {str(exc)[:300]}"
                 break
             if resp.provider not in providers_used:
                 providers_used.append(resp.provider)
-            messages.append({"role": "assistant", "content": resp.text})
-            try:
-                try:
-                    action = extract_json_object(resp.text)
-                except ValueError:
-                    healed = grammar_json_repair(resp.text)
-                    if not healed.get("ok") or not isinstance(healed.get("parsed"), dict):
-                        raise
-                    action = healed["parsed"]
-                batch: List[Tuple[str, Dict[str, Any]]] = []
-                if isinstance(action.get("actions"), list) and action["actions"]:
-                    for item in action["actions"][:6]:
-                        if not isinstance(item, dict):
-                            raise ValueError("each entry in 'actions' must be an object")
-                        t_name = str(item.get("tool", "")).strip()
-                        if not t_name:
-                            raise ValueError("missing non-empty 'tool' name in actions item")
-                        t_args = item.get("args") or {}
-                        if not isinstance(t_args, dict):
-                            raise ValueError("args in actions item must be an object")
-                        batch.append((t_name, t_args))
-                else:
-                    tool = str(action.get("tool", "")).strip()
-                    if not tool:
-                        raise ValueError("missing non-empty 'tool' name")
-                    args = action.get("args") or {}
-                    if not isinstance(args, dict):
-                        raise ValueError("args must be an object")
-                    batch.append((tool, args))
-            except ValueError as exc:
-                parse_failures += 1
-                messages.append({"role": "user", "content": f"PROTOCOL ERROR: {exc}. Reply with exactly one JSON object."})
-                if parse_failures >= 4:
-                    stop_reason = "protocol_failures"
-                    break
-                continue
 
-            thought_text = str(action.get("thought", ""))
+            resp_tool_calls: List[ToolCall] = list(getattr(resp, "tool_calls", None) or [])
+            used_native_tool_turn = bool(resp_tool_calls)
+            batch: List[Tuple[str, Dict[str, Any], Optional[str]]] = []
+            thought_text = ""
+
+            if used_native_tool_turn:
+                tc_wire = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": tc.raw_arguments or json.dumps(tc.arguments, ensure_ascii=False),
+                        },
+                    }
+                    for tc in resp_tool_calls[:8]
+                ]
+                messages.append({"role": "assistant", "content": resp.text or "", "tool_calls": tc_wire})
+                for tc in resp_tool_calls[:8]:
+                    batch.append((tc.name, tc.arguments if isinstance(tc.arguments, dict) else {}, tc.id))
+                thought_text = str(getattr(resp, "thinking_text", "") or resp.text or "")
+            else:
+                messages.append({"role": "assistant", "content": resp.text})
+                try:
+                    try:
+                        action = extract_json_object(resp.text)
+                    except ValueError:
+                        healed = grammar_json_repair(resp.text)
+                        if not healed.get("ok") or not isinstance(healed.get("parsed"), dict):
+                            raise
+                        action = healed["parsed"]
+                    if isinstance(action.get("actions"), list) and action["actions"]:
+                        for item in action["actions"][:6]:
+                            if not isinstance(item, dict):
+                                raise ValueError("each entry in 'actions' must be an object")
+                            t_name = str(item.get("tool", "")).strip()
+                            if not t_name:
+                                raise ValueError("missing non-empty 'tool' name in actions item")
+                            t_args = item.get("args") or {}
+                            if not isinstance(t_args, dict):
+                                raise ValueError("args in actions item must be an object")
+                            batch.append((t_name, t_args, None))
+                    else:
+                        tool = str(action.get("tool", "")).strip()
+                        if not tool:
+                            raise ValueError("missing non-empty 'tool' name")
+                        args = action.get("args") or {}
+                        if not isinstance(args, dict):
+                            raise ValueError("args must be an object")
+                        batch.append((tool, args, None))
+                    thought_text = str(action.get("thought", ""))
+                except ValueError as exc:
+                    parse_failures += 1
+                    messages.append({"role": "user", "content": f"PROTOCOL ERROR: {exc}. Reply with a tool call or exactly one JSON object."})
+                    if parse_failures >= 4:
+                        stop_reason = "protocol_failures"
+                        break
+                    continue
+
             first_tool = batch[0][0]
             step_name = f"SPARC:{self._extract_sparc_phase(thought_text)}" if (workflow or "").lower() == "sparc" else f"turn:{turn}"
             bus.emit(
@@ -1424,219 +870,107 @@ class AgentLoop:
             self._emit({"turn": turn, "tool": first_tool if len(batch) == 1 else f"batch[{len(batch)}]", "provider": resp.provider, "thought": thought_text[:200]})
 
             turn_obs_chunks: List[str] = []
+            native_tool_results: Dict[str, Tuple[str, str]] = {}
             turn_progress = False
             turn_tools_executed = 0
             should_break_loop = False
             reject_finish_msg: Optional[str] = None
 
-            for sub_idx, (tool, args) in enumerate(batch, 1):
-                if tool == "finish":
-                    if verify_cmd and turn < max_turns:
-                        v_pre = ws.run({"command": verify_cmd, "timeout_s": 600})
-                        if v_pre["exit_code"] != 0:
-                            from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
+            # Partition batch into contiguous segments so PURE_READ runs >= 2 execute concurrently
+            segments: List[Tuple[bool, List[Tuple[int, str, Dict[str, Any], Optional[str]]]]] = []
+            for sub_idx, (t_name, t_args, t_cid) in enumerate(batch, 1):
+                is_par = t_name in self.PARALLEL_READ_TOOLS
+                if segments and segments[-1][0] == is_par and is_par:
+                    segments[-1][1].append((sub_idx, t_name, t_args, t_cid))
+                else:
+                    segments.append((is_par, [(sub_idx, t_name, t_args, t_cid)]))
 
-                            diag = DeterministicTaskOffloader.parse_pytest_output(v_pre["output"])
-                            diag_note = (
-                                f"\nSTRUCTURED_DIAGNOSIS: {json.dumps(diag, ensure_ascii=False)}"
-                                if diag.get("failures")
-                                else ""
-                            )
-                            reject_finish_msg = (
-                                f"FINISH REJECTED: acceptance command '{verify_cmd}' failed "
-                                f"(exit_code={v_pre['exit_code']}). Fix the failure before calling finish:\n"
-                                f"{v_pre['output'][-2000:]}{diag_note}"
-                            )
-                            break
-                        pre_verification = {
-                            "command": verify_cmd,
-                            "exit_code": v_pre["exit_code"],
-                            "passed": True,
-                            "output_tail": v_pre["output"][-2500:],
-                        }
-                    summary = str(args.get("summary", ""))
-                    if enable_self_review_gate and turn < max_turns and execution_mode.strip().lower() != "plan":
-                        cur_snap = ws.snapshot()
-                        mutated_py = [
-                            p for p in cur_snap
-                            if p.endswith(".py") and (p not in before or cur_snap[p] != before[p])
-                        ]
-                        if mutated_py:
-                            sr_gate = self.run_self_review_diff_gate(ws.ws, mutated_py_files=mutated_py)
-                            if not sr_gate["ok"]:
-                                reject_finish_msg = (
-                                    f"FINISH REJECTED (Self-Review Diff Gate): syntax_ok={sr_gate['syntax_ok']}, "
-                                    f"shield_grade={sr_gate['shield_grade']}, "
-                                    f"syntax_errors={sr_gate['syntax_errors'][:3]}, "
-                                    f"edge_bugs={sr_gate.get('edge_bugs', [])[:3]}. Fix before calling finish."
-                                )
-                                break
-                    if output_schema is not None:
-                        candidate_out = args.get("output")
-                        if candidate_out is None and summary.strip().startswith(("{", "[")):
-                            try:
-                                candidate_out = json.loads(summary)
-                            except Exception:
-                                candidate_out = None
-                        schema_err = self._validate_output_schema(candidate_out, output_schema)
-                        if schema_err and turn < max_turns:
-                            reject_finish_msg = (
-                                f"FINISH REJECTED (ModelRetry): output_schema validation failed: {schema_err}. "
-                                "Include a valid JSON object under args['output'] matching the required schema."
-                            )
-                            break
-                        if not schema_err:
-                            structured_output = candidate_out
-                    try:
-                        c = float(args.get("confidence"))
-                        confidence = c if 0.0 <= c <= 1.0 else None
-                    except (TypeError, ValueError):
-                        confidence = None
-                    stop_reason = "finish"
-                    should_break_loop = True
+            for is_par_seg, seg_items in segments:
+                if should_break_loop or reject_finish_msg is not None:
                     break
 
-                if tool == "handoff_agent":
-                    target_role = str(args.get("target_role", "")).strip()
-                    reason = str(args.get("reason", "specialist handoff")).strip()
-                    context_note = str(args.get("context_note", "")).strip()
-                    if target_role not in ROLE_TOOL_SCOPES:
-                        ok, obs = False, {"error": f"Unknown target_role '{target_role}'. Valid: {sorted(ROLE_TOOL_SCOPES)}"}
-                    else:
-                        prev_role = active_role
-                        active_role = target_role
-                        new_base = SPARC_SYSTEM_PROMPT if (workflow or "").lower() == "sparc" else SYSTEM_PROMPT
-                        new_base = self._compose_system_prompt(new_base, objective, role=active_role)
-                        messages[0]["content"] = self.persona_mgr.inject_persona(new_base, active_role)
-                        bus.emit(
-                            AGUIEventType.CUSTOM,
-                            name="AGENT_HANDOFF",
-                            from_role=prev_role,
-                            to_role=active_role,
-                            reason=reason,
-                            turn=turn,
-                        )
-                        ok = True
-                        obs = {
+                # ---- Parallel PURE_READ segment execution ----
+                if is_par_seg and len(seg_items) >= 2 and parallel_read_workers > 1:
+                    prepared_jobs: List[Dict[str, Any]] = []
+                    for sub_idx, tool, args, native_cid in seg_items:
+                        tc_id = native_cid or f"tc-{turn}-{sub_idx}-{tool}"
+                        bus.emit(AGUIEventType.TOOL_CALL_START, toolCallId=tc_id, toolName=tool, args_preview=str(args)[:150])
+                        bus.emit(AGUIEventType.TOOL_CALL_ARGS, toolCallId=tc_id, args=args)
+                        event_stream_buf.append({"kind": "action", "turn": turn, "tool": tool, "args": args})
+                        job: Dict[str, Any] = {
+                            "sub_idx": sub_idx,
+                            "tool": tool,
+                            "args": args,
+                            "tc_id": tc_id,
+                            "native_cid": native_cid,
+                            "call_args": None,
+                            "cache_key": None,
                             "ok": True,
-                            "handoff": {"from_role": prev_role, "to_role": active_role, "reason": reason},
-                            "note": f"[HANDOFF_CONTEXT] Switched from {prev_role} to {active_role}: {context_note or reason}",
+                            "obs": None,
+                            "step_id": None,
                         }
-                    turn_tools_executed += 1
-                    if ok:
-                        turn_progress = True
-                    tool_log.append({"turn": turn, "tool": tool, "args": args, "ok": ok})
-                    turn_obs_chunks.append(clip(json.dumps(obs, ensure_ascii=False, default=str)))
-                    continue
+                        try:
+                            self.assert_tool_allowed_in_mode(tool, execution_mode)
+                            breaker.record_and_check(tool, args)
+                            call_args = self._prepare_args(tool, args, ws)
+                            job["call_args"] = call_args
+                            pre_dec = self.hook_engine.run_pre(tool, call_args, ws.ws)
+                            if not pre_dec.allowed:
+                                job["ok"], job["obs"] = False, {"error": pre_dec.reason, "blocked_by_hook": True}
+                            else:
+                                if tool in ("read_file", "search", "repo_map"):
+                                    ck = json.dumps([tool, call_args], sort_keys=True, default=str)
+                                    job["cache_key"] = ck
+                                    hit = read_cache.lookup(ck)
+                                    if hit.get("cache_hit") and isinstance(hit.get("response"), dict):
+                                        cached_obs = dict(hit["response"])
+                                        cached_obs["simhash_cache_hit"] = True
+                                        job["obs"] = cached_obs
+                                if job["obs"] is None:
+                                    job["step_id"] = (
+                                        f"t{turn}-{sub_idx}-"
+                                        f"{hashlib.sha256(json.dumps([tool, call_args], sort_keys=True, default=str).encode()).hexdigest()[:10]}"
+                                    )
+                        except RepeatToolLoopError as exc:
+                            job["ok"], job["obs"] = False, {"error": f"{exc}. Change strategy."}
+                        except ToolGuardrailTripwireError:
+                            raise
+                        except Exception as exc:
+                            job["ok"], job["obs"] = False, {"error": f"{type(exc).__name__}: {str(exc)[:500]}"}
+                        prepared_jobs.append(job)
 
-                # --- Take the Wheel: Human Intervention Gate ---
-                if tool == "request_human":
-                    human_requests_count += 1
-                    if human_requests_count > 3:
-                        ok, obs = False, {"error": "Maximum of 3 human intervention requests exceeded for this mission. Continue autonomously."}
-                    else:
-                        reason = str(args.get("reason", "Human intervention required"))
-                        instructions = str(args.get("instructions", "Please inspect workspace and resolve blocker"))
-                        bus.emit(
-                            AGUIEventType.CUSTOM,
-                            name="HUMAN_INTERVENTION_REQUEST",
-                            reason=reason,
-                            instructions=instructions,
-                            turn=turn,
-                        )
-                        outcome = self.wheel_gate.pause_for_human(
-                            mission_id=mission_id,
-                            reason=reason,
-                            instructions=instructions,
-                            turn=turn,
-                            timeout_s=effective_wheel_timeout,
-                        )
-                        if outcome.action == "ABORTED":
-                            stop_reason = f"human_abort: {outcome.note}"
-                            bus.emit(
-                                AGUIEventType.CUSTOM,
-                                name="HUMAN_INTERVENTION_ABORTED",
-                                note=outcome.note,
-                                paused_seconds=outcome.paused_seconds,
-                            )
-                            tool_log.append({"turn": turn, "tool": tool, "args": args, "ok": False, "aborted": True})
-                            should_break_loop = True
-                            break
-                        elif outcome.action == "RESUMED":
-                            homeo.credit_paused_time(outcome.paused_seconds)
-                            bus.emit(
-                                AGUIEventType.CUSTOM,
-                                name="HUMAN_INTERVENTION_RESUMED",
-                                note=outcome.note,
-                                paused_seconds=outcome.paused_seconds,
-                            )
-                            ok, obs = True, {"status": "RESUMED", "human_note": outcome.note, "paused_seconds": outcome.paused_seconds}
-                        else:
-                            ok, obs = True, {"status": outcome.action, "note": outcome.note, "paused_seconds": outcome.paused_seconds}
+                    runnable = [j for j in prepared_jobs if j["obs"] is None and j["step_id"] is not None]
+                    if runnable:
+                        def _exec_read_job(j: Dict[str, Any]) -> Tuple[bool, Any]:
+                            try:
+                                cp = self.engine.execute_step(
+                                    run_id=mission_id,
+                                    step_id=j["step_id"],
+                                    step_index=turn * 10 + j["sub_idx"],
+                                    tool_name=f"ws.{j['tool']}",
+                                    args=j["call_args"],
+                                    state={"mission_id": mission_id},
+                                    lease_epoch=epoch,
+                                    envelope=envelope,
+                                )
+                                return True, cp["output"]
+                            except Exception as exc:
+                                return False, {"error": f"{type(exc).__name__}: {str(exc)[:500]}"}
 
-                    turn_tools_executed += 1
-                    if ok:
-                        turn_progress = True
-                    tool_log.append({"turn": turn, "tool": tool, "args": args, "ok": ok})
-                    turn_obs_chunks.append(clip(json.dumps(obs, ensure_ascii=False, default=str)))
-                    continue
+                        max_w = min(max(1, int(parallel_read_workers)), len(runnable))
+                        with ThreadPoolExecutor(max_workers=max_w) as pool:
+                            futures = [pool.submit(_exec_read_job, j) for j in runnable]
+                            for j, fut in zip(runnable, futures):
+                                j["ok"], j["obs"] = fut.result()
 
-                tc_id = f"tc-{turn}-{sub_idx}-{tool}"
-                bus.emit(
-                    AGUIEventType.TOOL_CALL_START,
-                    toolCallId=tc_id,
-                    toolName=tool,
-                    args_preview=str(args)[:150],
-                )
-                bus.emit(
-                    AGUIEventType.TOOL_CALL_ARGS,
-                    toolCallId=tc_id,
-                    args=args,
-                )
-
-                ok, obs = True, None
-                call_args = None
-                event_stream_buf.append({"kind": "action", "turn": turn, "tool": tool, "args": args})
-                if tool not in self.TOOL_EFFECTS:
-                    ok, obs = False, {"error": f"unknown tool '{tool}'"}
-                else:
-                    try:
-                        self.assert_tool_allowed_in_mode(tool, execution_mode)
-                        breaker.record_and_check(tool, args)
-                        call_args = self._prepare_args(tool, args, ws)
-                        pre_dec = self.hook_engine.run_pre(tool, call_args, ws.ws)
-                        if not pre_dec.allowed:
-                            ok, obs = False, {"error": pre_dec.reason, "blocked_by_hook": True}
-                        else:
-                            cache_key: Optional[str] = None
-                            if tool in ("read_file", "search", "repo_map"):
-                                cache_key = json.dumps([tool, call_args], sort_keys=True, default=str)
-                                hit = read_cache.lookup(cache_key)
-                                if hit.get("cache_hit") and isinstance(hit.get("response"), dict):
-                                    obs = dict(hit["response"])
-                                    obs["simhash_cache_hit"] = True
-                            if obs is None:
-                                step_id = f"t{turn}-{sub_idx}-{hashlib.sha256(json.dumps([tool, call_args], sort_keys=True, default=str).encode()).hexdigest()[:10]}"
-                                cp = self.engine.execute_step(run_id=mission_id, step_id=step_id, step_index=turn * 10 + sub_idx, tool_name=f"ws.{tool}",
-                                                              args=call_args, state={"mission_id": mission_id}, lease_epoch=epoch, envelope=envelope)
-                                obs = cp["output"]
-                                if cache_key is not None and isinstance(obs, dict) and not obs.get("error"):
-                                    read_cache.put(cache_key, dict(obs))
-                                elif self.TOOL_EFFECTS.get(tool) != EffectClass.PURE_READ:
-                                    read_cache._entries.clear()
-                            if isinstance(obs, dict):
-                                if ok and tool in ("write_file", "replace_in_file") and call_args:
-                                    edited_p = Path(str(call_args.get("path", "")))
-                                    if edited_p.suffix.lower() == ".py" and edited_p.is_file():
-                                        from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
-
-                                        fix_res = DeterministicTaskOffloader.code_autofix_and_lint(
-                                            ws.ws, target=str(edited_p), apply_fix=True
-                                        )
-                                        obs["auto_lint"] = {
-                                            "ok": fix_res.get("ok"),
-                                            "backend": fix_res.get("backend"),
-                                        }
+                    for j in prepared_jobs:
+                        tool = j["tool"]
+                        call_args = j["call_args"]
+                        ok, obs = j["ok"], j["obs"]
+                        if j["cache_key"] is not None and isinstance(obs, dict) and not obs.get("error") and not obs.get("simhash_cache_hit"):
+                            read_cache.put(j["cache_key"], dict(obs))
+                        if isinstance(obs, dict) and call_args is not None:
+                            try:
                                 post_notes = self.hook_engine.run_post(tool, call_args, obs, ws.ws)
                                 if post_notes:
                                     obs["hook_annotations"] = post_notes
@@ -1647,58 +981,347 @@ class AgentLoop:
                                     ok = False
                                     if not isinstance(obs, dict) or "error" not in obs:
                                         obs = {"error": f"Output guardrail rejected tool output: {guard_dec.reason}"}
-                            if tool == "run" and isinstance(obs, dict) and obs.get("exit_code") not in (0, None):
-                                ok = True  # a failing command is still valid information
-                    except RepeatToolLoopError as exc:
-                        ok, obs = False, {"error": f"{exc}. Change strategy."}
-                    except ToolGuardrailTripwireError:
-                        raise
-                    except Exception as exc:  # gate violations, bad args, IO errors -> feed back to the model
-                        ok, obs = False, {"error": f"{type(exc).__name__}: {str(exc)[:500]}"}
+                            except ToolGuardrailTripwireError:
+                                raise
+                        ok, chunk = _finalize_tool_result(
+                            j["sub_idx"], tool, j["args"], j["tc_id"], call_args, ok, obs, len(batch)
+                        )
+                        turn_tools_executed += 1
+                        if ok:
+                            turn_progress = True
+                        turn_obs_chunks.append(chunk)
+                        if j["native_cid"]:
+                            native_tool_results[j["native_cid"]] = (tool, chunk)
+                    continue
 
-                bus.emit(
-                    AGUIEventType.TOOL_CALL_END,
-                    toolCallId=tc_id,
-                    toolName=tool,
-                )
-                bus.emit(
-                    AGUIEventType.TOOL_CALL_RESULT,
-                    toolCallId=tc_id,
-                    ok=ok,
-                    result=clip(json.dumps(obs, ensure_ascii=False, default=str), 1500),
-                )
-                if ok and tool in ("write_file", "replace_in_file") and call_args:
-                    rel_path = str(call_args.get("path", ""))
-                    try:
-                        rel_path = Path(rel_path).relative_to(ws.ws).as_posix()
-                    except ValueError:
-                        pass
+                # ---- Sequential segment execution ----
+                for sub_idx, tool, args, native_cid in seg_items:
+                    if tool == "finish":
+                        if verify_cmd and turn < max_turns:
+                            v_pre = ws.run({"command": verify_cmd, "timeout_s": 600})
+                            if v_pre["exit_code"] != 0:
+                                from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
+
+                                diag = DeterministicTaskOffloader.parse_pytest_output(v_pre["output"])
+                                diag_note = (
+                                    f"\nSTRUCTURED_DIAGNOSIS: {json.dumps(diag, ensure_ascii=False)}"
+                                    if diag.get("failures")
+                                    else ""
+                                )
+                                reject_finish_msg = (
+                                    f"FINISH REJECTED: acceptance command '{verify_cmd}' failed "
+                                    f"(exit_code={v_pre['exit_code']}). Fix the failure before calling finish:\n"
+                                    f"{v_pre['output'][-2000:]}{diag_note}"
+                                )
+                                if native_cid:
+                                    native_tool_results[native_cid] = (tool, reject_finish_msg)
+                                break
+                            pre_verification = {
+                                "command": verify_cmd,
+                                "exit_code": v_pre["exit_code"],
+                                "passed": True,
+                                "output_tail": v_pre["output"][-2500:],
+                            }
+                        summary = str(args.get("summary", ""))
+                        if enable_self_review_gate and turn < max_turns and execution_mode.strip().lower() != "plan":
+                            cur_snap = ws.snapshot()
+                            mutated_py = [
+                                p for p in cur_snap
+                                if p.endswith(".py") and (p not in before or cur_snap[p] != before[p])
+                            ]
+                            if mutated_py:
+                                sr_gate = self.run_self_review_diff_gate(ws.ws, mutated_py_files=mutated_py)
+                                if not sr_gate["ok"]:
+                                    reject_finish_msg = (
+                                        f"FINISH REJECTED (Self-Review Diff Gate): syntax_ok={sr_gate['syntax_ok']}, "
+                                        f"shield_grade={sr_gate['shield_grade']}, "
+                                        f"syntax_errors={sr_gate['syntax_errors'][:3]}, "
+                                        f"edge_bugs={sr_gate.get('edge_bugs', [])[:3]}. Fix before calling finish."
+                                    )
+                                    if native_cid:
+                                        native_tool_results[native_cid] = (tool, reject_finish_msg)
+                                    break
+                        if output_schema is not None:
+                            candidate_out = args.get("output")
+                            if candidate_out is None and summary.strip().startswith(("{", "[")):
+                                try:
+                                    candidate_out = json.loads(summary)
+                                except Exception:
+                                    candidate_out = None
+                            schema_err = self._validate_output_schema(candidate_out, output_schema)
+                            if schema_err and turn < max_turns:
+                                reject_finish_msg = (
+                                    f"FINISH REJECTED (ModelRetry): output_schema validation failed: {schema_err}. "
+                                    "Include a valid JSON object under args['output'] matching the required schema."
+                                )
+                                if native_cid:
+                                    native_tool_results[native_cid] = (tool, reject_finish_msg)
+                                break
+                            if not schema_err:
+                                structured_output = candidate_out
+                        try:
+                            c = float(args.get("confidence"))
+                            confidence = c if 0.0 <= c <= 1.0 else None
+                        except (TypeError, ValueError):
+                            confidence = None
+                        stop_reason = "finish"
+                        should_break_loop = True
+                        break
+
+                    if tool == "handoff_agent":
+                        target_role = str(args.get("target_role", "")).strip()
+                        reason = str(args.get("reason", "specialist handoff")).strip()
+                        context_note = str(args.get("context_note", "")).strip()
+                        if target_role not in ROLE_TOOL_SCOPES:
+                            ok, obs = False, {"error": f"Unknown target_role '{target_role}'. Valid: {sorted(ROLE_TOOL_SCOPES)}"}
+                        else:
+                            prev_role = active_role
+                            active_role = target_role
+                            new_base = SPARC_SYSTEM_PROMPT if (workflow or "").lower() == "sparc" else SYSTEM_PROMPT
+                            new_base = self._compose_system_prompt(new_base, objective, role=active_role, native_tools=native_tools_active)
+                            messages[0]["content"] = self.persona_mgr.inject_persona(new_base, active_role)
+                            if native_tools_active:
+                                native_tools = build_native_tool_schemas(
+                                    objective=objective,
+                                    role=active_role,
+                                    execution_mode=execution_mode,
+                                    mcp_schemas=mcp_schemas,
+                                )
+                            bus.emit(
+                                AGUIEventType.CUSTOM,
+                                name="AGENT_HANDOFF",
+                                from_role=prev_role,
+                                to_role=active_role,
+                                reason=reason,
+                                turn=turn,
+                            )
+                            ok = True
+                            obs = {
+                                "ok": True,
+                                "handoff": {"from_role": prev_role, "to_role": active_role, "reason": reason},
+                                "note": f"[HANDOFF_CONTEXT] Switched from {prev_role} to {active_role}: {context_note or reason}",
+                            }
+                        turn_tools_executed += 1
+                        if ok:
+                            turn_progress = True
+                        tool_log.append({"turn": turn, "tool": tool, "args": args, "ok": ok})
+                        chunk = clip(json.dumps(obs, ensure_ascii=False, default=str))
+                        turn_obs_chunks.append(chunk)
+                        if native_cid:
+                            native_tool_results[native_cid] = (tool, chunk)
+                        continue
+
+                    # --- Take the Wheel: Human Intervention Gate ---
+                    if tool == "request_human":
+                        human_requests_count += 1
+                        if human_requests_count > 3:
+                            ok, obs = False, {"error": "Maximum of 3 human intervention requests exceeded for this mission. Continue autonomously."}
+                        else:
+                            reason = str(args.get("reason", "Human intervention required"))
+                            instructions = str(args.get("instructions", "Please inspect workspace and resolve blocker"))
+                            bus.emit(
+                                AGUIEventType.CUSTOM,
+                                name="HUMAN_INTERVENTION_REQUEST",
+                                reason=reason,
+                                instructions=instructions,
+                                turn=turn,
+                            )
+                            outcome = self.wheel_gate.pause_for_human(
+                                mission_id=mission_id,
+                                reason=reason,
+                                instructions=instructions,
+                                turn=turn,
+                                timeout_s=effective_wheel_timeout,
+                            )
+                            if outcome.action == "ABORTED":
+                                stop_reason = f"human_abort: {outcome.note}"
+                                bus.emit(
+                                    AGUIEventType.CUSTOM,
+                                    name="HUMAN_INTERVENTION_ABORTED",
+                                    note=outcome.note,
+                                    paused_seconds=outcome.paused_seconds,
+                                )
+                                tool_log.append({"turn": turn, "tool": tool, "args": args, "ok": False, "aborted": True})
+                                should_break_loop = True
+                                break
+                            elif outcome.action == "RESUMED":
+                                homeo.credit_paused_time(outcome.paused_seconds)
+                                bus.emit(
+                                    AGUIEventType.CUSTOM,
+                                    name="HUMAN_INTERVENTION_RESUMED",
+                                    note=outcome.note,
+                                    paused_seconds=outcome.paused_seconds,
+                                )
+                                ok, obs = True, {"status": "RESUMED", "human_note": outcome.note, "paused_seconds": outcome.paused_seconds}
+                            else:
+                                ok, obs = True, {"status": outcome.action, "note": outcome.note, "paused_seconds": outcome.paused_seconds}
+
+                        turn_tools_executed += 1
+                        if ok:
+                            turn_progress = True
+                        tool_log.append({"turn": turn, "tool": tool, "args": args, "ok": ok})
+                        chunk = clip(json.dumps(obs, ensure_ascii=False, default=str))
+                        turn_obs_chunks.append(chunk)
+                        if native_cid:
+                            native_tool_results[native_cid] = (tool, chunk)
+                        continue
+
+                    tc_id = native_cid or f"tc-{turn}-{sub_idx}-{tool}"
                     bus.emit(
-                        AGUIEventType.STATE_DELTA,
-                        deltas=[{"op": "replace", "path": f"/files/{rel_path}"}],
+                        AGUIEventType.TOOL_CALL_START,
+                        toolCallId=tc_id,
+                        toolName=tool,
+                        args_preview=str(args)[:150],
                     )
-                elif ok and tool == "task_tracker" and isinstance(obs, dict):
                     bus.emit(
-                        AGUIEventType.STATE_DELTA,
-                        deltas=[{"op": "replace", "path": "/tasks", "value": obs.get("tasks", [])}],
+                        AGUIEventType.TOOL_CALL_ARGS,
+                        toolCallId=tc_id,
+                        args=args,
                     )
 
-                turn_tools_executed += 1
-                if ok:
-                    turn_progress = True
-                tool_log.append({"turn": turn, "tool": tool, "args": {k: (v if len(str(v)) < 300 else str(v)[:300] + "...") for k, v in args.items()}, "ok": ok})
-                stuck_events_log.append({"tool": tool, "args": args, "is_error": not ok, "observation": str(obs)[:250]})
-                compressed = compressor.compress_tool_payload(tool, obs)
-                if len(compressed) > 1200:
-                    compressed = prompt_token_pruner(compressed).get("pruned_text", compressed)
-                prefix = f"[{sub_idx}:{tool}] " if len(batch) > 1 else ""
-                turn_obs_chunks.append(prefix + compressed)
+                    ok, obs = True, None
+                    call_args = None
+                    event_stream_buf.append({"kind": "action", "turn": turn, "tool": tool, "args": args})
+
+                    # v8.0 Dynamic first-class MCP tool dispatch (`mcp__<server>__<tool>`)
+                    if tool in mcp_routing:
+                        srv_name, orig_tool = mcp_routing[tool]
+                        try:
+                            self.assert_tool_allowed_in_mode("mcp_call", execution_mode)
+                            breaker.record_and_check(tool, args)
+                            call_args = {"action": "call", "server": srv_name, "tool": orig_tool, "arguments": dict(args)}
+                            pre_dec = self.hook_engine.run_pre(tool, call_args, ws.ws)
+                            if not pre_dec.allowed:
+                                ok, obs = False, {"error": pre_dec.reason, "blocked_by_hook": True}
+                            else:
+                                step_id = f"t{turn}-{sub_idx}-{hashlib.sha256(json.dumps([tool, call_args], sort_keys=True, default=str).encode()).hexdigest()[:10]}"
+                                cp = self.engine.execute_step(
+                                    run_id=mission_id,
+                                    step_id=step_id,
+                                    step_index=turn * 10 + sub_idx,
+                                    tool_name="ws.mcp_call",
+                                    args=call_args,
+                                    state={"mission_id": mission_id},
+                                    lease_epoch=epoch,
+                                    envelope=envelope,
+                                )
+                                obs = cp["output"]
+                                read_cache._entries.clear()
+                                if isinstance(obs, dict):
+                                    if obs.get("ok") is False:
+                                        ok = False
+                                    post_notes = self.hook_engine.run_post(tool, call_args, obs, ws.ws)
+                                    if post_notes:
+                                        obs["hook_annotations"] = post_notes
+                                    guard_dec = self.hook_engine.run_output_guardrails(tool, call_args, obs, ws.ws)
+                                    if guard_dec.redacted_obs is not None:
+                                        obs = guard_dec.redacted_obs
+                                    if guard_dec.behavior == "reject_content":
+                                        ok = False
+                                        if not isinstance(obs, dict) or "error" not in obs:
+                                            obs = {"error": f"Output guardrail rejected tool output: {guard_dec.reason}"}
+                        except RepeatToolLoopError as exc:
+                            ok, obs = False, {"error": f"{exc}. Change strategy."}
+                        except ToolGuardrailTripwireError:
+                            raise
+                        except Exception as exc:
+                            ok, obs = False, {"error": f"{type(exc).__name__}: {str(exc)[:500]}"}
+                    elif tool not in self.TOOL_EFFECTS:
+                        ok, obs = False, {"error": f"unknown tool '{tool}'"}
+                    else:
+                        try:
+                            self.assert_tool_allowed_in_mode(tool, execution_mode)
+                            breaker.record_and_check(tool, args)
+                            call_args = self._prepare_args(tool, args, ws)
+                            pre_dec = self.hook_engine.run_pre(tool, call_args, ws.ws)
+                            if not pre_dec.allowed:
+                                ok, obs = False, {"error": pre_dec.reason, "blocked_by_hook": True}
+                            else:
+                                cache_key: Optional[str] = None
+                                if tool in ("read_file", "search", "repo_map"):
+                                    cache_key = json.dumps([tool, call_args], sort_keys=True, default=str)
+                                    hit = read_cache.lookup(cache_key)
+                                    if hit.get("cache_hit") and isinstance(hit.get("response"), dict):
+                                        obs = dict(hit["response"])
+                                        obs["simhash_cache_hit"] = True
+                                if obs is None:
+                                    step_id = f"t{turn}-{sub_idx}-{hashlib.sha256(json.dumps([tool, call_args], sort_keys=True, default=str).encode()).hexdigest()[:10]}"
+                                    cp = self.engine.execute_step(run_id=mission_id, step_id=step_id, step_index=turn * 10 + sub_idx, tool_name=f"ws.{tool}",
+                                                                  args=call_args, state={"mission_id": mission_id}, lease_epoch=epoch, envelope=envelope)
+                                    obs = cp["output"]
+                                    if cache_key is not None and isinstance(obs, dict) and not obs.get("error"):
+                                        read_cache.put(cache_key, dict(obs))
+                                    elif self.TOOL_EFFECTS.get(tool) != EffectClass.PURE_READ:
+                                        read_cache._entries.clear()
+                                if isinstance(obs, dict):
+                                    if ok and tool in ("write_file", "replace_in_file") and call_args:
+                                        edited_p = Path(str(call_args.get("path", "")))
+                                        if edited_p.suffix.lower() == ".py" and edited_p.is_file():
+                                            from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
+
+                                            fix_res = DeterministicTaskOffloader.code_autofix_and_lint(
+                                                ws.ws, target=str(edited_p), apply_fix=True
+                                            )
+                                            obs["auto_lint"] = {
+                                                "ok": fix_res.get("ok"),
+                                                "backend": fix_res.get("backend"),
+                                            }
+                                    post_notes = self.hook_engine.run_post(tool, call_args, obs, ws.ws)
+                                    if post_notes:
+                                        obs["hook_annotations"] = post_notes
+                                    guard_dec = self.hook_engine.run_output_guardrails(tool, call_args, obs, ws.ws)
+                                    if guard_dec.redacted_obs is not None:
+                                        obs = guard_dec.redacted_obs
+                                    if guard_dec.behavior == "reject_content":
+                                        ok = False
+                                        if not isinstance(obs, dict) or "error" not in obs:
+                                            obs = {"error": f"Output guardrail rejected tool output: {guard_dec.reason}"}
+                                if tool == "run" and isinstance(obs, dict) and obs.get("exit_code") not in (0, None):
+                                    ok = True  # a failing command is still valid information
+                        except RepeatToolLoopError as exc:
+                            ok, obs = False, {"error": f"{exc}. Change strategy."}
+                        except ToolGuardrailTripwireError:
+                            raise
+                        except Exception as exc:  # gate violations, bad args, IO errors -> feed back to the model
+                            ok, obs = False, {"error": f"{type(exc).__name__}: {str(exc)[:500]}"}
+
+                    ok, chunk = _finalize_tool_result(sub_idx, tool, args, tc_id, call_args, ok, obs, len(batch))
+                    turn_tools_executed += 1
+                    if ok:
+                        turn_progress = True
+                    turn_obs_chunks.append(chunk)
+                    if native_cid:
+                        native_tool_results[native_cid] = (tool, chunk)
 
             if should_break_loop:
                 break
             stuck_verdict = stuck_detector.analyze(stuck_events_log)
-            if stuck_verdict.is_stuck and stuck_verdict.recovery_nudge:
-                turn_obs_chunks.append(f"[STUCK_DETECTOR_NUDGE ({stuck_verdict.loop_type}): {stuck_verdict.recovery_nudge}]")
+            stuck_note = (
+                f"[STUCK_DETECTOR_NUDGE ({stuck_verdict.loop_type}): {stuck_verdict.recovery_nudge}]"
+                if (stuck_verdict.is_stuck and stuck_verdict.recovery_nudge)
+                else ""
+            )
+
+            if used_native_tool_turn:
+                for t_name, _t_args, t_cid in batch:
+                    if not t_cid:
+                        continue
+                    r_name, r_content = native_tool_results.get(
+                        t_cid, (t_name, "Skipped due to earlier control/finish rejection in same turn.")
+                    )
+                    messages.append({"role": "tool", "tool_call_id": t_cid, "name": r_name, "content": r_content})
+                if stuck_note:
+                    messages.append({"role": "user", "content": stuck_note})
+                made_prog = False if reject_finish_msg is not None else turn_progress
+                try:
+                    homeo.record_turn_cost(tokens=resp.total_tokens, tool_calls=max(1, turn_tools_executed), made_verified_progress=made_prog)
+                except ResourceExhaustedError as exc:
+                    stop_reason = f"budget: {exc}"
+                    break
+                continue
+
+            if stuck_note:
+                turn_obs_chunks.append(stuck_note)
             if reject_finish_msg is not None:
                 obs_head = ("\n".join(turn_obs_chunks) + "\n\n") if turn_obs_chunks else ""
                 messages.append({"role": "user", "content": obs_head + reject_finish_msg})
@@ -1833,30 +1456,38 @@ class AgentLoop:
     evaluate_pre_critic = staticmethod(_lp_evaluate_pre_critic)
 
     @staticmethod
-    def _condense(messages: List[Dict[str, str]], max_chars: int = 45_000) -> List[Dict[str, str]]:
-        """Cache-friendly half-window tombstone condensation keeping system+task head and recent tail intact."""
-        total = sum(len(m["content"]) for m in messages)
+    def _condense(messages: List[Dict[str, Any]], max_chars: int = 45_000) -> List[Dict[str, Any]]:
+        """Cache-friendly half-window tombstone condensation preserving atomic assistant/tool_calls groups."""
+        total = sum(_msg_char_len(m) for m in messages)
         if total <= max_chars or len(messages) <= 8:
             return messages
 
         head = list(messages[:2])
-        tail = list(messages[-6:])
-        middle = list(messages[2:-6])
+        tail_start = max(2, len(messages) - 6)
+        # Never slice tail starting inside a role='tool' response group (breaks OpenAI/Anthropic API contracts)
+        while tail_start > 2 and messages[tail_start].get("role") == "tool":
+            tail_start -= 1
+        tail = list(messages[tail_start:])
+        middle = list(messages[2:tail_start])
 
-        while middle and (sum(len(m["content"]) for m in head + middle + tail) > max_chars):
-            if len(middle) == 1 and middle[0]["content"].startswith("[CONDENSATION_TOMBSTONE"):
+        while middle and (sum(_msg_char_len(m) for m in head + middle + tail) > max_chars):
+            c0 = str(middle[0].get("content") or "")
+            if len(middle) == 1 and c0.startswith("[CONDENSATION_TOMBSTONE"):
                 break
-            starts_with_tombstone = middle[0]["content"].startswith("[CONDENSATION_TOMBSTONE")
+            starts_with_tombstone = c0.startswith("[CONDENSATION_TOMBSTONE")
             min_evict = 2 if (starts_with_tombstone and len(middle) >= 2) else 1
             half = max(min_evict, len(middle) // 2)
+            # Keep assistant+tool_calls pairs atomic when evicting from middle
+            while half < len(middle) and middle[half].get("role") == "tool":
+                half += 1
             evicted = middle[:half]
             middle = middle[half:]
             markers: List[str] = []
             compacted_chars = 0
             covered = 0
             for m in evicted:
-                c = m["content"]
-                compacted_chars += len(c)
+                c = str(m.get("content") or "")
+                compacted_chars += _msg_char_len(m)
                 m_prev = re.match(r"\[CONDENSATION_TOMBSTONE covered_messages=(\d+)", c)
                 covered += int(m_prev.group(1)) if m_prev else 1
                 for ln in c.splitlines():

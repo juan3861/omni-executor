@@ -2,7 +2,7 @@
 
 **An autonomous software engineering agent with a hierarchical team orchestrator, a self-healing CDP browser engine, closed-loop Windows desktop automation, and an MCP / A2A / AG-UI interoperability harness — built around durable execution, executable verification, and hard safety gates.**
 
-[![Tests](https://img.shields.io/badge/pytest-108%2B%20passed-2ea44f?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/pytest-121%2B%20passed-2ea44f?style=flat-square)](tests/)
 [![Benchmark](https://img.shields.io/badge/AM--Bench%20code-13%2F15%20%2B%202%2F2%20re--run-2ea44f?style=flat-square)](#benchmarks-and-honest-caveats)
 [![Deterministic Rails](https://img.shields.io/badge/deterministic%20rails-220%20zero--token-0969da?style=flat-square)](#complete-cli-reference-all-21-subcommands)
 [![Static analysis](https://img.shields.io/badge/built--in%20SAST-grade%20A-0969da?style=flat-square)](SECURITY.md)
@@ -49,7 +49,7 @@ OmniExecutor Agent treats every one of those failure modes as a systems-engineer
 
 | Domain | What OmniExecutor Agent Can Do | Primary Module(s) |
 | :--- | :--- | :--- |
-| **Autonomous Coding Loop** | ReAct, SPARC (`S/P/A/R/C`), and Hierarchical DAG workflows; Turn-0 inventory + `AgentlessThreePhaseLocalizer`; live `grammar_json_repair`, `SimHashSemanticCache`, `prompt_token_pruner`, `OpenHandsStuckDetector`, `ShellSemanticPolicyRails`, and `AiderFuzzySearchReplaceEngine` cascade; `Plan`/`Act` gate; `V4AMultiFilePatchEngine` + `UndoEditHistory`; parallel `git worktree` Best-of-N | `execution/agent_loop.py`, `execution/loop_policies.py`, `execution/openhands_organs.py`, `execution/apex_codeact_fuzzy.py` |
+| **Autonomous Coding Loop** | Native typed tool calling (`tools` / `tool_calls`) across OpenAI, Anthropic, Gemini Native, Groq, OpenRouter & Ollama with explicit `cache_control` prompt caching, extended thinking budgets, and SSE streamed tool assembly; parallel `ThreadPoolExecutor` dispatch for `PURE_READ` batches; dynamic first-class MCP tool mounting (`mcp__<server>__<tool>`); ReAct, SPARC (`S/P/A/R/C`), and Hierarchical DAG workflows; Turn-0 inventory + `AgentlessThreePhaseLocalizer`; live `grammar_json_repair`, `SimHashSemanticCache`, `prompt_token_pruner`, `OpenHandsStuckDetector`, `ShellSemanticPolicyRails`, and `AiderFuzzySearchReplaceEngine` cascade; `Plan`/`Act` gate | `cognition/llm_client.py`, `execution/agent_loop.py`, `execution/workspace_tools.py`, `execution/tool_schemas.py`, `execution/loop_policies.py`, `execution/openhands_organs.py`, `execution/apex_codeact_fuzzy.py` |
 | **220 Deterministic Zero-Token Rails** | Sub-millisecond zero-token rails spanning `ast-grep`, `LibCST`, `Comby`, polyglot JS/TS/Rust/Go/clone detection, live host silicon CPU cache & DRAM bandwidth probing (`Win32_CacheMemory` / `sysfs`), `LLMLingua` token pruning, `Z3` SMT, `Hypothesis`, `ddmin`, `Ochiai` SBFL fault localization, `TLA+` TLC model checker, `Raft/Paxos` self-healing, Windows app/PATH/process discovery, Electron ASAR probing, BM25 full-text search, SQL/Pydantic schema inference, CRDT/VectorClocks/JWT/Merkle verification, and `fastmft`/Casimir radar | `execution/deterministic_offloader.py`, `execution/deterministic_matrix_100.py`, `execution/deterministic_matrix_v70.py`, `execution/token_latency_savers.py`, `execution/apex_fault_localizer.py`, `execution/tla_formal_verifier.py`, `execution/raft_paxos_healing.py`, `execution/cpu_cache_telemetry.py`, `execution/apex_v62_extracts.py` |
 | **HyperFleet & Hierarchical Teams** | In-process `HyperFleet` executing **1,000+ concurrent agents** at **`0.173 KB` RAM/agent** with Go-style `SingleFlightCoalescer`, `begin_generation` zero-erasure chaining, hard USD budget gate, `ResourceLockManager` (`FIFOLock`), plus severity-scored (`0–10`) Dev Squad / Executive Fleet waves | `execution/subagent_bus.py`, `execution/openhands_organs.py`, `cognition/personas.py` |
 | **Code Intelligence** | Polyglot AST/parser symbol map ranked with weighted PageRank (`Python`, `JS/TS`, `Rust`, `Go`); vectorless Merkle-tree index (`sync_incremental`) with ACL/RBAC scoping & Mermaid graph export; persistent stdio LSP client | `perception/polyglot_repomap.py`, `perception/knowledge_index.py`, `perception/lsp_client.py`, `perception/silicon_radar.py` |
@@ -646,7 +646,7 @@ The repository bundles a sealed real-LLM evaluation suite (`eval/am_bench/`) whe
 ```text
 omni-executor/
 ├── omni-executor.cmd                       # CLI wrapper entry point (Windows)
-├── pyproject.toml                          # Package metadata (omni-executor v7.0.0)
+├── pyproject.toml                          # Package metadata + console scripts `omni-executor`/`omni` (v8.0.0)
 ├── llms.txt                                # Machine-readable AI discovery index
 ├── LICENSE                                 # MIT License
 ├── CONTRIBUTING.md                         # Development, testing & extension guide
@@ -660,10 +660,10 @@ omni-executor/
 ├── src/am_ua/
 │   ├── agent_kernel.py                     # Primary OmniExecutorAgent orchestration facade
 │   ├── cli.py                              # 21-subcommand CLI router
-│   ├── cognition/                          # Multi-provider LLM client, personas, AG-UI, planner, trajectory bank
+│   ├── cognition/                          # Multi-provider LLM client (OpenAI/Anthropic/Gemini/Ollama, native tools, cache_control), personas, AG-UI, planner, trajectory bank
 │   ├── contracts/                          # Cognitive envelopes, tainting, Brier calibration, portable temp resolver
 │   ├── evolution/                          # UCB1 + MAP-Elites + Pareto-gated evolver
-│   ├── execution/                          # Agent loop, loop_prompts_and_scopes, 220 deterministic rails, A2A, MCP, skills, bBoN
+│   ├── execution/                          # Agent loop, workspace_tools, tool_schemas (dynamic MCP mounting), loop_prompts_and_scopes, 220 deterministic rails, A2A, MCP, skills, bBoN
 │   ├── governance/                         # SHA-256 constitution seal guard & resource governor
 │   ├── gui/                                # Indexed CDP browser & verified browser adapter
 │   ├── memory/                             # Three-layer memory store

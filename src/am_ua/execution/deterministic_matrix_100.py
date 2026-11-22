@@ -2195,10 +2195,13 @@ def execute_matrix_69_rail(
         from am_ua.execution.deterministic_offloader import BUILTIN_DETERMINISTIC_RAILS
 
         al_file = ws / "src" / "am_ua" / "execution" / "agent_loop.py"
+        wt_file = ws / "src" / "am_ua" / "execution" / "workspace_tools.py"
         dm_file = ws / "src" / "am_ua" / "execution" / "deterministic_matrix_100.py"
         live_wired_symbols: Dict[str, bool] = {}
         if al_file.is_file():
             al_txt = al_file.read_text(encoding="utf-8", errors="replace")
+            if wt_file.is_file():
+                al_txt += "\n" + wt_file.read_text(encoding="utf-8", errors="replace")
             for sym in (
                 "OpenHandsStuckDetector",
                 "AiderFuzzySearchReplaceEngine",

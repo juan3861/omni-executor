@@ -1,15 +1,18 @@
-"""Real multi-provider LLM client (fixes bottleneck B1/B2: the kernel had no reachable brain).
+"""Real multi-provider LLM client v8.0 (OpenAI-compat, Anthropic, Gemini Native, Ollama).
 
-Before this module, `OmniModelRouter` only pointed at localhost endpoints (20128/8317/3700) that were
-offline, and `execute_mission` never invoked any model. This client talks to real OpenAI-compatible
-endpoints with:
-  - ordered provider chain with automatic failover (429/5xx/timeout/network)
-  - per-session circuit breaker
-  - real token accounting taken from the provider `usage` block (no hardcoded token numbers)
-  - secrets never logged (keys only read from env at call time)
+Supports:
+  - Ordered provider chain with automatic failover (429/5xx/timeout/network) and per-session circuit breaker
+  - Native Tool Calling (`tools`, `tool_choice`, structured `ToolCall` outputs) across OpenAI, Anthropic,
+    Gemini Native, and Ollama/OpenRouter/Groq — with automatic fallback if a model rejects `tools`
+  - Explicit Prompt Caching (`cache_control` breakpoints on Anthropic + cache hit/write telemetry across all providers)
+  - Reasoning/Thinking budgets (`reasoning_effort`: low/medium/high -> OpenAI reasoning_effort, Anthropic thinking, Gemini thinkingConfig)
+  - True SSE Streaming (`chat_stream`) assembling both text deltas and incremental streamed `tool_calls`
+  - Multimodal vision inputs (`image_url` data URIs translated natively per provider)
+  - Honest token and USD cost accounting from provider `usage` payloads; keys read only from env at call time.
 
 Provider order / models are configurable via env:
-  AM_UA_PROVIDERS="groq,openrouter,openai"   AM_UA_GROQ_MODEL=...  AM_UA_OPENAI_MODEL=... etc.
+  AM_UA_PROVIDERS="groq,openrouter,openai,anthropic,gemini,ollama"
+  AM_UA_GROQ_MODEL=...  AM_UA_ANTHROPIC_MODEL=...  AM_UA_OPENAI_MODEL=... etc.
 """
 
 from __future__ import annotations
@@ -23,13 +26,24 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import urlparse
 
 
 class LLMUnavailableError(RuntimeError):
     """Raised when every provider in the chain failed."""
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    """Normalized structured tool invocation returned natively by an LLM provider."""
+
+    id: str
+    name: str
+    arguments: Dict[str, Any]
+    raw_arguments: str = ""
 
 
 @dataclass(frozen=True)
@@ -40,30 +54,51 @@ class ProviderSpec:
     model: str
     local: bool = False
     fallback_models: Tuple[str, ...] = ()
+    protocol: str = "openai_compat"
 
     def api_key(self) -> Optional[str]:
-        return os.environ.get(self.key_env) if self.key_env else None
+        if not self.key_env:
+            return None
+        val = os.environ.get(self.key_env)
+        if not val and self.name == "gemini":
+            val = os.environ.get("GOOGLE_API_KEY")
+        return val
 
     def is_configured(self) -> bool:
         return self.local or bool(self.api_key())
 
 
-MODEL_PRICING_PER_1M: Dict[str, tuple[float, float]] = {
+MODEL_PRICING_PER_1M: Dict[str, Tuple[float, float]] = {
     "gpt-4o-mini": (0.15, 0.60),
     "gpt-4o": (2.50, 10.00),
     "gpt-4.1": (2.00, 8.00),
     "gpt-4.1-mini": (0.40, 1.60),
+    "gpt-5-mini": (0.25, 2.00),
     "gpt-5": (1.25, 10.00),
     "o3-mini": (1.10, 4.40),
+    "o4-mini": (1.10, 4.40),
     "claude-3-5-sonnet": (3.00, 15.00),
+    "claude-sonnet-4-5": (3.00, 15.00),
     "claude-sonnet-4": (3.00, 15.00),
+    "claude-opus-4": (15.00, 75.00),
+    "claude-haiku-4-5": (0.80, 4.00),
     "claude-haiku-4": (0.80, 4.00),
     "gemini-2.5-flash": (0.15, 0.60),
     "gemini-2.5-pro": (1.25, 10.00),
+    "gemini-3-flash": (0.20, 0.80),
+    "gemini-3-pro": (1.50, 12.00),
     "deepseek-chat": (0.27, 1.10),
     "deepseek-reasoner": (0.55, 2.19),
     "llama-3.3-70b": (0.59, 0.79),
+    "gpt-oss-120b": (0.15, 0.60),
+    "gpt-oss-20b": (0.075, 0.30),
     "qwen-2.5-72b": (0.40, 1.20),
+}
+
+_THINKING_BUDGETS: Dict[str, int] = {
+    "low": 1024,
+    "medium": 4096,
+    "high": 8192,
 }
 
 
@@ -73,22 +108,27 @@ def estimate_cost_usd(
     completion_tokens: int,
     *,
     cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
 ) -> float:
-    """Estimate USD inference cost from model name and token counts."""
+    """Estimate USD inference cost from model name and token counts (incl. cache reads/writes)."""
     m = (model or "").lower().strip()
     in_rate, out_rate = (0.0, 0.0)
-    # Match longest prefix first so gpt-4o-mini beats gpt-4o
+    # Match longest prefix first so gpt-4o-mini beats gpt-4o and gpt-5-mini beats gpt-5
     for key in sorted(MODEL_PRICING_PER_1M.keys(), key=len, reverse=True):
         if key in m:
             in_rate, out_rate = MODEL_PRICING_PER_1M[key]
             break
     if in_rate == 0.0 and out_rate == 0.0:
         return 0.0
-    cached = max(0, min(int(cache_read_tokens or 0), int(prompt_tokens or 0)))
-    uncached_prompt = max(0, int(prompt_tokens or 0) - cached)
+    pt = max(0, int(prompt_tokens or 0))
+    cached_r = max(0, min(int(cache_read_tokens or 0), pt))
+    cached_w = max(0, min(int(cache_write_tokens or 0), max(0, pt - cached_r)))
+    uncached_prompt = max(0, pt - cached_r - cached_w)
+    cache_read_mult = 0.10 if "claude" in m else 0.25
     cost = (
         (uncached_prompt * in_rate)
-        + (cached * in_rate * 0.25)
+        + (cached_r * in_rate * cache_read_mult)
+        + (cached_w * in_rate * 1.25)
         + (max(0, int(completion_tokens or 0)) * out_rate)
     ) / 1_000_000.0
     return round(cost, 8)
@@ -136,6 +176,9 @@ class LLMResponse:
     attempts: List[Dict[str, Any]] = field(default_factory=list)
     cache_read_tokens: int = 0
     cost_usd: float = 0.0
+    cache_write_tokens: int = 0
+    tool_calls: List[ToolCall] = field(default_factory=list)
+    thinking_text: str = ""
 
     @property
     def total_tokens(self) -> int:
@@ -143,27 +186,61 @@ class LLMResponse:
 
 
 _DEFAULTS: Dict[str, Dict[str, Any]] = {
-    "omniroute": {"base_url": "http://127.0.0.1:20128/v1", "key_env": None, "model": "auto", "local": True},
+    "omniroute": {
+        "base_url": "http://127.0.0.1:20128/v1",
+        "key_env": None,
+        "model": "auto",
+        "local": True,
+        "protocol": "openai_compat",
+    },
     # 2026-11-04: `llama-3.3-70b-versatile` returns 404 model_not_found on Groq; gpt-oss-120b verified live.
     "groq": {
         "base_url": "https://api.groq.com/openai/v1",
         "key_env": "GROQ_API_KEY",
         "model": "openai/gpt-oss-120b",
         "fallback_models": ("qwen/qwen3.8-27b", "openai/gpt-oss-20b"),
+        "protocol": "openai_compat",
     },
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
         "key_env": "OPENROUTER_API_KEY",
         "model": "cohere/north-mini-code:free",
         "fallback_models": ("nvidia/nemotron-3.5-lightning:free",),
+        "protocol": "openai_compat",
     },
-    "openai": {"base_url": "https://api.openai.com/v1", "key_env": "OPENAI_API_KEY", "model": "gpt-5-mini"},
+    "openai": {
+        "base_url": "https://api.openai.com/v1",
+        "key_env": "OPENAI_API_KEY",
+        "model": "gpt-5-mini",
+        "protocol": "openai_compat",
+    },
+    "anthropic": {
+        "base_url": "https://api.anthropic.com/v1",
+        "key_env": "ANTHROPIC_API_KEY",
+        "model": "claude-sonnet-4-5-20250929",
+        "fallback_models": ("claude-sonnet-4-20250514", "claude-haiku-4-5-20251001"),
+        "protocol": "anthropic",
+    },
+    "gemini": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "key_env": "GEMINI_API_KEY",
+        "model": "gemini-2.5-flash",
+        "fallback_models": ("gemini-2.5-pro",),
+        "protocol": "gemini_native",
+    },
+    "ollama": {
+        "base_url": "http://127.0.0.1:11434/v1",
+        "key_env": None,
+        "model": "qwen2.5-coder:14b",
+        "local": True,
+        "protocol": "ollama",
+    },
 }
 
-DEFAULT_ORDER = ("omniroute", "groq", "openrouter", "openai")
+DEFAULT_ORDER = ("omniroute", "groq", "openrouter", "openai", "anthropic", "gemini", "ollama")
 
 
-def _tcp_alive(url: str, timeout_s: float = 0.3) -> bool:
+def _tcp_alive(url: str, timeout_s: float = 0.25) -> bool:
     p = urlparse(url)
     try:
         with socket.create_connection((p.hostname or "127.0.0.1", p.port or 80), timeout=timeout_s):
@@ -173,20 +250,80 @@ def _tcp_alive(url: str, timeout_s: float = 0.3) -> bool:
 
 
 def build_provider_chain(order: Optional[Sequence[str]] = None) -> List[ProviderSpec]:
-    names = list(order or [n.strip() for n in os.environ.get("AM_UA_PROVIDERS", ",".join(DEFAULT_ORDER)).split(",") if n.strip()])
+    names = list(
+        order
+        or [
+            n.strip()
+            for n in os.environ.get("AM_UA_PROVIDERS", ",".join(DEFAULT_ORDER)).split(",")
+            if n.strip()
+        ]
+    )
     chain: List[ProviderSpec] = []
     for n in names:
         d = _DEFAULTS.get(n)
         if d is None:
             continue
         model = os.environ.get(f"AM_UA_{n.upper()}_MODEL", d["model"])
+        base_url = os.environ.get(f"AM_UA_{n.upper()}_BASE_URL", d["base_url"])
         fb = tuple(d.get("fallback_models", ()))
-        spec = ProviderSpec(n, d["base_url"], d["key_env"], model, bool(d.get("local", False)), fallback_models=fb)
+        spec = ProviderSpec(
+            n,
+            base_url,
+            d["key_env"],
+            model,
+            bool(d.get("local", False)),
+            fallback_models=fb,
+            protocol=str(d.get("protocol", "openai_compat")),
+        )
         if spec.local and not _tcp_alive(spec.base_url):
             continue  # offline local endpoint: skip silently, never pretend it exists
         if spec.is_configured():
             chain.append(spec)
     return chain
+
+
+def _safe_parse_tool_args(raw: Any) -> Tuple[Dict[str, Any], str]:
+    """Parse tool arguments safely from dict or JSON string without crashing on partial JSON."""
+    if isinstance(raw, dict):
+        return raw, json.dumps(raw, ensure_ascii=False)
+    s = str(raw or "").strip()
+    if not s:
+        return {}, ""
+    try:
+        parsed = json.loads(s)
+        if isinstance(parsed, dict):
+            return parsed, s
+    except json.JSONDecodeError:
+        try:
+            parsed = extract_json_object(s)
+            return parsed, s
+        except ValueError:
+            pass
+    return {"_raw": s}, s
+
+
+def _parse_data_uri(uri: str) -> Optional[Tuple[str, str]]:
+    """Extract (mime_type, base64_data) from a `data:<mime>;base64,<data>` URI."""
+    if not isinstance(uri, str) or not uri.startswith("data:") or ";base64," not in uri:
+        return None
+    header, b64 = uri.split(";base64,", 1)
+    mime = header[5:].strip() or "image/png"
+    return mime, b64
+
+
+def _sanitize_gemini_schema(schema: Any) -> Any:
+    """Recursively strip JSON Schema keys unsupported by Gemini functionDeclarations."""
+    if isinstance(schema, list):
+        return [_sanitize_gemini_schema(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    drop = {"additionalProperties", "$schema", "default", "title"}
+    out: Dict[str, Any] = {}
+    for k, v in schema.items():
+        if k in drop:
+            continue
+        out[k] = _sanitize_gemini_schema(v)
+    return out
 
 
 class LLMClient:
@@ -211,6 +348,7 @@ class LLMClient:
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
         self.total_cache_read_tokens = 0
+        self.total_cache_write_tokens = 0
         self.total_cost_usd = 0.0
         self.calls = 0
 
@@ -232,27 +370,379 @@ class LLMClient:
     def available(self) -> List[str]:
         return [p.name for p in self.providers if not self._is_circuit_open(p.name)]
 
+    # -------------------------------------------------------- protocol builders
     @staticmethod
-    def _payload(spec: ProviderSpec, messages: List[Dict[str, str]], max_tokens: int, temperature: Optional[float], json_mode: bool) -> Dict[str, Any]:
-        body: Dict[str, Any] = {"model": spec.model, "messages": messages}
-        reasoning_family = spec.name == "openai" and (spec.model.startswith("gpt-5") or spec.model.startswith("o"))
+    def _payload(
+        spec: ProviderSpec,
+        messages: Sequence[Dict[str, Any]],
+        max_tokens: int,
+        temperature: Optional[float],
+        json_mode: bool,
+        *,
+        tools: Optional[Sequence[Dict[str, Any]]] = None,
+        tool_choice: Optional[Any] = None,
+        enable_prompt_cache: bool = True,
+        reasoning_effort: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Build provider-native request payload for OpenAI-compat, Anthropic, Gemini, or Ollama."""
+        proto = (spec.protocol or "openai_compat").lower()
+        if proto == "anthropic":
+            return LLMClient._payload_anthropic(
+                spec,
+                messages,
+                max_tokens,
+                temperature,
+                tools=tools,
+                tool_choice=tool_choice,
+                enable_prompt_cache=enable_prompt_cache,
+                reasoning_effort=reasoning_effort,
+            )
+        if proto == "gemini_native":
+            return LLMClient._payload_gemini(
+                spec,
+                messages,
+                max_tokens,
+                temperature,
+                json_mode,
+                tools=tools,
+                tool_choice=tool_choice,
+                reasoning_effort=reasoning_effort,
+            )
+        return LLMClient._payload_openai(
+            spec,
+            messages,
+            max_tokens,
+            temperature,
+            json_mode,
+            tools=tools,
+            tool_choice=tool_choice,
+            reasoning_effort=reasoning_effort,
+        )
+
+    @staticmethod
+    def _payload_openai(
+        spec: ProviderSpec,
+        messages: Sequence[Dict[str, Any]],
+        max_tokens: int,
+        temperature: Optional[float],
+        json_mode: bool,
+        *,
+        tools: Optional[Sequence[Dict[str, Any]]] = None,
+        tool_choice: Optional[Any] = None,
+        reasoning_effort: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        body: Dict[str, Any] = {"model": spec.model, "messages": list(messages)}
+        reasoning_family = spec.name == "openai" and (
+            spec.model.startswith("gpt-5") or spec.model.startswith("o")
+        )
         if reasoning_family:
             body["max_completion_tokens"] = max_tokens
+            if reasoning_effort in _THINKING_BUDGETS:
+                body["reasoning_effort"] = reasoning_effort
         else:
             body["max_tokens"] = max_tokens
             if temperature is not None:
                 body["temperature"] = temperature
-        if json_mode:
+        if tools:
+            body["tools"] = list(tools)
+            if tool_choice is not None:
+                body["tool_choice"] = tool_choice
+            else:
+                body["tool_choice"] = "auto"
+        elif json_mode:
             body["response_format"] = {"type": "json_object"}
         return body
 
-    def _post(self, spec: ProviderSpec, body: Dict[str, Any]) -> Dict[str, Any]:
-        headers = {"Content-Type": "application/json", "User-Agent": "omni-executor/4.1"}
+    @staticmethod
+    def _payload_anthropic(
+        spec: ProviderSpec,
+        messages: Sequence[Dict[str, Any]],
+        max_tokens: int,
+        temperature: Optional[float],
+        *,
+        tools: Optional[Sequence[Dict[str, Any]]] = None,
+        tool_choice: Optional[Any] = None,
+        enable_prompt_cache: bool = True,
+        reasoning_effort: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        system_blocks: List[Dict[str, Any]] = []
+        anth_messages: List[Dict[str, Any]] = []
+
+        for msg in messages:
+            role = str(msg.get("role", "user"))
+            content = msg.get("content", "")
+            if role == "system":
+                txt = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+                if txt:
+                    blk: Dict[str, Any] = {"type": "text", "text": txt}
+                    if enable_prompt_cache:
+                        blk["cache_control"] = {"type": "ephemeral"}
+                    system_blocks.append(blk)
+                continue
+
+            if role == "tool":
+                tool_blk = {
+                    "type": "tool_result",
+                    "tool_use_id": str(msg.get("tool_call_id") or "call_0"),
+                    "content": content if isinstance(content, str) else json.dumps(content, ensure_ascii=False),
+                }
+                if anth_messages and anth_messages[-1]["role"] == "user" and isinstance(anth_messages[-1]["content"], list):
+                    anth_messages[-1]["content"].append(tool_blk)
+                else:
+                    anth_messages.append({"role": "user", "content": [tool_blk]})
+                continue
+
+            blocks: List[Dict[str, Any]] = []
+            if isinstance(content, str):
+                if content:
+                    blocks.append({"type": "text", "text": content})
+            elif isinstance(content, list):
+                for part in content:
+                    if not isinstance(part, dict):
+                        continue
+                    ptype = part.get("type")
+                    if ptype == "text" and part.get("text"):
+                        blocks.append({"type": "text", "text": str(part["text"])})
+                    elif ptype == "image_url":
+                        url = (part.get("image_url") or {}).get("url", "")
+                        parsed = _parse_data_uri(url)
+                        if parsed:
+                            mime, b64 = parsed
+                            blocks.append(
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": mime,
+                                        "data": b64,
+                                    },
+                                }
+                            )
+
+            if role == "assistant" and isinstance(msg.get("tool_calls"), list):
+                for tc in msg["tool_calls"]:
+                    fn = tc.get("function") or {}
+                    targs, _ = _safe_parse_tool_args(fn.get("arguments"))
+                    blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": str(tc.get("id") or f"toolu_{uuid.uuid4().hex[:10]}"),
+                            "name": str(fn.get("name", "")),
+                            "input": targs,
+                        }
+                    )
+
+            if not blocks:
+                blocks.append({"type": "text", "text": " "})
+            anth_role = "assistant" if role == "assistant" else "user"
+            if anth_messages and anth_messages[-1]["role"] == anth_role:
+                anth_messages[-1]["content"].extend(blocks)
+            else:
+                anth_messages.append({"role": anth_role, "content": blocks})
+
+        # Place an ephemeral cache breakpoint on the latest stable user turn when multi-turn
+        if enable_prompt_cache and len(anth_messages) >= 2:
+            target_idx = len(anth_messages) - 1
+            if anth_messages[target_idx]["content"]:
+                last_blk = dict(anth_messages[target_idx]["content"][-1])
+                last_blk["cache_control"] = {"type": "ephemeral"}
+                anth_messages[target_idx]["content"][-1] = last_blk
+
+        body: Dict[str, Any] = {
+            "model": spec.model,
+            "max_tokens": max_tokens,
+            "messages": anth_messages,
+        }
+        if system_blocks:
+            body["system"] = system_blocks
+
+        if reasoning_effort in _THINKING_BUDGETS:
+            budget = _THINKING_BUDGETS[reasoning_effort]
+            body["thinking"] = {"type": "enabled", "budget_tokens": budget}
+            if body["max_tokens"] <= budget:
+                body["max_tokens"] = budget + 2048
+        elif temperature is not None:
+            body["temperature"] = temperature
+
+        if tools:
+            anth_tools: List[Dict[str, Any]] = []
+            for t in tools:
+                fn = t.get("function") if t.get("type") == "function" else t
+                if not isinstance(fn, dict) or not fn.get("name"):
+                    continue
+                anth_tools.append(
+                    {
+                        "name": str(fn["name"]),
+                        "description": str(fn.get("description", "")),
+                        "input_schema": fn.get("parameters") or {"type": "object", "properties": {}},
+                    }
+                )
+            if anth_tools:
+                if enable_prompt_cache:
+                    anth_tools[-1]["cache_control"] = {"type": "ephemeral"}
+                body["tools"] = anth_tools
+                if tool_choice == "required":
+                    body["tool_choice"] = {"type": "any"}
+                elif tool_choice == "auto" or tool_choice is None:
+                    body["tool_choice"] = {"type": "auto"}
+                elif isinstance(tool_choice, dict) and tool_choice.get("function", {}).get("name"):
+                    body["tool_choice"] = {
+                        "type": "tool",
+                        "name": str(tool_choice["function"]["name"]),
+                    }
+        return body
+
+    @staticmethod
+    def _payload_gemini(
+        spec: ProviderSpec,
+        messages: Sequence[Dict[str, Any]],
+        max_tokens: int,
+        temperature: Optional[float],
+        json_mode: bool,
+        *,
+        tools: Optional[Sequence[Dict[str, Any]]] = None,
+        tool_choice: Optional[Any] = None,
+        reasoning_effort: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        sys_parts: List[Dict[str, Any]] = []
+        contents: List[Dict[str, Any]] = []
+
+        for msg in messages:
+            role = str(msg.get("role", "user"))
+            content = msg.get("content", "")
+            if role == "system":
+                txt = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+                if txt:
+                    sys_parts.append({"text": txt})
+                continue
+            if role == "tool":
+                resp_data, _ = _safe_parse_tool_args(content)
+                contents.append(
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "functionResponse": {
+                                    "name": str(msg.get("name") or "tool"),
+                                    "response": resp_data,
+                                }
+                            }
+                        ],
+                    }
+                )
+                continue
+
+            parts: List[Dict[str, Any]] = []
+            if isinstance(content, str):
+                if content:
+                    parts.append({"text": content})
+            elif isinstance(content, list):
+                for part in content:
+                    if not isinstance(part, dict):
+                        continue
+                    if part.get("type") == "text" and part.get("text"):
+                        parts.append({"text": str(part["text"])})
+                    elif part.get("type") == "image_url":
+                        parsed = _parse_data_uri((part.get("image_url") or {}).get("url", ""))
+                        if parsed:
+                            mime, b64 = parsed
+                            parts.append({"inlineData": {"mimeType": mime, "data": b64}})
+
+            if role == "assistant" and isinstance(msg.get("tool_calls"), list):
+                for tc in msg["tool_calls"]:
+                    fn = tc.get("function") or {}
+                    targs, _ = _safe_parse_tool_args(fn.get("arguments"))
+                    parts.append({"functionCall": {"name": str(fn.get("name", "")), "args": targs}})
+
+            if not parts:
+                parts.append({"text": " "})
+            g_role = "model" if role == "assistant" else "user"
+            contents.append({"role": g_role, "parts": parts})
+
+        gen_cfg: Dict[str, Any] = {"maxOutputTokens": max_tokens}
+        if temperature is not None:
+            gen_cfg["temperature"] = temperature
+        if json_mode and not tools:
+            gen_cfg["responseMimeType"] = "application/json"
+        if reasoning_effort in _THINKING_BUDGETS:
+            gen_cfg["thinkingConfig"] = {"thinkingBudget": _THINKING_BUDGETS[reasoning_effort]}
+
+        body: Dict[str, Any] = {"contents": contents, "generationConfig": gen_cfg}
+        if sys_parts:
+            body["systemInstruction"] = {"parts": sys_parts}
+
+        if tools:
+            decls: List[Dict[str, Any]] = []
+            for t in tools:
+                fn = t.get("function") if t.get("type") == "function" else t
+                if not isinstance(fn, dict) or not fn.get("name"):
+                    continue
+                decls.append(
+                    {
+                        "name": str(fn["name"]),
+                        "description": str(fn.get("description", "")),
+                        "parameters": _sanitize_gemini_schema(
+                            fn.get("parameters") or {"type": "object", "properties": {}}
+                        ),
+                    }
+                )
+            if decls:
+                body["tools"] = [{"functionDeclarations": decls}]
+                mode = "AUTO"
+                if tool_choice == "required":
+                    mode = "ANY"
+                elif tool_choice == "none":
+                    mode = "NONE"
+                body["toolConfig"] = {"functionCallingConfig": {"mode": mode}}
+        return body
+
+    def _endpoint_and_headers(
+        self,
+        spec: ProviderSpec,
+        *,
+        stream: bool = False,
+        enable_prompt_cache: bool = True,
+    ) -> Tuple[str, Dict[str, str]]:
+        proto = (spec.protocol or "openai_compat").lower()
         key = spec.api_key()
+        headers: Dict[str, str] = {
+            "Content-Type": "application/json",
+            "User-Agent": "omni-executor/8.0",
+        }
+        if stream:
+            headers["Accept"] = "text/event-stream"
+        if proto == "anthropic":
+            url = spec.base_url.rstrip("/") + "/messages"
+            headers["anthropic-version"] = "2023-06-01"
+            if enable_prompt_cache:
+                headers["anthropic-beta"] = "prompt-caching-2024-07-31"
+            if key:
+                headers["x-api-key"] = key
+            return url, headers
+        if proto == "gemini_native":
+            action = "streamGenerateContent?alt=sse" if stream else "generateContent"
+            url = f"{spec.base_url.rstrip('/')}/models/{spec.model}:{action}"
+            if key:
+                headers["x-goog-api-key"] = key
+            return url, headers
+        # OpenAI-compatible (OpenAI, Groq, OpenRouter, OmniRoute, Ollama)
+        url = spec.base_url.rstrip("/") + "/chat/completions"
         if key:
             headers["Authorization"] = f"Bearer {key}"
+        return url, headers
+
+    def _post(
+        self,
+        spec: ProviderSpec,
+        body: Dict[str, Any],
+        *,
+        enable_prompt_cache: bool = True,
+    ) -> Dict[str, Any]:
+        url, headers = self._endpoint_and_headers(
+            spec, stream=False, enable_prompt_cache=enable_prompt_cache
+        )
         req = urllib.request.Request(
-            spec.base_url.rstrip("/") + "/chat/completions",
+            url,
             data=json.dumps(body).encode("utf-8"),
             headers=headers,
             method="POST",
@@ -260,16 +750,124 @@ class LLMClient:
         with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
+    @staticmethod
+    def _parse_response(
+        spec: ProviderSpec,
+        data: Dict[str, Any],
+        cand_model: str,
+    ) -> Tuple[str, str, int, int, int, int, List[ToolCall], str]:
+        """Parse provider response into (text, actual_model, pt, ct, cache_r, cache_w, tool_calls, thinking)."""
+        proto = (spec.protocol or "openai_compat").lower()
+        if proto == "anthropic":
+            text_parts: List[str] = []
+            think_parts: List[str] = []
+            tcalls: List[ToolCall] = []
+            for blk in data.get("content") or []:
+                if not isinstance(blk, dict):
+                    continue
+                btype = blk.get("type")
+                if btype == "text":
+                    text_parts.append(str(blk.get("text") or ""))
+                elif btype == "thinking":
+                    think_parts.append(str(blk.get("thinking") or ""))
+                elif btype == "tool_use":
+                    args_dict, raw_args = _safe_parse_tool_args(blk.get("input"))
+                    tcalls.append(
+                        ToolCall(
+                            id=str(blk.get("id") or f"toolu_{uuid.uuid4().hex[:8]}"),
+                            name=str(blk.get("name") or ""),
+                            arguments=args_dict,
+                            raw_arguments=raw_args,
+                        )
+                    )
+            usage = data.get("usage") or {}
+            base_in = int(usage.get("input_tokens") or 0)
+            cache_r = int(usage.get("cache_read_input_tokens") or 0)
+            cache_w = int(usage.get("cache_creation_input_tokens") or 0)
+            pt = base_in + cache_r + cache_w
+            ct = int(usage.get("output_tokens") or 0)
+            actual_model = str(data.get("model") or cand_model)
+            return "".join(text_parts), actual_model, pt, ct, cache_r, cache_w, tcalls, "".join(think_parts)
+
+        if proto == "gemini_native":
+            text_parts = []
+            think_parts = []
+            tcalls = []
+            cand = (data.get("candidates") or [{}])[0]
+            for part in (cand.get("content") or {}).get("parts") or []:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("thought") and isinstance(part.get("text"), str):
+                    think_parts.append(part["text"])
+                elif isinstance(part.get("text"), str):
+                    text_parts.append(part["text"])
+                elif isinstance(part.get("functionCall"), dict):
+                    fc = part["functionCall"]
+                    args_dict, raw_args = _safe_parse_tool_args(fc.get("args"))
+                    tcalls.append(
+                        ToolCall(
+                            id=f"gem_{uuid.uuid4().hex[:8]}",
+                            name=str(fc.get("name") or ""),
+                            arguments=args_dict,
+                            raw_arguments=raw_args,
+                        )
+                    )
+            um = data.get("usageMetadata") or {}
+            pt = int(um.get("promptTokenCount") or 0)
+            ct = int(um.get("candidatesTokenCount") or 0)
+            cache_r = int(um.get("cachedContentTokenCount") or 0)
+            actual_model = str(data.get("modelVersion") or cand_model)
+            return "".join(text_parts), actual_model, pt, ct, cache_r, 0, tcalls, "".join(think_parts)
+
+        # OpenAI-compatible
+        choice = (data.get("choices") or [{}])[0]
+        msg = choice.get("message") or {}
+        text = msg.get("content") or ""
+        thinking = msg.get("reasoning_content") or msg.get("reasoning") or ""
+        tcalls = []
+        for idx, tc in enumerate(msg.get("tool_calls") or []):
+            if not isinstance(tc, dict):
+                continue
+            fn = tc.get("function") or {}
+            name = str(fn.get("name") or "").strip()
+            if not name:
+                continue
+            args_dict, raw_args = _safe_parse_tool_args(fn.get("arguments"))
+            tcalls.append(
+                ToolCall(
+                    id=str(tc.get("id") or f"call_{idx}_{uuid.uuid4().hex[:6]}"),
+                    name=name,
+                    arguments=args_dict,
+                    raw_arguments=raw_args,
+                )
+            )
+        usage = data.get("usage") or {}
+        pt = int(usage.get("prompt_tokens") or 0)
+        ct = int(usage.get("completion_tokens") or 0)
+        pt_details = usage.get("prompt_tokens_details") or {}
+        cache_r = int(
+            pt_details.get("cached_tokens")
+            or usage.get("cache_read_input_tokens")
+            or 0
+        )
+        cache_w = int(usage.get("cache_creation_input_tokens") or 0)
+        actual_model = str(data.get("model") or cand_model)
+        return text, actual_model, pt, ct, cache_r, cache_w, tcalls, str(thinking)
+
     # --------------------------------------------------------------------- API
     def chat(
         self,
-        messages: List[Dict[str, str]],
+        messages: Sequence[Dict[str, Any]],
         *,
         max_tokens: int = 2048,
         temperature: Optional[float] = 0.2,
         json_mode: bool = False,
         prefer: Optional[str] = None,
         exclude: Optional[Sequence[str]] = None,
+        tools: Optional[Sequence[Dict[str, Any]]] = None,
+        tool_choice: Optional[Any] = None,
+        enable_prompt_cache: bool = True,
+        reasoning_effort: Optional[str] = None,
     ) -> LLMResponse:
         chain = [p for p in self.providers if p.name not in set(exclude or ())]
         if prefer:
@@ -289,45 +887,89 @@ class LLMClient:
             models_to_try = [spec.model] + [m for m in spec.fallback_models if m != spec.model]
             for cand_model in models_to_try:
                 cand_spec = ProviderSpec(
-                    spec.name, spec.base_url, spec.key_env, cand_model, spec.local, spec.fallback_models
+                    spec.name,
+                    spec.base_url,
+                    spec.key_env,
+                    cand_model,
+                    spec.local,
+                    spec.fallback_models,
+                    spec.protocol,
                 )
-                for use_json in ([json_mode, False] if json_mode else [False]):
+                # Try native tools first when requested; on 400 fallback gracefully to json_mode / plain
+                if tools:
+                    modes: List[Tuple[bool, bool]] = [(True, False)]
+                    if json_mode:
+                        modes.append((False, True))
+                    modes.append((False, False))
+                elif json_mode:
+                    modes = [(False, True), (False, False)]
+                else:
+                    modes = [(False, False)]
+
+                for use_tools, use_json in modes:
                     t0 = time.perf_counter()
                     try:
-                        data = self._post(cand_spec, self._payload(cand_spec, messages, max_tokens, temperature, use_json))
-                        choice = (data.get("choices") or [{}])[0]
-                        text = ((choice.get("message") or {}).get("content")) or ""
-                        usage = data.get("usage") or {}
-                        pt = int(usage.get("prompt_tokens") or 0)
-                        ct = int(usage.get("completion_tokens") or 0)
-                        pt_details = usage.get("prompt_tokens_details") or {}
-                        cached_tok = int(
-                            pt_details.get("cached_tokens")
-                            or usage.get("cache_read_input_tokens")
-                            or 0
+                        payload = self._payload(
+                            cand_spec,
+                            messages,
+                            max_tokens,
+                            temperature,
+                            use_json,
+                            tools=tools if use_tools else None,
+                            tool_choice=tool_choice if use_tools else None,
+                            enable_prompt_cache=enable_prompt_cache,
+                            reasoning_effort=reasoning_effort,
                         )
-                        actual_model = data.get("model", cand_model)
+                        data = self._post(cand_spec, payload, enable_prompt_cache=enable_prompt_cache)
+                        text, actual_model, pt, ct, cache_r, cache_w, tcalls, thinking = self._parse_response(
+                            cand_spec, data, cand_model
+                        )
                         call_cost = estimate_cost_usd(
-                            actual_model, pt, ct, cache_read_tokens=cached_tok
+                            actual_model,
+                            pt,
+                            ct,
+                            cache_read_tokens=cache_r,
+                            cache_write_tokens=cache_w,
                         )
                         with self._lock:
                             self._failures[spec.name] = 0
                             self._cooldown_until.pop(spec.name, None)
                             self.total_prompt_tokens += pt
                             self.total_completion_tokens += ct
-                            self.total_cache_read_tokens += cached_tok
+                            self.total_cache_read_tokens += cache_r
+                            self.total_cache_write_tokens += cache_w
                             self.total_cost_usd = round(self.total_cost_usd + call_cost, 8)
                             self.calls += 1
-                        if not text.strip():
+                        if not text.strip() and not tcalls:
                             raise ValueError("empty completion")
-                        return LLMResponse(text, spec.name, actual_model, pt, ct,
-                                           round((time.perf_counter() - t0) * 1000, 1), attempts,
-                                           cache_read_tokens=cached_tok, cost_usd=call_cost)
+                        return LLMResponse(
+                            text,
+                            spec.name,
+                            actual_model,
+                            pt,
+                            ct,
+                            round((time.perf_counter() - t0) * 1000, 1),
+                            attempts,
+                            cache_read_tokens=cache_r,
+                            cost_usd=call_cost,
+                            cache_write_tokens=cache_w,
+                            tool_calls=tcalls,
+                            thinking_text=thinking,
+                        )
                     except urllib.error.HTTPError as exc:
                         detail = exc.read()[:300].decode("utf-8", "replace")
-                        attempts.append({"provider": spec.name, "model": cand_model, "http": exc.code, "detail": detail, "json_mode": use_json})
-                        if exc.code == 400 and use_json:
-                            continue  # provider rejects response_format -> retry same model without it
+                        attempts.append(
+                            {
+                                "provider": spec.name,
+                                "model": cand_model,
+                                "http": exc.code,
+                                "detail": detail,
+                                "use_tools": use_tools,
+                                "json_mode": use_json,
+                            }
+                        )
+                        if exc.code == 400 and (use_tools or use_json):
+                            continue  # model rejects tools or response_format -> retry next mode
                         if exc.code in (402, 404) or "not found" in detail.lower():
                             break  # advance to next candidate model
                         quota_dead = "insufficient_quota" in detail or "credit_balance" in detail
@@ -342,8 +984,21 @@ class LLMClient:
                                 if fails >= self.breaker_threshold:
                                     self._cooldown_until[spec.name] = time.monotonic() + self.breaker_cooldown_s
                         break
-                    except (urllib.error.URLError, TimeoutError, socket.timeout, OSError, ValueError, json.JSONDecodeError) as exc:
-                        attempts.append({"provider": spec.name, "model": cand_model, "error": f"{type(exc).__name__}: {str(exc)[:200]}"})
+                    except (
+                        urllib.error.URLError,
+                        TimeoutError,
+                        socket.timeout,
+                        OSError,
+                        ValueError,
+                        json.JSONDecodeError,
+                    ) as exc:
+                        attempts.append(
+                            {
+                                "provider": spec.name,
+                                "model": cand_model,
+                                "error": f"{type(exc).__name__}: {str(exc)[:200]}",
+                            }
+                        )
                         with self._lock:
                             fails = self._failures.get(spec.name, 0) + 1
                             self._failures[spec.name] = fails
@@ -387,14 +1042,14 @@ class LLMClient:
         )
         try:
             return self.chat(
-                mm_messages,  # type: ignore[arg-type]
+                mm_messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 json_mode=json_mode,
             )
         except Exception:
             # Automatic fallback when current provider/model is text-only: inject structured SoM table
-            txt_messages: List[Dict[str, str]] = []
+            txt_messages: List[Dict[str, Any]] = []
             if system_prompt:
                 txt_messages.append({"role": "system", "content": system_prompt})
             combined = f"{prompt}\n\n[STRUCTURED SET-OF-MARK & OCR TABLE FALLBACK]:\n{fallback_text_context}"
@@ -408,15 +1063,20 @@ class LLMClient:
 
     def chat_stream(
         self,
-        messages: Sequence[Dict[str, str]],
+        messages: Sequence[Dict[str, Any]],
         *,
         max_tokens: int = 2048,
         temperature: float = 0.2,
         json_mode: bool = False,
         prefer: Optional[str] = None,
         on_delta: Optional[Callable[[str], None]] = None,
+        on_thinking_delta: Optional[Callable[[str], None]] = None,
+        tools: Optional[Sequence[Dict[str, Any]]] = None,
+        tool_choice: Optional[Any] = None,
+        enable_prompt_cache: bool = True,
+        reasoning_effort: Optional[str] = None,
     ) -> LLMResponse:
-        """Stream OpenAI-compatible SSE token deltas (`on_delta`), falling back cleanly to `chat()`."""
+        """Stream OpenAI-compat or Anthropic SSE deltas (`on_delta`), assembling streamed `tool_calls` cleanly."""
         ordered = (
             [p for p in self.providers if p.name == prefer] + [p for p in self.providers if p.name != prefer]
             if prefer
@@ -426,67 +1086,222 @@ class LLMClient:
             raise LLMUnavailableError("No LLM providers configured/available")
 
         spec = ordered[0]
-        payload = self._payload(spec, list(messages), max_tokens, temperature, json_mode)
+        proto = (spec.protocol or "openai_compat").lower()
+        if proto == "gemini_native":
+            return self.chat(
+                messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                json_mode=json_mode,
+                prefer=prefer,
+                tools=tools,
+                tool_choice=tool_choice,
+                enable_prompt_cache=enable_prompt_cache,
+                reasoning_effort=reasoning_effort,
+            )
+
+        payload = self._payload(
+            spec,
+            list(messages),
+            max_tokens,
+            temperature,
+            json_mode,
+            tools=tools,
+            tool_choice=tool_choice,
+            enable_prompt_cache=enable_prompt_cache,
+            reasoning_effort=reasoning_effort,
+        )
         payload["stream"] = True
-        headers = {"Content-Type": "application/json", "Accept": "text/event-stream", "User-Agent": "omni-executor/4.4"}
-        key = spec.api_key()
-        if key:
-            headers["Authorization"] = f"Bearer {key}"
+        url, headers = self._endpoint_and_headers(
+            spec, stream=True, enable_prompt_cache=enable_prompt_cache
+        )
         req = urllib.request.Request(
-            f"{spec.base_url.rstrip('/')}/chat/completions",
+            url,
             data=json.dumps(payload).encode("utf-8"),
             headers=headers,
             method="POST",
         )
         t0 = time.perf_counter()
         chunks: List[str] = []
-        pt, ct = 0, 0
+        think_chunks: List[str] = []
+        streamed_tc_acc: Dict[int, Dict[str, str]] = {}
+        pt, ct, cache_r, cache_w = 0, 0, 0, 0
+        actual_model = spec.model
         try:
             with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
                 ctype = (resp.headers.get("Content-Type") or "").lower()
                 if "text/event-stream" not in ctype:
                     raw = resp.read().decode("utf-8", errors="replace")
                     data = json.loads(raw)
-                    text = ((data.get("choices") or [{}])[0].get("message") or {}).get("content", "")
+                    text, actual_model, pt, ct, cache_r, cache_w, tcalls, thinking = self._parse_response(
+                        spec, data, spec.model
+                    )
                     if text and on_delta is not None:
                         on_delta(text)
-                    usage = data.get("usage") or {}
-                    pt = int(usage.get("prompt_tokens") or 0)
-                    ct = int(usage.get("completion_tokens") or 0)
-                    cost = estimate_cost_usd(data.get("model", spec.model), pt, ct)
+                    if thinking and on_thinking_delta is not None:
+                        on_thinking_delta(thinking)
+                    cost = estimate_cost_usd(
+                        actual_model, pt, ct, cache_read_tokens=cache_r, cache_write_tokens=cache_w
+                    )
                     with self._lock:
                         self.total_prompt_tokens += pt
                         self.total_completion_tokens += ct
+                        self.total_cache_read_tokens += cache_r
+                        self.total_cache_write_tokens += cache_w
                         self.total_cost_usd = round(self.total_cost_usd + cost, 8)
                         self.calls += 1
-                    return LLMResponse(text, spec.name, data.get("model", spec.model), pt, ct, round((time.perf_counter() - t0) * 1000, 1), cost_usd=cost)
+                    return LLMResponse(
+                        text,
+                        spec.name,
+                        actual_model,
+                        pt,
+                        ct,
+                        round((time.perf_counter() - t0) * 1000, 1),
+                        cache_read_tokens=cache_r,
+                        cost_usd=cost,
+                        cache_write_tokens=cache_w,
+                        tool_calls=tcalls,
+                        thinking_text=thinking,
+                    )
 
                 for raw_line in resp:
                     line = raw_line.decode("utf-8", errors="replace").strip()
                     if not line.startswith("data:"):
                         continue
                     data_str = line[5:].strip()
-                    if data_str == "[DONE]":
-                        break
+                    if not data_str or data_str == "[DONE]":
+                        if data_str == "[DONE]":
+                            break
+                        continue
                     ev = json.loads(data_str)
-                    delta = (((ev.get("choices") or [{}])[0]).get("delta") or {}).get("content")
-                    if delta:
-                        chunks.append(delta)
+
+                    if proto == "anthropic":
+                        etype = ev.get("type")
+                        if etype == "message_start":
+                            m_obj = ev.get("message") or {}
+                            actual_model = str(m_obj.get("model") or actual_model)
+                            u = m_obj.get("usage") or {}
+                            cache_r = int(u.get("cache_read_input_tokens") or cache_r)
+                            cache_w = int(u.get("cache_creation_input_tokens") or cache_w)
+                            pt = int(u.get("input_tokens") or 0) + cache_r + cache_w
+                        elif etype == "content_block_start":
+                            idx = int(ev.get("index", 0))
+                            cb = ev.get("content_block") or {}
+                            if cb.get("type") == "tool_use":
+                                streamed_tc_acc[idx] = {
+                                    "id": str(cb.get("id") or f"toolu_{idx}"),
+                                    "name": str(cb.get("name") or ""),
+                                    "arguments": "",
+                                }
+                        elif etype == "content_block_delta":
+                            idx = int(ev.get("index", 0))
+                            delta_obj = ev.get("delta") or {}
+                            dtype = delta_obj.get("type")
+                            if dtype == "text_delta" and delta_obj.get("text"):
+                                txt = str(delta_obj["text"])
+                                chunks.append(txt)
+                                if on_delta is not None:
+                                    on_delta(txt)
+                            elif dtype == "thinking_delta" and delta_obj.get("thinking"):
+                                tk = str(delta_obj["thinking"])
+                                think_chunks.append(tk)
+                                if on_thinking_delta is not None:
+                                    on_thinking_delta(tk)
+                            elif dtype == "input_json_delta" and delta_obj.get("partial_json"):
+                                acc = streamed_tc_acc.setdefault(idx, {"id": f"toolu_{idx}", "name": "", "arguments": ""})
+                                acc["arguments"] += str(delta_obj["partial_json"])
+                        elif etype == "message_delta":
+                            u = ev.get("usage") or {}
+                            ct = int(u.get("output_tokens") or ct)
+                        continue
+
+                    # OpenAI-compatible SSE stream
+                    if ev.get("model"):
+                        actual_model = str(ev["model"])
+                    delta_obj = ((ev.get("choices") or [{}])[0]).get("delta") or {}
+                    delta_txt = delta_obj.get("content")
+                    if delta_txt:
+                        chunks.append(delta_txt)
                         if on_delta is not None:
-                            on_delta(delta)
+                            on_delta(delta_txt)
+                    delta_think = delta_obj.get("reasoning_content") or delta_obj.get("reasoning")
+                    if delta_think:
+                        think_chunks.append(str(delta_think))
+                        if on_thinking_delta is not None:
+                            on_thinking_delta(str(delta_think))
+                    for tc_delta in delta_obj.get("tool_calls") or []:
+                        if not isinstance(tc_delta, dict):
+                            continue
+                        idx = int(tc_delta.get("index", 0))
+                        acc = streamed_tc_acc.setdefault(idx, {"id": "", "name": "", "arguments": ""})
+                        if tc_delta.get("id"):
+                            acc["id"] = str(tc_delta["id"])
+                        fn_d = tc_delta.get("function") or {}
+                        if fn_d.get("name"):
+                            acc["name"] += str(fn_d["name"])
+                        if fn_d.get("arguments"):
+                            acc["arguments"] += str(fn_d["arguments"])
                     if ev.get("usage"):
-                        pt = int(ev["usage"].get("prompt_tokens") or pt)
-                        ct = int(ev["usage"].get("completion_tokens") or ct)
+                        u = ev["usage"]
+                        pt = int(u.get("prompt_tokens") or pt)
+                        ct = int(u.get("completion_tokens") or ct)
+                        ptd = u.get("prompt_tokens_details") or {}
+                        cache_r = int(ptd.get("cached_tokens") or u.get("cache_read_input_tokens") or cache_r)
+
+            tcalls_out: List[ToolCall] = []
+            for idx in sorted(streamed_tc_acc.keys()):
+                acc = streamed_tc_acc[idx]
+                if not acc["name"]:
+                    continue
+                args_dict, raw_args = _safe_parse_tool_args(acc["arguments"])
+                tcalls_out.append(
+                    ToolCall(
+                        id=acc["id"] or f"call_{idx}_{uuid.uuid4().hex[:6]}",
+                        name=acc["name"],
+                        arguments=args_dict,
+                        raw_arguments=raw_args,
+                    )
+                )
+
             full_text = "".join(chunks)
-            cost = estimate_cost_usd(spec.model, pt, ct)
+            full_thinking = "".join(think_chunks)
+            if not full_text.strip() and not tcalls_out:
+                raise ValueError("empty streamed completion")
+            cost = estimate_cost_usd(
+                actual_model, pt, ct, cache_read_tokens=cache_r, cache_write_tokens=cache_w
+            )
             with self._lock:
                 self.total_prompt_tokens += pt
                 self.total_completion_tokens += ct
+                self.total_cache_read_tokens += cache_r
+                self.total_cache_write_tokens += cache_w
                 self.total_cost_usd = round(self.total_cost_usd + cost, 8)
                 self.calls += 1
-            return LLMResponse(full_text, spec.name, spec.model, pt, ct, round((time.perf_counter() - t0) * 1000, 1), cost_usd=cost)
+            return LLMResponse(
+                full_text,
+                spec.name,
+                actual_model,
+                pt,
+                ct,
+                round((time.perf_counter() - t0) * 1000, 1),
+                cache_read_tokens=cache_r,
+                cost_usd=cost,
+                cache_write_tokens=cache_w,
+                tool_calls=tcalls_out,
+                thinking_text=full_thinking,
+            )
         except Exception:
-            return self.chat(messages, max_tokens=max_tokens, temperature=temperature, json_mode=json_mode, prefer=prefer)
+            return self.chat(
+                messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                json_mode=json_mode,
+                prefer=prefer,
+                tools=tools,
+                tool_choice=tool_choice,
+                enable_prompt_cache=enable_prompt_cache,
+                reasoning_effort=reasoning_effort,
+            )
 
 
 def extract_json_object(text: str) -> Dict[str, Any]:
