@@ -85,6 +85,13 @@ def test_p3_2_mnemos_bitemporal_adapter(tmp_path: Path) -> None:
     assert "9443" in adr_file.read_text(encoding="utf-8")
 
 
+_MSEA_ORGAN_PATH = Path("F:/Modular Self-Evolving Agent (MSEA)/src/msea/memory/memory_organ.mjs")
+
+
+@pytest.mark.skipif(
+    not _MSEA_ORGAN_PATH.is_file(),
+    reason="External MSEA repository not present on this host",
+)
 def test_p3_3_msea_frankenstein_ancestry_conflicts_quarantine(tmp_path: Path) -> None:
     client = MSEAFrankensteinClient(tmp_path / "msea_test_atoms.json")
 
@@ -135,6 +142,10 @@ def test_p3_3_msea_frankenstein_ancestry_conflicts_quarantine(tmp_path: Path) ->
     assert gov_atoms[low_conf["id"]]["status"] == "quarantined"
 
 
+@pytest.mark.skipif(
+    not _MSEA_ORGAN_PATH.is_file(),
+    reason="External MSEA repository not present on this host",
+)
 def test_p3_4_triad_memory_provider_hermes_abc(tmp_path: Path) -> None:
     provider = TriadMemoryProvider(tmp_path / "triad")
     assert provider.is_available() is True
