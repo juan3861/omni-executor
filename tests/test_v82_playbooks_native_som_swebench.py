@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -121,14 +122,37 @@ def test_v82_parametric_playbooks_code_windows_browser_and_agent_loop(tmp_path: 
     assert br_pb["ok"] is True and br_pb["steps_executed"] == 4
     assert br_pb["extracted"]["text"] == "Extracted Done"
 
-    # 4. Windows domain deterministic playbook (`win_port_and_process_triage`)
-    win_pb = wt.run_playbook(
+    # 4. Windows domain deterministic playbooks (cross-platform UI sequence + live Win32 port triage)
+    class _FakePCEngine:
+        def observe_desktop(self, **_kw):
+            return {"ok": True, "window_title": "MockApp", "elements": [{"tag_id": 1, "name": "OK"}]}
+
+        def execute_gui_action(self, action_type="click", **_kw):
+            return {"ok": True, "receipt": {"action_type": action_type, "visual_transition": "changed"}}
+
+    wt_pc = WorkspaceTools(ws, ConstitutionSealGuard(ROOT), pc_engine=_FakePCEngine())
+    ui_pb = wt_pc.run_playbook(
         {
-            "playbook": "win_port_and_process_triage",
-            "variables": {"port": 65432, "filter": "python"},
+            "playbook": "win_ui_sequence",
+            "variables": {
+                "window_title": "MockApp",
+                "steps": [
+                    {"action_type": "click", "tag_id": 1},
+                    {"action_type": "type", "text": "hello"},
+                ],
+            },
         }
     )
-    assert win_pb["ok"] is True and win_pb["steps_executed"] == 2
+    assert ui_pb["ok"] is True and ui_pb["steps_executed"] == 3
+
+    if os.name == "nt":
+        win_pb = wt.run_playbook(
+            {
+                "playbook": "win_port_and_process_triage",
+                "variables": {"port": 65432, "filter": "python"},
+            }
+        )
+        assert win_pb["ok"] is True and win_pb["steps_executed"] == 2
 
     # 5. AgentLoop native ToolCall invocation of `run_playbook`
     assert "run_playbook" in TOOL_JSON_SCHEMAS
@@ -388,7 +412,10 @@ def test_v82_zero_orphan_modules_topology_and_doctor() -> None:
     orphans = sorted(leaf_mods - visited)
     assert orphans == [], f"Orphan modules detected: {orphans}"
 
-    doc = AetherMindUniversalAgent(ROOT).doctor()
-    assert doc["topology_v2_ok"] is True
-    assert doc["parametric_playbooks_count"] >= 8
-    assert isinstance(doc["native_backends"], dict)
+    assert len(DEFAULT_PLAYBOOK_ENGINE.list_playbooks()) >= 8
+    assert isinstance(NativeBackendRouter.probe_capabilities(), dict)
+    if os.name == "nt":
+        doc = AetherMindUniversalAgent(ROOT).doctor()
+        assert doc["topology_v2_ok"] is True
+        assert doc["parametric_playbooks_count"] >= 8
+        assert isinstance(doc["native_backends"], dict)

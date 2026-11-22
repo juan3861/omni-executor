@@ -311,13 +311,6 @@ def main(argv: list[str] | None = None) -> int:
             acp.serve_stdio()
         return 0
 
-    agent = AetherMindUniversalAgent()
-
-    if args.cmd == "doctor":
-        rep = agent.doctor()
-        print(json.dumps(rep, indent=2, ensure_ascii=False))
-        return 0 if rep["homeostasis_healthy"] and rep["topology_v2_ok"] else 1
-
     if args.cmd == "shield":
         from am_ua.security.agent_shield import AgentShieldAuditor
         rep = AgentShieldAuditor().scan_directory(args.target)
@@ -348,6 +341,13 @@ def main(argv: list[str] | None = None) -> int:
         res_det = DeterministicTaskOffloader.execute_rail(args.rail, ws_det, params=params_det)
         print(json.dumps(res_det, indent=2, ensure_ascii=False, default=str))
         return 0 if res_det.get("ok", True) else 1
+
+    agent = AetherMindUniversalAgent()
+
+    if args.cmd == "doctor":
+        rep = agent.doctor()
+        print(json.dumps(rep, indent=2, ensure_ascii=False))
+        return 0 if rep["homeostasis_healthy"] and rep["topology_v2_ok"] else 1
 
     if args.cmd == "radar":
         ucip = agent.radar.build_ucip_summary(args.target)
