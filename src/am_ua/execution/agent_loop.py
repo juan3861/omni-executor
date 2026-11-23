@@ -1326,7 +1326,7 @@ class AgentLoop:
                                             from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
 
                                             fix_res = DeterministicTaskOffloader.code_autofix_and_lint(
-                                                ws.ws, target=str(edited_p), apply_fix=True
+                                                ws.ws, target=str(edited_p), apply_fix=False
                                             )
                                             obs["auto_lint"] = {
                                                 "ok": fix_res.get("ok"),
