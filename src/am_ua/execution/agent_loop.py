@@ -1224,6 +1224,7 @@ class AgentLoop:
                                     post_notes = self.hook_engine.run_post(tool, call_args, obs, ws.ws)
                                     if post_notes:
                                         obs["hook_annotations"] = post_notes
+                                    self._attach_visual_som_recovery(self.llm, tool, args, obs)
                                     guard_dec = self.hook_engine.run_output_guardrails(tool, call_args, obs, ws.ws)
                                     if guard_dec.redacted_obs is not None:
                                         obs = guard_dec.redacted_obs
@@ -1280,6 +1281,7 @@ class AgentLoop:
                                     post_notes = self.hook_engine.run_post(tool, call_args, obs, ws.ws)
                                     if post_notes:
                                         obs["hook_annotations"] = post_notes
+                                    self._attach_visual_som_recovery(self.llm, tool, args, obs)
                                     guard_dec = self.hook_engine.run_output_guardrails(tool, call_args, obs, ws.ws)
                                     if guard_dec.redacted_obs is not None:
                                         obs = guard_dec.redacted_obs
@@ -1471,6 +1473,29 @@ class AgentLoop:
     # ------------------------------------------------------------------ helpers
     _validate_output_schema = staticmethod(_lp_validate_output_schema)
     evaluate_pre_critic = staticmethod(_lp_evaluate_pre_critic)
+
+    @staticmethod
+    def _attach_visual_som_recovery(llm: Any, tool: str, args: Dict[str, Any], obs: Dict[str, Any]) -> None:
+        if tool not in ("browser_act", "pc_act"):
+            return
+        rec = obs.get("receipt") if isinstance(obs.get("receipt"), dict) else {}
+        unchanged = (rec.get("visual_state_changed") is False) or (obs.get("ok") is False)
+        img_p = (
+            rec.get("visual_screenshot_path")
+            or obs.get("som_screenshot_path")
+            or rec.get("annotated_screenshot_path")
+        )
+        if unchanged and img_p and hasattr(llm, "chat_multimodal") and Path(str(img_p)).is_file():
+            try:
+                vlm_resp = llm.chat_multimodal(
+                    f"UI action '{tool}' ({args}) did not verify a visual state change. Inspect this Set-of-Mark screenshot and suggest next locator/idx or diagnosis.",
+                    str(img_p),
+                    max_tokens=300,
+                    json_mode=False,
+                )
+                obs["vlm_som_recovery_hint"] = str(getattr(vlm_resp, "text", ""))[:500]
+            except Exception:
+                pass
 
     @staticmethod
     def _condense(messages: List[Dict[str, Any]], max_chars: int = 45_000) -> List[Dict[str, Any]]:

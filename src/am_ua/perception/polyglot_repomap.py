@@ -62,6 +62,12 @@ POLYGLOT_DEF_PATTERNS: Dict[str, List[Tuple[str, re.Pattern[str]]]] = {
         ("type", re.compile(r"\btype\s+([A-Za-z_][A-Za-z0-9_]*)\s+(?:struct|interface)\b")),
         ("func", re.compile(r"\bfunc\s+(?:\([^)]+\)\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*\(")),
     ],
+    ".cpp": [
+        ("class", re.compile(r"\b(?:class|struct)\s+([A-Za-z_][A-Za-z0-9_]*)")),
+    ],
+    ".cc": [
+        ("class", re.compile(r"\b(?:class|struct)\s+([A-Za-z_][A-Za-z0-9_]*)")),
+    ],
 }
 
 IDENTIFIER_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]{2,}\b")
@@ -122,9 +128,58 @@ class PolyglotRepoMapper:
                     refs.add(alias.name)
         return defs, refs
 
+    def _extract_treesitter_symbols(
+        self, ext: str, rel_path: str, text: str
+    ) -> Optional[Tuple[List[SymbolDef], Set[str]]]:
+        """Extract symbols using native `tree_sitter` language bindings when installed."""
+        import importlib
+
+        lang_map = {
+            ".js": ("tree_sitter_javascript", "language"),
+            ".mjs": ("tree_sitter_javascript", "language"),
+            ".ts": ("tree_sitter_typescript", "language_typescript"),
+            ".rs": ("tree_sitter_rust", "language"),
+            ".go": ("tree_sitter_go", "language"),
+            ".cpp": ("tree_sitter_cpp", "language"),
+            ".cc": ("tree_sitter_cpp", "language"),
+        }
+        spec = lang_map.get(ext)
+        if not spec:
+            return None
+        try:
+            from tree_sitter import Language, Parser  # type: ignore[import-not-found]
+
+            mod = importlib.import_module(spec[0])
+            lang_fn = getattr(mod, spec[1])
+            parser = Parser(Language(lang_fn()))
+            tree = parser.parse(text.encode("utf-8", errors="replace"))
+        except Exception:
+            return None
+
+        defs: List[SymbolDef] = []
+        target_types = {
+            "class_declaration", "function_declaration", "interface_declaration",
+            "struct_item", "trait_item", "function_item", "type_spec",
+            "function_definition", "class_specifier", "struct_specifier",
+        }
+        stack = [tree.root_node]
+        while stack:
+            node = stack.pop()
+            if node.type in target_types:
+                name_node = node.child_by_field_name("name")
+                if name_node is not None:
+                    sym = text.encode("utf-8", errors="replace")[name_node.start_byte:name_node.end_byte].decode("utf-8", errors="replace")
+                    if sym:
+                        defs.append(SymbolDef(sym, node.type, rel_path, node.start_point[0] + 1))
+            stack.extend(reversed(node.children))
+        return defs, set(IDENTIFIER_RE.findall(text))
+
     def _extract_polyglot_symbols(
         self, ext: str, rel_path: str, text: str
     ) -> Tuple[List[SymbolDef], Set[str]]:
+        ts_res = self._extract_treesitter_symbols(ext, rel_path, text)
+        if ts_res is not None:
+            return ts_res
         defs: List[SymbolDef] = []
         patterns = POLYGLOT_DEF_PATTERNS.get(ext, [])
         for lineno, line in enumerate(text.splitlines(), start=1):
@@ -303,6 +358,7 @@ class InterRepoTopologyGate:
         "gui": {"governance", "contracts", "security", "execution"},
         "evolution": {"governance", "contracts", "execution", "cognition"},
         "lifecycle": {"governance", "contracts", "execution", "memory", "perception"},
+        "ui": {"governance", "contracts", "execution", "cognition", "memory", "security"},
     }
 
     def __init__(self, allowed_dag: Optional[Dict[str, Set[str]]] = None) -> None:

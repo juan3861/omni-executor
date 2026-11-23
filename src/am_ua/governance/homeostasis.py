@@ -163,6 +163,8 @@ class HomeostasisGovernor:
         max_tokens_budget: int = 500_000,
         max_wall_seconds: float = 3600.0,
         max_stagnant_turns: int = 4,
+        max_cost_usd: Optional[float] = None,
+        budget_mode: str = "on_demand",
     ) -> None:
         import tempfile
 
@@ -180,12 +182,33 @@ class HomeostasisGovernor:
         self.max_tokens_budget = max_tokens_budget
         self.max_wall_seconds = max_wall_seconds
         self.max_stagnant_turns = max_stagnant_turns
+        self.max_cost_usd: Optional[float] = max_cost_usd
+        self.budget_mode: str = budget_mode if budget_mode in ("on_demand", "fixed") else "on_demand"
 
         self._started_at = time.monotonic()
         self._tokens_spent = 0
         self._tool_calls_spent = 0
         self._stagnant_turns = 0
+        self.cost_usd_spent: float = 0.0
         self.enforce_safe_temp()
+
+    def set_budget_mode(self, mode: str, max_cost_usd: Optional[float] = None) -> Dict[str, object]:
+        """Toggle live between `on_demand` (free tier / uncapped) and `fixed` USD ceiling."""
+        norm = (mode or "on_demand").strip().lower()
+        if norm not in ("on_demand", "fixed"):
+            raise ValueError(f"Unsupported budget mode: {mode!r}")
+        if norm == "fixed":
+            if max_cost_usd is None or float(max_cost_usd) < 0:
+                raise ValueError("max_cost_usd must be >= 0 when budget_mode='fixed'")
+            self.max_cost_usd = float(max_cost_usd)
+        else:
+            self.max_cost_usd = float(max_cost_usd) if max_cost_usd is not None else None
+        self.budget_mode = norm
+        return {
+            "budget_mode": self.budget_mode,
+            "max_cost_usd": self.max_cost_usd,
+            "cost_usd_spent": round(self.cost_usd_spent, 6),
+        }
 
     def credit_paused_time(self, seconds: float) -> None:
         """Exclude human-intervention pause time from the R09 wall-clock budget."""
@@ -240,10 +263,13 @@ class HomeostasisGovernor:
             healthy = False
             warnings.append(f"Available RAM critically low ({avail_mb:.1f} MB < {self.min_avail_ram_mb} MB)")
 
-        temp_ok = os.environ.get("TMP", "").upper().startswith("F:") and os.environ.get("TEMP", "").upper().startswith("F:")
-        if not temp_ok:
-            healthy = False
-            warnings.append("TMP/TEMP env not anchored to F:")
+        if os.name == "nt" and Path("F:/").exists():
+            temp_ok = os.environ.get("TMP", "").upper().startswith("F:") and os.environ.get("TEMP", "").upper().startswith("F:")
+            if not temp_ok:
+                healthy = False
+                warnings.append("TMP/TEMP env not anchored to F:")
+        else:
+            temp_ok = bool(os.environ.get("TMP") or os.environ.get("TMPDIR"))
 
         return HomeostasisSnapshot(
             timestamp=time.time(),
@@ -257,16 +283,28 @@ class HomeostasisGovernor:
             avail_commit_mb=round(avail_commit_mb, 2),
         )
 
-    def record_turn_cost(self, *, tokens: int, tool_calls: int = 1, made_verified_progress: bool = True) -> Dict[str, object]:
-        """R09 Budget & Economic Stop-Loss check: halts unproductive loops automatically."""
+    def record_turn_cost(
+        self,
+        *,
+        tokens: int,
+        tool_calls: int = 1,
+        made_verified_progress: bool = True,
+        cost_usd: float = 0.0,
+    ) -> Dict[str, object]:
+        """R09 Budget & Economic Stop-Loss check: halts unproductive or over-budget loops."""
         self._tokens_spent += max(0, int(tokens))
         self._tool_calls_spent += max(0, int(tool_calls))
+        self.cost_usd_spent += max(0.0, float(cost_usd))
         if made_verified_progress:
             self._stagnant_turns = 0
         else:
             self._stagnant_turns += 1
 
         elapsed = time.monotonic() - self._started_at
+        if self.max_cost_usd is not None and self.cost_usd_spent > self.max_cost_usd:
+            raise ResourceExhaustedError(
+                f"R09 USD budget exceeded (${self.cost_usd_spent:.4f} > ${self.max_cost_usd:.4f})"
+            )
         if self._tokens_spent > self.max_tokens_budget:
             raise ResourceExhaustedError(
                 f"R09 Token budget exceeded ({self._tokens_spent} > {self.max_tokens_budget})"
@@ -283,6 +321,9 @@ class HomeostasisGovernor:
             "tokens_spent": self._tokens_spent,
             "tool_calls_spent": self._tool_calls_spent,
             "stagnant_turns": self._stagnant_turns,
+            "cost_usd_spent": round(self.cost_usd_spent, 6),
+            "budget_mode": self.budget_mode,
+            "max_cost_usd": self.max_cost_usd,
             "elapsed_seconds": round(elapsed, 3),
         }
 

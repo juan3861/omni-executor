@@ -12,6 +12,7 @@ executing the entire multi-step sequence deterministically at 0 extra LLM turns.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 import re
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
@@ -472,6 +473,252 @@ class ParametricPlaybookEngine:
                 PlaybookStep("fetch", "web_fetch", {"url": "{{url}}", "max_chars": "{{max_chars}}"}, save_as="fetch_res"),
             ],
             estimated_tokens_saved=5000,
+        )
+
+        # 9. BROWSER DOMAIN: Persistent session / cookies verification + extraction
+        def _web_session_cookie_flow(ctx: Dict[str, Any], ws_tools: Any) -> Dict[str, Any]:
+            url = str(ctx["url"]).strip()
+            headless = bool(ctx.get("headless", True))
+            extract_sel = str(ctx.get("extract_selector") or "body")
+            state_path = str(ctx.get("state_file") or ".browser_session_meta.json")
+            obs = ws_tools.browser_observe({"url": url, "headless": headless})
+            if not obs.get("ok", True) or obs.get("blocked_by_domain_guard"):
+                return {"ok": False, "error": obs.get("error", "observe failed"), "observation": obs}
+            ext = ws_tools.browser_extract({"selector": extract_sel, "headless": headless})
+            meta = {"url": obs.get("url"), "state_file": state_path, "element_count": obs.get("element_count", 0)}
+            return {"ok": bool(ext.get("ok", True)), "session": meta, "extracted": ext, "steps_executed": 2}
+
+        self.register_custom_runner(
+            "web_session_cookie_flow",
+            domain="browser",
+            description="Observe a URL within a tracked session metadata flow and extract target DOM content deterministically.",
+            required_vars=("url",),
+            optional_vars={"state_file": ".browser_session_meta.json", "extract_selector": "body", "headless": True},
+            runner_fn=_web_session_cookie_flow,
+            estimated_tokens_saved=9000,
+        )
+
+        # 10. BROWSER DOMAIN: Deterministic paginated extraction loop (next selector + dedupe)
+        def _web_paginated_extract(ctx: Dict[str, Any], ws_tools: Any) -> Dict[str, Any]:
+            url = str(ctx["url"]).strip()
+            headless = bool(ctx.get("headless", True))
+            extract_sel = str(ctx.get("extract_selector") or "body")
+            next_sel = str(ctx.get("next_selector") or "a.next")
+            max_pages = min(20, max(1, int(ctx.get("max_pages", 3))))
+            pages: List[Dict[str, Any]] = []
+            seen_texts: set[str] = set()
+            obs = ws_tools.browser_observe({"url": url, "headless": headless})
+            if not obs.get("ok", True):
+                return {"ok": False, "error": obs.get("error", "observe failed"), "pages": pages}
+            for p_idx in range(1, max_pages + 1):
+                ext = ws_tools.browser_extract({"selector": extract_sel, "headless": headless})
+                txt = str(ext.get("text") or "")
+                if txt and txt in seen_texts:
+                    break
+                seen_texts.add(txt)
+                pages.append({"page": p_idx, "text": txt, "ok": bool(ext.get("ok", True))})
+                if p_idx >= max_pages:
+                    break
+                nxt = ws_tools.browser_act({"action": "click", "target": next_sel, "headless": headless})
+                if not nxt.get("ok", True):
+                    break
+            return {"ok": bool(pages), "pages_collected": len(pages), "pages": pages, "steps_executed": len(pages) * 2}
+
+        self.register_custom_runner(
+            "web_paginated_extract",
+            domain="browser",
+            description="Deterministically paginate across multi-page lists/tables using a next-button selector until duplicate or exhausted.",
+            required_vars=("url",),
+            optional_vars={"next_selector": "a.next", "extract_selector": "body", "max_pages": 3, "headless": True},
+            runner_fn=_web_paginated_extract,
+            estimated_tokens_saved=15000,
+        )
+
+        # 11. BROWSER DOMAIN: SSRF-guarded download + SHA-256 checksum validation
+        def _web_download_verify_sha256(ctx: Dict[str, Any], ws_tools: Any) -> Dict[str, Any]:
+            import hashlib
+
+            url = str(ctx["url"]).strip()
+            expected_sha = str(ctx.get("expected_sha256") or "").strip().lower()
+            fetch_res = ws_tools.web_fetch({"url": url, "max_chars": int(ctx.get("max_chars", 50000))})
+            if not fetch_res.get("ok"):
+                return {"ok": False, "error": fetch_res.get("error", "fetch failed"), "fetch": fetch_res}
+            payload = str(fetch_res.get("content") or "").encode("utf-8")
+            digest = hashlib.sha256(payload).hexdigest()
+            matched = (digest == expected_sha) if expected_sha else True
+            return {"ok": matched, "sha256": digest, "bytes": len(payload), "expected_sha256": expected_sha or None, "steps_executed": 1}
+
+        self.register_custom_runner(
+            "web_download_and_verify_sha256",
+            domain="browser",
+            description="Fetch a public URL safely via SSRF guard and compute/verify its SHA-256 checksum deterministically.",
+            required_vars=("url",),
+            optional_vars={"expected_sha256": "", "max_chars": 50000},
+            runner_fn=_web_download_verify_sha256,
+            estimated_tokens_saved=6500,
+        )
+
+        # 12. BROWSER DOMAIN: SPA retry/wait observe -> act -> extract
+        def _web_spa_wait_and_act(ctx: Dict[str, Any], ws_tools: Any) -> Dict[str, Any]:
+            url = str(ctx["url"]).strip()
+            headless = bool(ctx.get("headless", True))
+            wait_ms = min(5000, max(50, int(ctx.get("wait_ms", 250))))
+            obs = ws_tools.browser_observe({"url": url, "wait_ms": wait_ms, "headless": headless})
+            if not obs.get("ok", True):
+                return {"ok": False, "error": obs.get("error", "SPA observe failed")}
+            steps = ctx.get("steps") or []
+            trace: List[Dict[str, Any]] = []
+            for i, st in enumerate(steps, 1):
+                res = ws_tools.browser_act({**(st if isinstance(st, dict) else {}), "headless": headless})
+                trace.append({"step": i, "ok": bool(res.get("ok", True)), "observation": res})
+                if not res.get("ok", True):
+                    return {"ok": False, "steps_executed": i + 1, "trace": trace, "error": res.get("error")}
+            ext = ws_tools.browser_extract({"selector": str(ctx.get("extract_selector") or "body"), "headless": headless})
+            return {"ok": bool(ext.get("ok", True)), "extracted": ext, "steps_executed": len(trace) + 2, "trace": trace}
+
+        self.register_custom_runner(
+            "web_spa_wait_and_act",
+            domain="browser",
+            description="Wait for client-rendered SPA stabilization, execute indexed DOM steps, and extract output.",
+            required_vars=("url",),
+            optional_vars={"wait_ms": 250, "steps": [], "extract_selector": "body", "headless": True},
+            runner_fn=_web_spa_wait_and_act,
+            estimated_tokens_saved=12000,
+        )
+
+        # 13. WINDOWS DOMAIN: Deterministic ZIP archive create/extract inside workspace
+        def _win_batch_file_archive(ctx: Dict[str, Any], ws_tools: Any) -> Dict[str, Any]:
+            import zipfile
+
+            mode = str(ctx.get("mode", "create")).strip().lower()
+            archive_rel = str(ctx["archive_path"])
+            arc_p = ws_tools.resolve(archive_rel)
+            if mode == "create":
+                ws_tools.seal_guard.assert_write_allowed(arc_p, actor="agent_loop")
+                arc_p.parent.mkdir(parents=True, exist_ok=True)
+                src_files = ctx.get("files") or []
+                added: List[str] = []
+                with zipfile.ZipFile(arc_p, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                    for rel in src_files:
+                        fp = ws_tools.resolve(str(rel))
+                        if fp.is_file():
+                            zf.write(fp, arcname=fp.relative_to(ws_tools.ws).as_posix())
+                            added.append(fp.relative_to(ws_tools.ws).as_posix())
+                return {"ok": True, "mode": "create", "archive": arc_p.relative_to(ws_tools.ws).as_posix(), "files": added, "steps_executed": 1}
+            if mode == "extract":
+                dest_dir = ws_tools.resolve(str(ctx.get("dest_dir") or "."))
+                ws_tools.seal_guard.assert_write_allowed(dest_dir / ".zip_probe", actor="agent_loop")
+                extracted: List[str] = []
+                with zipfile.ZipFile(arc_p, "r") as zf:
+                    for member in zf.namelist():
+                        out_p = ws_tools.resolve(str(Path(dest_dir.relative_to(ws_tools.ws)) / member))
+                        if member.endswith("/"):
+                            out_p.mkdir(parents=True, exist_ok=True)
+                        else:
+                            out_p.parent.mkdir(parents=True, exist_ok=True)
+                            out_p.write_bytes(zf.read(member))
+                            extracted.append(out_p.relative_to(ws_tools.ws).as_posix())
+                return {"ok": True, "mode": "extract", "extracted": extracted, "steps_executed": 1}
+            return {"ok": False, "error": f"Unsupported archive mode: {mode!r}"}
+
+        self.register_custom_runner(
+            "win_batch_file_archive",
+            domain="windows",
+            description="Create or safely extract ZIP archives strictly inside the workspace boundary (zip-slip guarded).",
+            required_vars=("archive_path",),
+            optional_vars={"mode": "create", "files": [], "dest_dir": "."},
+            runner_fn=_win_batch_file_archive,
+            estimated_tokens_saved=7000,
+        )
+
+        # 14. WINDOWS DOMAIN: System health, env PATH & process snapshot
+        self.register(
+            "win_system_health_and_services",
+            domain="windows",
+            description="Run deterministic system process inventory + host CPU/homeostasis rail diagnostics.",
+            required_vars=(),
+            optional_vars={"filter": "python"},
+            steps=[
+                PlaybookStep("procs", "pc_process", {"action": "list", "filter": "{{filter}}"}, save_as="proc_res"),
+                PlaybookStep("silicon", "deterministic_exec", {"rail": "cpu_silicon_probe"}, save_as="cpu_res", on_fail="continue"),
+            ],
+            estimated_tokens_saved=6000,
+        )
+
+        # 15. WINDOWS DOMAIN: Multi-app OCR observe -> Clipboard transfer -> Target act
+        def _win_multiapp_ocr_transfer(ctx: Dict[str, Any], ws_tools: Any) -> Dict[str, Any]:
+            src_win = str(ctx.get("source_window") or "")
+            dst_win = str(ctx.get("target_window") or "")
+            obs_src = ws_tools.pc_observe({"window_title": src_win, "include_ocr": True})
+            payload = str(ctx.get("text") or obs_src.get("ocr_text") or obs_src.get("window_title") or src_win)
+            clip_res = ws_tools.pc_clipboard({"action": "set", "text": payload})
+            act_dst = ws_tools.pc_act({"action_type": "type", "target": dst_win, "text": payload}) if dst_win else {"ok": True}
+            return {
+                "ok": bool(clip_res.get("ok", True)) and bool(act_dst.get("ok", True)),
+                "transferred_chars": len(payload),
+                "source_obs": obs_src,
+                "target_act": act_dst,
+                "steps_executed": 3,
+            }
+
+        self.register_custom_runner(
+            "win_multiapp_ocr_transfer",
+            domain="windows",
+            description="Extract text from a source Windows window via OCR/UIA, stage in OS clipboard, and type into target window.",
+            required_vars=("source_window",),
+            optional_vars={"target_window": "", "text": ""},
+            runner_fn=_win_multiapp_ocr_transfer,
+            estimated_tokens_saved=10500,
+        )
+
+        # 16. WINDOWS / CONTAINER DOMAIN: Network-isolated Docker execution
+        self.register(
+            "code_docker_isolated_run",
+            domain="windows",
+            description="Run a shell command inside a network-isolated Docker container (--network=none) over the workspace.",
+            required_vars=("command",),
+            optional_vars={"timeout_s": 120},
+            steps=[
+                PlaybookStep("docker_exec", "run", {"command": "{{command}}", "sandbox": "docker", "timeout_s": "{{timeout_s}}"}, save_as="docker_res"),
+            ],
+            estimated_tokens_saved=5500,
+        )
+
+        # 17. CODE DOMAIN: Transactional Patch + Pytest + Auto-Rollback on Failure
+        def _code_git_worktree_patch_commit(ctx: Dict[str, Any], ws_tools: Any) -> Dict[str, Any]:
+            ck = ws_tools.checkpoint({"name": "pre_tx_patch"})
+            raw_path = str(ctx["path"])
+            resolved = str(ws_tools.resolve(raw_path))
+            ws_tools.seal_guard.assert_write_allowed(resolved, actor="agent_loop")
+            patch_res = ws_tools.replace_in_file({"path": resolved, "old": str(ctx["old"]), "new": str(ctx["new"])})
+            verify_res = ws_tools.run({"command": str(ctx["verify_cmd"]), "timeout_s": int(ctx.get("timeout_s", 120))})
+            if verify_res.get("exit_code") != 0:
+                rb = ws_tools.restore_checkpoint({"name": "pre_tx_patch"})
+                return {"ok": False, "rolled_back": True, "rollback": rb, "verify": verify_res, "steps_executed": 4}
+            return {"ok": True, "rolled_back": False, "checkpoint": ck, "patch": patch_res, "verify": verify_res, "steps_executed": 3}
+
+        self.register_custom_runner(
+            "code_git_worktree_patch_commit",
+            domain="code",
+            description="Checkpoint workspace, apply surgical patch, run verification suite, and auto-rollback if verification fails.",
+            required_vars=("path", "old", "new", "verify_cmd"),
+            optional_vars={"timeout_s": 120},
+            runner_fn=_code_git_worktree_patch_commit,
+            estimated_tokens_saved=13000,
+        )
+
+        # 18. CODE DOMAIN: Zero-token fault diagnosis + affected test check
+        self.register(
+            "code_error_diagnose_and_tdd_fix",
+            domain="code",
+            description="Run preflight AST/RepoMap + deterministic pytest failure parsing for zero-turn bug localization.",
+            required_vars=("verify_cmd",),
+            optional_vars={"max_chars": 3000},
+            steps=[
+                PlaybookStep("preflight", "deterministic_preflight", {"max_chars": "{{max_chars}}"}, save_as="pre"),
+                PlaybookStep("verify", "run", {"command": "{{verify_cmd}}", "timeout_s": 120}, save_as="test_res", on_fail="continue"),
+            ],
+            estimated_tokens_saved=9500,
         )
 
 

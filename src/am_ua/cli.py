@@ -177,7 +177,37 @@ def main(argv: list[str] | None = None) -> int:
     p_fleet.add_argument("--worktrees", action="store_true", help="Execute workers in real isolated git worktrees with 3-way merge")
     p_fleet.add_argument("--verify", default=None, help="Final verification command after worktree merge")
 
+    p_ui = sub.add_parser("ui", help="Launch local Web Mission Control dashboard (SSE telemetry + live budget toggle)")
+    p_ui.add_argument("--port", type=int, default=8765, help="Loopback HTTP port (default 8765)")
+    p_ui.add_argument("--host", default="127.0.0.1", help="Loopback host (default 127.0.0.1)")
+    p_ui.add_argument("--no-block", action="store_true", help="Print server URL JSON and return (for test harnesses)")
+
+    p_chat = sub.add_parser("chat", help="Launch interactive streaming TUI console with slash commands and diff approval")
+    p_chat.add_argument("--workspace", default=str(ROOT), help="Target workspace directory")
+    p_chat.add_argument("--yolo", action="store_true", help="Auto-approve diff edits without prompt")
+
     args = parser.parse_args(argv)
+    if args.cmd == "ui":
+        from am_ua.ui.mission_control_web import MissionControlServer
+
+        srv = MissionControlServer(host=args.host, port=args.port)
+        actual_port = srv.start()
+        print(json.dumps({"ok": True, "url": f"http://{args.host}:{actual_port}", "port": actual_port}, indent=2))
+        if args.no_block:
+            srv.close()
+            return 0
+        try:
+            while True:
+                time.sleep(1.0)
+        except KeyboardInterrupt:
+            srv.close()
+        return 0
+
+    if args.cmd == "chat":
+        from am_ua.ui.tui import OmniTUI
+
+        tui = OmniTUI(args.workspace, auto_approve=args.yolo)
+        return tui.run_repl()
     if args.cmd == "fleet":
         from am_ua.execution.subagent_bus import SubAgentSessionBus
         bus = SubAgentSessionBus()

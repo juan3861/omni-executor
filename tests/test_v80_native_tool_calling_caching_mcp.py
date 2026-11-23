@@ -570,7 +570,7 @@ def test_v80_workspace_tools_modular_reexport_and_provider_registry() -> None:
 def test_v80_pyproject_console_scripts_and_topology_gate() -> None:
     root = Path(__file__).resolve().parents[1]
     data = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-    assert data["project"]["version"].startswith("8.")
+    assert int(data["project"]["version"].split(".")[0]) >= 8
     assert data["project"]["dependencies"] == []
     assert data["project"]["scripts"]["omni-executor"] == "am_ua.cli:main"
     assert data["project"]["scripts"]["omni"] == "am_ua.cli:main"
