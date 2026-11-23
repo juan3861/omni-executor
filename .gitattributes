@@ -1,0 +1,4 @@
+# Guarantee byte-identical SHA-256 checksums across Linux, macOS, and Windows (SEAL_SHA256_MANIFEST.json)
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
