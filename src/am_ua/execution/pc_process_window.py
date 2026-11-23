@@ -7,16 +7,26 @@ from dataclasses import asdict, dataclass, field
 import difflib
 import hashlib
 import json
+import csv
 import os
 from pathlib import Path
 import re
 import shlex
 import shutil
+import signal
 import socket
 import subprocess
 import time
 import unicodedata
 from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
+
+
+def _get_psutil() -> Any:
+    try:
+        import psutil
+        return psutil
+    except ImportError:
+        return None
 
 import numpy as np
 try:
@@ -50,7 +60,7 @@ class DesktopProcessWindowOrgan:
         try:
             import win32gui
             import win32process
-            import psutil
+            psutil = _get_psutil()
             hwnd = int(win32gui.GetForegroundWindow())
             if not hwnd:
                 return {"hwnd": 0, "title": "", "pid": 0, "rect": [0, 0, 0, 0]}
@@ -58,7 +68,7 @@ class DesktopProcessWindowOrgan:
             rect = list(win32gui.GetWindowRect(hwnd))
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
             exe = ""
-            if pid > 0:
+            if pid > 0 and psutil is not None:
                 try:
                     exe = psutil.Process(pid).name()
                 except Exception:
@@ -84,7 +94,7 @@ class DesktopProcessWindowOrgan:
         try:
             import win32gui
             import win32process
-            import psutil
+            psutil = _get_psutil()
             filt_norm = normalize_text(title_filter)
 
             def enum_cb(hwnd: int, _: Any) -> None:
@@ -97,7 +107,7 @@ class DesktopProcessWindowOrgan:
                     return
                 _, pid = win32process.GetWindowThreadProcessId(hwnd)
                 exe = ""
-                if pid > 0:
+                if pid > 0 and psutil is not None:
                     try:
                         exe = psutil.Process(pid).name()
                     except Exception:
@@ -258,16 +268,19 @@ class DesktopProcessWindowOrgan:
 
     def cleanup_spawned_apps(self) -> Dict[str, Any]:
         """Terminate all remaining agent-spawned processes cleanly."""
-        import psutil
+        psutil = _get_psutil()
         terminated: List[int] = []
         for pid in list(self.spawned_pids):
             try:
-                p = psutil.Process(pid)
-                p.terminate()
-                try:
-                    p.wait(timeout=2.0)
-                except psutil.TimeoutExpired:
-                    p.kill()
+                if psutil is not None:
+                    p = psutil.Process(pid)
+                    p.terminate()
+                    try:
+                        p.wait(timeout=2.0)
+                    except psutil.TimeoutExpired:
+                        p.kill()
+                else:
+                    os.kill(int(pid), signal.SIGTERM)
                 terminated.append(pid)
             except Exception:
                 pass
@@ -279,54 +292,146 @@ class DesktopProcessWindowOrgan:
     @staticmethod
     def list_processes(name_filter: str = "", limit: int = 40) -> List[Dict[str, Any]]:
         """List running OS processes sorted by memory usage."""
-        import psutil
+        psutil = _get_psutil()
         filt = (name_filter or "").strip().lower()
         rows: List[Dict[str, Any]] = []
-        for proc in psutil.process_iter(["pid", "name", "memory_info", "cpu_percent", "status"]):
-            try:
-                info = proc.info
-                pname = str(info.get("name") or "")
+        if psutil is not None:
+            for proc in psutil.process_iter(["pid", "name", "memory_info", "cpu_percent", "status"]):
+                try:
+                    info = proc.info
+                    pname = str(info.get("name") or "")
+                    if filt and filt not in pname.lower():
+                        continue
+                    mem_mb = round((info["memory_info"].rss if info.get("memory_info") else 0) / (1024 * 1024), 2)
+                    rows.append(
+                        {
+                            "pid": int(info["pid"]),
+                            "name": pname,
+                            "rss_mb": mem_mb,
+                            "status": str(info.get("status") or ""),
+                        }
+                    )
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+        elif os.name == "nt":
+            proc = subprocess.run(
+                ["tasklist", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+                check=False,
+            )
+            for parts in csv.reader((proc.stdout or "").splitlines()):
+                if len(parts) < 5:
+                    continue
+                pname = parts[0].strip()
                 if filt and filt not in pname.lower():
                     continue
-                mem_mb = round((info["memory_info"].rss if info.get("memory_info") else 0) / (1024 * 1024), 2)
-                rows.append(
-                    {
-                        "pid": int(info["pid"]),
-                        "name": pname,
-                        "rss_mb": mem_mb,
-                        "status": str(info.get("status") or ""),
-                    }
-                )
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
+                try:
+                    pid = int(parts[1].strip())
+                except ValueError:
+                    continue
+                mem_digits = re.sub(r"[^0-9]", "", parts[4])
+                rss_mb = round((int(mem_digits) if mem_digits else 0) / 1024.0, 2)
+                rows.append({"pid": pid, "name": pname, "rss_mb": rss_mb, "status": "running"})
+        else:
+            proc = subprocess.run(
+                ["ps", "-eo", "pid=,rss=,comm="],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+                check=False,
+            )
+            for line in (proc.stdout or "").splitlines():
+                parts = line.strip().split(None, 2)
+                if len(parts) < 3:
+                    continue
+                try:
+                    pid = int(parts[0])
+                    rss_mb = round(int(parts[1]) / 1024.0, 2)
+                except ValueError:
+                    continue
+                pname = parts[2].strip()
+                if filt and filt not in pname.lower():
+                    continue
+                rows.append({"pid": pid, "name": pname, "rss_mb": rss_mb, "status": "running"})
         rows.sort(key=lambda r: r["rss_mb"], reverse=True)
         return rows[:limit]
 
     @staticmethod
     def find_port_owner(port: int) -> Dict[str, Any]:
         """Identify the process listening on or connected to a local TCP port."""
-        import psutil
+        psutil = _get_psutil()
         target_port = int(port)
         matches: List[Dict[str, Any]] = []
         try:
-            for conn in psutil.net_connections(kind="tcp"):
-                if conn.laddr and conn.laddr.port == target_port:
-                    pid = conn.pid or 0
-                    pname = ""
-                    if pid > 0:
-                        try:
-                            pname = psutil.Process(pid).name()
-                        except Exception:
-                            pass
-                    matches.append(
-                        {
-                            "port": target_port,
-                            "ip": conn.laddr.ip,
-                            "status": conn.status,
-                            "pid": pid,
-                            "process_name": pname,
-                        }
-                    )
+            if psutil is not None:
+                for conn in psutil.net_connections(kind="tcp"):
+                    if conn.laddr and conn.laddr.port == target_port:
+                        pid = conn.pid or 0
+                        pname = ""
+                        if pid > 0:
+                            try:
+                                pname = psutil.Process(pid).name()
+                            except Exception:
+                                pass
+                        matches.append(
+                            {
+                                "port": target_port,
+                                "ip": conn.laddr.ip,
+                                "status": conn.status,
+                                "pid": pid,
+                                "process_name": pname,
+                            }
+                        )
+            elif os.name == "nt":
+                proc = subprocess.run(
+                    ["netstat", "-ano", "-p", "tcp"],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=10,
+                    check=False,
+                )
+                for line in (proc.stdout or "").splitlines():
+                    cols = line.strip().split()
+                    if len(cols) >= 4 and cols[0].upper() == "TCP":
+                        local_addr = cols[1]
+                        if ":" in local_addr and local_addr.rsplit(":", 1)[-1] == str(target_port):
+                            pid_str = cols[-1]
+                            pid = int(pid_str) if pid_str.isdigit() else 0
+                            status = cols[3] if len(cols) >= 5 else "UNKNOWN"
+                            matches.append(
+                                {
+                                    "port": target_port,
+                                    "ip": local_addr.rsplit(":", 1)[0],
+                                    "status": status,
+                                    "pid": pid,
+                                    "process_name": "",
+                                }
+                            )
+            else:
+                tcp_path = Path("/proc/net/tcp")
+                if tcp_path.is_file():
+                    for line in tcp_path.read_text(encoding="utf-8", errors="ignore").splitlines()[1:]:
+                        cols = line.strip().split()
+                        if len(cols) >= 4 and ":" in cols[1]:
+                            hex_ip, hex_port = cols[1].split(":", 1)
+                            if int(hex_port, 16) == target_port:
+                                matches.append(
+                                    {
+                                        "port": target_port,
+                                        "ip": hex_ip,
+                                        "status": cols[3],
+                                        "pid": 0,
+                                        "process_name": "",
+                                    }
+                                )
         except Exception as exc:
             return {"port": target_port, "matches": matches, "error": str(exc)}
         return {"port": target_port, "matches": matches, "in_use": len(matches) > 0}

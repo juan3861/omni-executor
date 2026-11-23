@@ -54,6 +54,16 @@ class OMHMaestroBridge:
     ) -> Iterator[Dict[str, Any]]:
         """Sets all 4 ContextVars + request-bound schema cache bypass required by OMH browser_bridge."""
         _ensure_vendor_paths()
+        if "gateway" not in sys.modules:
+            try:
+                import gateway.session_context  # type: ignore[import-not-found]  # noqa: F401
+            except ModuleNotFoundError:
+                gw_dir = _VENDOR_HERMES / "gateway"
+                if (gw_dir / "session_context.py").is_file():
+                    import types
+                    gw_pkg = types.ModuleType("gateway")
+                    gw_pkg.__path__ = [str(gw_dir)]
+                    sys.modules["gateway"] = gw_pkg
         from gateway import session_context  # type: ignore[import-not-found]
         from tools import registry  # type: ignore[import-not-found]
 
