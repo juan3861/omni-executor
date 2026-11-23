@@ -236,3 +236,17 @@ def test_v110_multikey_pool_rotation_and_env_loader(tmp_path: Path, monkeypatch:
     resp = client.chat([{"role": "user", "content": "hi"}], max_tokens=16)
     assert resp.text == "ROTATED_OK"
     assert seen_keys == ["keyA", "keyB"]
+
+
+def test_v110_workspace_tools_search_supports_single_file_target(tmp_path: Path) -> None:
+    from am_ua.execution.workspace_tools import WorkspaceTools
+
+    ws = tmp_path / "ws_search"
+    ws.mkdir()
+    target = ws / "mod.py"
+    target.write_text("class Foo:\n    def clear(self):\n        return 1\n", encoding="utf-8")
+
+    tools = WorkspaceTools(ws, ConstitutionSealGuard(ROOT))
+    res = tools.search({"path": "mod.py", "pattern": "def clear", "prefer_native": False})
+    assert res["hits"] == ["mod.py:2: def clear(self):"]
+    assert res["truncated"] is False

@@ -129,20 +129,29 @@ class WorkspaceTools:
 
         pattern = re.compile(pat_str)
         hits: List[str] = []
+
+        def _scan_file(fp: Path) -> bool:
+            try:
+                if fp.stat().st_size > 1_000_000:
+                    return False
+                for n, line in enumerate(fp.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+                    if pattern.search(line):
+                        hits.append(f"{fp.relative_to(self.ws).as_posix()}:{n}: {line.strip()[:200]}")
+                        if len(hits) >= 200:
+                            return True
+            except OSError:
+                return False
+            return False
+
+        if base.is_file():
+            trunc = _scan_file(base)
+            return {"hits": hits, "truncated": trunc, "backend": "python_regex"}
+
         for root, dirs, files in os.walk(base):
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
             for f in files:
-                fp = Path(root) / f
-                if fp.stat().st_size > 1_000_000:
-                    continue
-                try:
-                    for n, line in enumerate(fp.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
-                        if pattern.search(line):
-                            hits.append(f"{fp.relative_to(self.ws).as_posix()}:{n}: {line.strip()[:200]}")
-                            if len(hits) >= 200:
-                                return {"hits": hits, "truncated": True, "backend": "python_regex"}
-                except OSError:
-                    continue
+                if _scan_file(Path(root) / f):
+                    return {"hits": hits, "truncated": True, "backend": "python_regex"}
         return {"hits": hits, "truncated": False, "backend": "python_regex"}
 
     @staticmethod
