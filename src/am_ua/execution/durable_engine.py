@@ -598,6 +598,12 @@ class DurableExecutionEngine:
             "copied_steps": copied,
         }
 
+    def create_replay_engine(self) -> Any:
+        """Return a Temporal-style DeterministicRecordReplayEngine bound beside this ledger."""
+        from am_ua.execution.record_replay import DeterministicRecordReplayEngine
+
+        return DeterministicRecordReplayEngine(self.db_path.parent / "workflow_replay.db")
+
     def reconcile_step(self, run_id: str, step_id: str, *, lease_epoch: int) -> Dict[str, Any]:
         """Reconcile an OUTCOME_UNKNOWN step by inspecting real world/disk state (R08)."""
         self.fencer.assert_fence_valid(run_id, lease_epoch)
@@ -692,3 +698,9 @@ class DurableExecutionEngine:
             "up_to_step_index": int(up_to_step_index),
             "copied_steps": copied,
         }
+
+    def create_replay_engine(self) -> Any:
+        """Return a Temporal-style DeterministicRecordReplayEngine bound beside this ledger."""
+        from am_ua.execution.record_replay import DeterministicRecordReplayEngine
+
+        return DeterministicRecordReplayEngine(self.db_path.parent / "workflow_replay.db")

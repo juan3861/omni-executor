@@ -151,12 +151,44 @@ class WorkspaceTools:
 
         return strip_code_fences(content)
 
+    @staticmethod
+    def _post_edit_diagnostics(p: Path) -> Dict[str, Any]:
+        """Run immediate deterministic AST/JSON syntax verification right after file mutation."""
+        ext = p.suffix.lower()
+        if ext == ".py":
+            import ast
+
+            try:
+                ast.parse(p.read_text(encoding="utf-8", errors="replace"), filename=str(p))
+                return {"ok": True, "kind": "python_ast", "errors": []}
+            except SyntaxError as exc:
+                return {
+                    "ok": False,
+                    "kind": "python_ast",
+                    "errors": [{"line": exc.lineno or 0, "col": exc.offset or 0, "msg": exc.msg}],
+                }
+        if ext == ".json":
+            try:
+                json.loads(p.read_text(encoding="utf-8", errors="replace"))
+                return {"ok": True, "kind": "json", "errors": []}
+            except json.JSONDecodeError as exc:
+                return {
+                    "ok": False,
+                    "kind": "json",
+                    "errors": [{"line": exc.lineno, "col": exc.colno, "msg": exc.msg}],
+                }
+        return {"ok": True, "kind": "none", "errors": []}
+
     def write_file(self, args: Dict[str, Any]) -> Dict[str, Any]:
         p = Path(str(args["path"]))  # already absolute + gate-checked by LastMileSecurityGate
         p.parent.mkdir(parents=True, exist_ok=True)
         content = self._strip_fences(str(args["content"]))
         p.write_text(content, encoding="utf-8", newline="\n")
-        return {"written": p.relative_to(self.ws).as_posix(), "bytes": p.stat().st_size}
+        return {
+            "written": p.relative_to(self.ws).as_posix(),
+            "bytes": p.stat().st_size,
+            "post_edit_diagnostics": self._post_edit_diagnostics(p),
+        }
 
     def replace_in_file(self, args: Dict[str, Any]) -> Dict[str, Any]:
         from am_ua.execution.workspace_fs import apply_hunks_safely
@@ -201,10 +233,38 @@ class WorkspaceTools:
             }
             return res_f
         p.write_text(working, encoding="utf-8", newline="\n")
-        res: Dict[str, Any] = {"replaced_in": p.relative_to(self.ws).as_posix(), "hunks_applied": len(hunks)}
+        res: Dict[str, Any] = {
+            "replaced_in": p.relative_to(self.ws).as_posix(),
+            "hunks_applied": len(hunks),
+            "post_edit_diagnostics": self._post_edit_diagnostics(p),
+        }
         if syn_err:
             res["syntax_error"] = syn_err
         return res
+
+    def cpg_impact(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Query Code Property Graph (AST+CFG+Dataflow/Taint) & SCIP index over the workspace."""
+        from am_ua.perception.code_property_graph import CodePropertyGraphBuilder, SCIPIndexStore
+
+        action = str(args.get("action", "summary")).strip().lower()
+        symbol = str(args.get("symbol", "")).strip()
+        if action == "scip_build":
+            out_rel = args.get("out_path")
+            out_p = self.resolve(str(out_rel)) if out_rel else None
+            return SCIPIndexStore(self.ws).build_and_save(out_p, max_files=int(args.get("max_files", 500)))
+        cpg = CodePropertyGraphBuilder(self.ws).build(max_files=int(args.get("max_files", 500)))
+        if action == "summary":
+            return {"ok": True, **cpg.to_summary()}
+        if not symbol:
+            return {"ok": False, "error": f"symbol is required for cpg_impact action={action!r}"}
+        if action == "goto_definition":
+            return {"ok": True, "symbol": symbol, "definitions": cpg.goto_definition(symbol)}
+        if action == "find_references":
+            return {"ok": True, "symbol": symbol, "references": cpg.find_references(symbol)}
+        if action == "taint":
+            direction = str(args.get("direction", "forward")).strip().lower()
+            return {"ok": True, **cpg.trace_taint_slice(symbol, direction=direction)}
+        return {"ok": True, **cpg.impact_analysis(symbol)}
 
     _TASK_STATUS_ALIASES = {
         "pending": "todo",

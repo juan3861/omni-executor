@@ -131,6 +131,17 @@ TOOL_JSON_SCHEMAS: Dict[str, Dict[str, Any]] = {
         "Build a PageRank-ranked polyglot repository symbol map.",
         {"max_chars": {"type": "integer", "description": "Character budget (default 3000)."}},
     ),
+    "cpg_impact": _fn(
+        "cpg_impact",
+        "Query Code Property Graph (AST/CFG/Dataflow taint slicing), SCIP index, goto_definition, find_references, and refactoring blast radius.",
+        {
+            "action": {"type": "string", "enum": ["summary", "goto_definition", "find_references", "impact", "taint", "scip_build"]},
+            "symbol": {"type": "string", "description": "Symbol name to query."},
+            "direction": {"type": "string", "enum": ["forward", "backward"]},
+            "out_path": {"type": "string", "description": "Optional SCIP JSON output path inside workspace."},
+        },
+        required=("action",),
+    ),
     "knowledge_query": _fn(
         "knowledge_query",
         "Query the workspace SQLite FTS5 / knowledge index.",

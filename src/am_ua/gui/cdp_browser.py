@@ -135,6 +135,39 @@ class CDPIndexedBrowser:
         self.last_elements: Dict[int, IndexedDOMElement] = {}
         self.last_observation: Optional[Dict[str, Any]] = None
         self.receipts: List[Dict[str, Any]] = []
+        from am_ua.execution.playbook_compiler import SelfHealingSelectorCache
+
+        self.selector_cache = SelfHealingSelectorCache(self.artifact_dir / "healed_selectors.json")
+
+    def heal_selector_from_elements(
+        self,
+        scope: str,
+        intent: str,
+        *,
+        primary_selector: str = "",
+        elements: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Resolve or self-heal a CSS/ARIA selector against indexed or supplied DOM elements."""
+        cand = elements
+        if cand is None:
+            cand = [
+                {
+                    "idx": el.idx,
+                    "tag": el.tag,
+                    "role": el.role,
+                    "name": el.name,
+                    "text": el.text,
+                    "placeholder": el.placeholder,
+                    "selector": f'[data-am-idx="{el.idx}"]',
+                }
+                for el in self.last_elements.values()
+            ]
+        return self.selector_cache.resolve_or_heal(
+            scope,
+            intent,
+            candidate_elements=cand,
+            primary_selector=primary_selector,
+        )
 
     def _ensure_page(self) -> Any:
         if self._page is not None:

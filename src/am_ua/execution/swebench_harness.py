@@ -15,7 +15,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 
 @dataclass
@@ -91,12 +91,47 @@ class SWEBenchHarness:
         return "\n".join(diffs)
 
     @staticmethod
+    def build_docker_command(
+        workspace: Path | str,
+        pytest_targets: List[str],
+        *,
+        docker_bin: str = "docker",
+        docker_image: str = "python:3.11-slim",
+        hardened: bool = True,
+        read_only_root: bool = False,
+    ) -> List[str]:
+        t_list = " ".join(pytest_targets)
+        cmd = [docker_bin, "run", "--rm", "--network=none"]
+        if hardened:
+            cmd.extend([
+                "--cap-drop=ALL",
+                "--security-opt=no-new-privileges:true",
+                "--pids-limit=256",
+                "--memory=1g",
+            ])
+        if read_only_root:
+            cmd.extend(["--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid"])
+        cmd.extend([
+            "-v",
+            f"{workspace}:/ws",
+            "-w",
+            "/ws",
+            docker_image,
+            "sh",
+            "-lc",
+            f"python -m pytest -q -p no:cacheprovider {t_list}",
+        ])
+        return cmd
+
+    @staticmethod
     def _run_pytest_targets(
         workspace: Path,
         targets: List[str],
         *,
         use_docker: bool = False,
         docker_image: str = "python:3.11-slim",
+        hardened_docker: bool = True,
+        read_only_root: bool = False,
     ) -> Dict[str, Any]:
         if not targets:
             return {"ok": True, "exit_code": 0, "output": "", "backend": "none"}
@@ -106,21 +141,14 @@ class SWEBenchHarness:
             docker_bin = shutil.which("docker")
             if not docker_bin:
                 return {"ok": False, "exit_code": 127, "output": "docker CLI not found", "backend": "docker"}
-            t_list = " ".join(targets)
-            cmd = [
-                docker_bin,
-                "run",
-                "--rm",
-                "--network=none",
-                "-v",
-                f"{workspace}:/ws",
-                "-w",
-                "/ws",
-                docker_image,
-                "sh",
-                "-lc",
-                f"python -m pytest -q -p no:cacheprovider {t_list}",
-            ]
+            cmd = SWEBenchHarness.build_docker_command(
+                workspace,
+                targets,
+                docker_bin=docker_bin,
+                docker_image=docker_image,
+                hardened=hardened_docker,
+                read_only_root=read_only_root,
+            )
             proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=240, check=False)
             return {
                 "ok": proc.returncode == 0,
@@ -370,5 +398,85 @@ class SWEBenchHarness:
             "resolved": resolved_count,
             "resolve_rate": round(resolved_count / max(1, total), 4),
             "predictions_path": pred_file,
+            "results": results,
+        }
+
+
+class PublicBenchmarkSuiteAdapter:
+    """Unified normalizer & deterministic evaluator across SWE-bench, Terminal-Bench, OSWorld, and WebArena."""
+
+    SUPPORTED_SUITES = ("swebench", "terminal_bench", "osworld", "webarena")
+
+    @classmethod
+    def normalize_task(cls, raw: Dict[str, Any], *, suite: str) -> Dict[str, Any]:
+        s = (suite or "swebench").strip().lower().replace("-", "_")
+        if s not in cls.SUPPORTED_SUITES:
+            raise ValueError(f"Unsupported benchmark suite: {suite!r}")
+        tid = str(raw.get("instance_id") or raw.get("task_id") or raw.get("id") or "task_0")
+        prompt = str(
+            raw.get("problem_statement")
+            or raw.get("instruction")
+            or raw.get("intent")
+            or raw.get("prompt")
+            or ""
+        )
+        return {
+            "suite": s,
+            "task_id": tid,
+            "prompt": prompt,
+            "verify_cmd": raw.get("verify_cmd"),
+            "fail_to_pass": list(raw.get("fail_to_pass") or []),
+            "start_url": raw.get("start_url") or "",
+            "expected_keywords": list(raw.get("expected_keywords") or []),
+            "metadata": dict(raw.get("metadata") or {}),
+        }
+
+    @classmethod
+    def load_tasks_jsonl(cls, path: Path | str, *, suite: str, limit: int = 50) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        with Path(path).open("r", encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip():
+                    out.append(cls.normalize_task(json.loads(line), suite=suite))
+                    if len(out) >= limit:
+                        break
+        return out
+
+    @classmethod
+    def evaluate_suite(
+        cls,
+        tasks: Sequence[Dict[str, Any]],
+        *,
+        runner_fn: Callable[[Dict[str, Any]], Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        results: List[Dict[str, Any]] = []
+        zero_token_tasks = 0
+        total_cost = 0.0
+        for t in tasks:
+            t0 = time.perf_counter()
+            out = dict(runner_fn(t))
+            passed = bool(out.get("ok") or out.get("resolved") or out.get("passed"))
+            llm_calls = int(out.get("llm_calls", 0))
+            if llm_calls == 0:
+                zero_token_tasks += 1
+            total_cost += float(out.get("cost_usd", 0.0) or 0.0)
+            results.append(
+                {
+                    "suite": t.get("suite"),
+                    "task_id": t.get("task_id"),
+                    "passed": passed,
+                    "llm_calls": llm_calls,
+                    "elapsed_s": round(time.perf_counter() - t0, 3),
+                }
+            )
+        passed_n = sum(1 for r in results if r["passed"])
+        n = len(results)
+        return {
+            "ok": passed_n == n and n > 0,
+            "evaluated": n,
+            "passed": passed_n,
+            "pass_rate": round(passed_n / max(1, n), 4),
+            "zero_token_rate": round(zero_token_tasks / max(1, n), 4),
+            "total_cost_usd": round(total_cost, 6),
             "results": results,
         }

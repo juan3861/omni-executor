@@ -175,6 +175,7 @@ class AgentLoop:
         "browser_act": EffectClass.COMPENSATABLE_MUTATION,
         "browser_extract": EffectClass.PURE_READ,
         "repo_map": EffectClass.PURE_READ,
+        "cpg_impact": EffectClass.PURE_READ,
         "knowledge_query": EffectClass.PURE_READ,
         "web_fetch": EffectClass.PURE_READ,
         "spill_query": EffectClass.PURE_READ,
@@ -191,6 +192,7 @@ class AgentLoop:
         "read_file",
         "search",
         "repo_map",
+        "cpg_impact",
         "knowledge_query",
         "web_fetch",
         "spill_query",
@@ -486,6 +488,7 @@ class AgentLoop:
         enable_self_review_gate: bool = True,
         enable_dlp_supervisor: bool = True,
         auto_compile_skill: bool = False,
+        auto_compile_playbook: bool = False,
         use_native_tools: bool = True,
         reasoning_effort: Optional[str] = None,
         parallel_read_workers: int = 6,
@@ -532,6 +535,52 @@ class AgentLoop:
         calls0, pt0, ct0 = self.llm.calls, self.llm.total_prompt_tokens, self.llm.total_completion_tokens
 
         if enable_zero_token_offload:
+            from am_ua.execution.playbook_compiler import TraceToPlaybookCompiler, TurnZeroPlaybookRouter
+
+            pb_match = TurnZeroPlaybookRouter.match_intent(
+                objective,
+                verify_cmd=verify_cmd,
+                compiler=TraceToPlaybookCompiler(),
+            )
+            if pb_match is not None:
+                pb_res = ws.run_playbook({"playbook": pb_match["playbook"], "variables": pb_match["variables"]})
+                if pb_res.get("ok"):
+                    ver_ok = True
+                    v_check: Optional[Dict[str, Any]] = None
+                    if verify_cmd:
+                        v_out = ws.run({"command": verify_cmd, "timeout_s": 600})
+                        ver_ok = v_out.get("exit_code") == 0
+                        v_check = {"command": verify_cmd, "exit_code": v_out.get("exit_code"), "passed": ver_ok, "output_tail": str(v_out.get("output", ""))[-2000:]}
+                    if ver_ok:
+                        after_pb = ws.snapshot()
+                        changed_pb = sorted(k for k in set(before) | set(after_pb) if before.get(k, ("", None))[0] != after_pb.get(k, ("", None))[0])
+                        diff_pb = self._diff(before, after_pb, changed_pb)
+                        ws.close()
+                        self._active = None
+                        return AgentRunResult(
+                            mission_id=mission_id,
+                            objective=objective,
+                            workspace=str(ws.ws),
+                            status="VERIFIED",
+                            epistemic_tag=EpistemicTag.PROVADO.value,
+                            final_summary=f"Turn-0 deterministic playbook '{pb_match['playbook']}' completed without LLM calls.",
+                            actor_confidence=float(pb_match.get("confidence", 0.95)),
+                            actor_providers=["turn0_playbook_router"],
+                            turns=0,
+                            tool_calls=[{"turn": 0, "tool": f"playbook:{pb_match['playbook']}", "args": pb_match["variables"], "ok": True}],
+                            verification=v_check or {"passed": True, "playbook": pb_match["playbook"], "details": pb_res},
+                            judge=None,
+                            changed_files=changed_pb,
+                            diff=clip(diff_pb, 20000),
+                            tokens={"prompt": 0, "completion": 0},
+                            llm_calls=0,
+                            elapsed_s=round(time.perf_counter() - t_start, 3),
+                            stop_reason=f"deterministic_playbook:{pb_match['playbook']}",
+                            role=role,
+                            workflow=workflow,
+                            structured_output=pb_res,
+                        )
+
             from am_ua.execution.deterministic_offloader import DeterministicTaskOffloader
 
             rail = DeterministicTaskOffloader.match_zero_token_rail(objective, verify_cmd=verify_cmd)
@@ -603,6 +652,11 @@ class AgentLoop:
         base_prompt = SPARC_SYSTEM_PROMPT if (workflow or "").lower() == "sparc" else SYSTEM_PROMPT
         base_prompt = self._compose_system_prompt(base_prompt, objective, role=role, native_tools=native_tools_active)
         system_prompt = self.persona_mgr.inject_persona(base_prompt, role)
+        event_stream_buf.append({
+            "kind": "system",
+            "event": "kv_cache_static_prefix",
+            "kv_prefix_sha256": hashlib.sha256(system_prompt.encode("utf-8")).hexdigest()[:16],
+        })
 
         native_tools: Optional[List[Dict[str, Any]]] = None
         if native_tools_active:
@@ -1420,22 +1474,36 @@ class AgentLoop:
         if sync_todo_anchor:
             final_task_st = "done" if status.startswith("VERIFIED") or status == "COMPLETED_UNVERIFIED" else "failed"
             self.sync_todo_anchor(ws.ws, objective, [{"id": "m1", "title": objective[:120], "status": final_task_st}])
-        if auto_compile_skill and status in ("VERIFIED", "COMPLETED_UNVERIFIED"):
+        if (auto_compile_skill or auto_compile_playbook) and status in ("VERIFIED", "COMPLETED_UNVERIFIED"):
             good_steps = [
                 {"tool": t["tool"], "args": t.get("args", {}), "ok": True}
                 for t in tool_log
                 if t.get("ok") and t.get("tool") not in ("finish", "request_human")
             ]
             if good_steps:
-                try:
-                    skill_slug = re.sub(r"[^a-z0-9_]+", "_", mission_id.lower()).strip("_")[:48]
-                    ws._skill_forge.compile_trajectory_to_skill(
-                        name=f"sop_{skill_slug}",
-                        description=f"Auto-compiled SOP from verified mission: {objective[:120]}",
-                        trajectory_steps=good_steps[:12],
-                    )
-                except Exception:
-                    pass
+                if auto_compile_skill:
+                    try:
+                        skill_slug = re.sub(r"[^a-z0-9_]+", "_", mission_id.lower()).strip("_")[:48]
+                        ws._skill_forge.compile_trajectory_to_skill(
+                            name=f"sop_{skill_slug}",
+                            description=f"Auto-compiled SOP from verified mission: {objective[:120]}",
+                            trajectory_steps=good_steps[:12],
+                        )
+                    except Exception:
+                        pass
+                if auto_compile_playbook:
+                    try:
+                        from am_ua.execution.playbook_compiler import TraceToPlaybookCompiler
+
+                        pb_slug = re.sub(r"[^a-z0-9_]+", "_", mission_id.lower()).strip("_")[:48]
+                        TraceToPlaybookCompiler().compile_trace(
+                            name=f"compiled_{pb_slug}",
+                            objective=objective,
+                            tool_calls=good_steps[:12],
+                            verification=verification,
+                        )
+                    except Exception:
+                        pass
         for t_rec in tool_log:
             event_stream_buf.append({"kind": "observation", "turn": t_rec.get("turn"), "tool": t_rec.get("tool"), "ok": t_rec.get("ok")})
         result = AgentRunResult(
@@ -1586,3 +1654,51 @@ class AgentLoop:
                         "confidence": obj.get("confidence"), "reasons": obj.get("reasons", [])[:6]}
             except Exception as exc:
                 return {"verdict": "UNAVAILABLE", "error": f"{type(exc).__name__}: {str(exc)[:200]}", "independent_provider": False}
+
+    def resolve_via_best_of_n_worktrees(
+        self,
+        workspace: Path | str,
+        candidates: Sequence[Dict[str, Any]],
+        verify_fn: Callable[[Path], Tuple[bool, str]],
+        *,
+        objective: str = "Best-of-N candidate verification",
+        apply_winner: bool = True,
+    ) -> Dict[str, Any]:
+        """Execute multi-hypothesis candidate mutations in isolated worktrees via BehaviorBestOfNEngine."""
+        from am_ua.execution.best_of_n import BehaviorBestOfNEngine
+
+        cand_list = list(candidates)
+        if not cand_list:
+            return {"ok": False, "error": "candidates must be non-empty"}
+
+        def _runner(cand_ws: Path, idx: int) -> Dict[str, Any]:
+            spec = cand_list[max(0, min(len(cand_list) - 1, idx - 1))]
+            changed: List[str] = []
+            for rel, content in (spec.get("files") or {}).items():
+                dst = (cand_ws / str(rel)).resolve()
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                dst.write_text(str(content), encoding="utf-8", newline="\n")
+                changed.append(str(rel))
+            passed, note = verify_fn(cand_ws)
+            return {
+                "status": "VERIFIED" if passed else "FAILED",
+                "verification": {"passed": bool(passed), "note": note},
+                "turns": 1,
+                "changed_files": changed,
+                "diff": "\n".join(changed),
+                "final_summary": note,
+            }
+
+        bo_res = BehaviorBestOfNEngine(llm=self.llm).run_code_best_of_n(
+            objective=objective,
+            workspace=workspace,
+            runner_fn=_runner,
+            n=len(cand_list),
+            use_llm_judge=False,
+            parallel=len(cand_list) > 1,
+            post_sync_verify_fn=(lambda ws_p: bool(verify_fn(ws_p)[0])) if apply_winner else None,
+        )
+        return {
+            "ok": bool(bo_res.get("winner_candidate_id")) and bool(bo_res.get("winner_passed_oracle")) and not bool(bo_res.get("rolled_back")),
+            "best_of_n": bo_res,
+        }

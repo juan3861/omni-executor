@@ -114,16 +114,23 @@ class DeterministicTaskOffloader:
         }
 
     @staticmethod
-    def list_rails() -> List[Dict[str, Any]]:
-        return [
+    def list_rails(category: Optional[str] = None) -> List[Dict[str, Any]]:
+        from am_ua.execution.playbook_compiler import infer_rail_category
+
+        items = [
             {
                 "name": s.name,
+                "category": infer_rail_category(s.name, s.description),
                 "description": s.description,
                 "estimated_tokens_saved": s.estimated_tokens_saved,
                 "mutates_workspace": s.mutates_workspace,
             }
             for s in BUILTIN_DETERMINISTIC_RAILS.values()
         ]
+        if category:
+            cat_norm = str(category).strip().lower()
+            return [r for r in items if r["category"] == cat_norm]
+        return items
 
     @staticmethod
     def match_zero_token_rail(objective: str, *, verify_cmd: Optional[str] = None) -> Optional[str]:
