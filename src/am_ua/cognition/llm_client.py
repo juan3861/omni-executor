@@ -56,16 +56,34 @@ class ProviderSpec:
     fallback_models: Tuple[str, ...] = ()
     protocol: str = "openai_compat"
 
-    def api_key(self) -> Optional[str]:
+    def api_keys(self) -> List[str]:
+        """Return ordered deduplicated key pool from `<KEY_ENV>S`, `<KEY_ENV>`, or `GOOGLE_API_KEY`."""
         if not self.key_env:
-            return None
-        val = os.environ.get(self.key_env)
-        if not val and self.name == "gemini":
-            val = os.environ.get("GOOGLE_API_KEY")
-        return val
+            return []
+        candidates: List[str] = []
+        for env_name in (f"{self.key_env}S", self.key_env):
+            raw = os.environ.get(env_name, "")
+            if raw:
+                for part in raw.split(","):
+                    k = part.strip()
+                    if k and k not in candidates:
+                        candidates.append(k)
+        if not candidates and self.name == "gemini":
+            for env_name in ("GOOGLE_API_KEYS", "GOOGLE_API_KEY"):
+                raw = os.environ.get(env_name, "")
+                if raw:
+                    for part in raw.split(","):
+                        k = part.strip()
+                        if k and k not in candidates:
+                            candidates.append(k)
+        return candidates
+
+    def api_key(self) -> Optional[str]:
+        keys = self.api_keys()
+        return keys[0] if keys else None
 
     def is_configured(self) -> bool:
-        return self.local or bool(self.api_key())
+        return self.local or bool(self.api_keys())
 
 
 MODEL_PRICING_PER_1M: Dict[str, Tuple[float, float]] = {
@@ -235,9 +253,82 @@ _DEFAULTS: Dict[str, Dict[str, Any]] = {
         "local": True,
         "protocol": "ollama",
     },
+    "cerebras": {
+        "base_url": "https://api.cerebras.ai/v1",
+        "key_env": "CEREBRAS_API_KEY",
+        "model": "qwen-3-32b",
+        "fallback_models": ("llama-3.3-70b", "llama3.1-8b"),
+        "protocol": "openai_compat",
+    },
+    "nvidia": {
+        "base_url": "https://integrate.api.nvidia.com/v1",
+        "key_env": "NVIDIA_API_KEY",
+        "model": "qwen/qwen2.5-coder-32b-instruct",
+        "fallback_models": ("nvidia/llama-3.3-nemotron-super-49b-v1.5",),
+        "protocol": "openai_compat",
+    },
+    "sambanova": {
+        "base_url": "https://api.sambanova.ai/v1",
+        "key_env": "SAMBANOVA_API_KEY",
+        "model": "Meta-Llama-3.3-70B-Instruct",
+        "fallback_models": ("DeepSeek-V3-0324",),
+        "protocol": "openai_compat",
+    },
+    "together": {
+        "base_url": "https://api.together.xyz/v1",
+        "key_env": "TOGETHER_API_KEY",
+        "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+        "fallback_models": ("meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",),
+        "protocol": "openai_compat",
+    },
 }
 
-DEFAULT_ORDER = ("omniroute", "groq", "openrouter", "openai", "anthropic", "gemini", "ollama")
+DEFAULT_ORDER = (
+    "omniroute",
+    "groq",
+    "openrouter",
+    "openai",
+    "anthropic",
+    "gemini",
+    "cerebras",
+    "sambanova",
+    "nvidia",
+    "together",
+    "ollama",
+)
+
+
+def load_local_env(env_path: Optional[Path | str] = None, *, force: bool = False) -> int:
+    """Safely load key pools from external vault file (`OMNI_ENV_FILE`, `~/.omni/omni_keys.env`, or `F:\\AetherMind_Temp\\secrets\\omni_keys.env`)."""
+    from am_ua.contracts.contracts import resolve_omni_temp_dir
+
+    candidates: List[Path] = []
+    if env_path is not None:
+        candidates.append(Path(env_path))
+    else:
+        explicit = os.environ.get("OMNI_ENV_FILE", "").strip()
+        if explicit:
+            candidates.append(Path(explicit))
+        candidates.append(Path.home() / ".omni" / "omni_keys.env")
+        candidates.append(resolve_omni_temp_dir("secrets") / "omni_keys.env")
+
+    loaded = 0
+    for fp in candidates:
+        if not fp.is_file():
+            continue
+        for raw in fp.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k = k.strip()
+            v = v.strip().strip('"').strip("'")
+            if k and (force or k not in os.environ):
+                os.environ[k] = v
+                loaded += 1
+        if loaded > 0:
+            break
+    return loaded
 
 
 def _tcp_alive(url: str, timeout_s: float = 0.25) -> bool:
@@ -249,7 +340,18 @@ def _tcp_alive(url: str, timeout_s: float = 0.25) -> bool:
         return False
 
 
-def build_provider_chain(order: Optional[Sequence[str]] = None) -> List[ProviderSpec]:
+def build_provider_chain(
+    order: Optional[Sequence[str]] = None,
+    *,
+    autoload_env: Optional[bool] = None,
+) -> List[ProviderSpec]:
+    should_autoload = (
+        autoload_env
+        if autoload_env is not None
+        else (bool(os.environ.get("OMNI_ENV_FILE")) or "PYTEST_CURRENT_TEST" not in os.environ)
+    )
+    if should_autoload:
+        load_local_env()
     names = list(
         order
         or [
@@ -344,6 +446,8 @@ class LLMClient:
         self._failures: Dict[str, int] = {}
         self._cooldown_until: Dict[str, float] = {}
         self._dead: set[str] = set()
+        self._key_cursor: Dict[str, int] = {}
+        self._bad_keys: set[Tuple[str, str]] = set()
         self._lock = threading.Lock()
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
@@ -696,15 +800,44 @@ class LLMClient:
                 body["toolConfig"] = {"functionCallingConfig": {"mode": mode}}
         return body
 
+    def _select_key(self, spec: ProviderSpec) -> Optional[str]:
+        keys = spec.api_keys()
+        if not keys:
+            return None
+        with self._lock:
+            n = len(keys)
+            start = self._key_cursor.get(spec.name, 0) % n
+            for offset in range(n):
+                idx = (start + offset) % n
+                cand = keys[idx]
+                if (spec.name, cand) not in self._bad_keys:
+                    return cand
+        return None
+
+    def _rotate_key(self, spec: ProviderSpec, failed_key: Optional[str], *, mark_bad: bool = False) -> bool:
+        keys = spec.api_keys()
+        if len(keys) <= 1 and not mark_bad:
+            return False
+        with self._lock:
+            if mark_bad and failed_key:
+                self._bad_keys.add((spec.name, failed_key))
+            if not keys:
+                return False
+            self._key_cursor[spec.name] = (self._key_cursor.get(spec.name, 0) + 1) % len(keys)
+            return any((spec.name, k) not in self._bad_keys for k in keys)
+
     def _endpoint_and_headers(
         self,
         spec: ProviderSpec,
         *,
         stream: bool = False,
         enable_prompt_cache: bool = True,
+        api_key_override: Optional[str] = None,
     ) -> Tuple[str, Dict[str, str]]:
         proto = (spec.protocol or "openai_compat").lower()
-        key = spec.api_key()
+        key = api_key_override if api_key_override is not None else self._select_key(spec)
+        if key is None:
+            key = spec.api_key()
         headers: Dict[str, str] = {
             "Content-Type": "application/json",
             "User-Agent": "omni-executor/8.0",
@@ -737,9 +870,13 @@ class LLMClient:
         body: Dict[str, Any],
         *,
         enable_prompt_cache: bool = True,
+        api_key_override: Optional[str] = None,
     ) -> Dict[str, Any]:
         url, headers = self._endpoint_and_headers(
-            spec, stream=False, enable_prompt_cache=enable_prompt_cache
+            spec,
+            stream=False,
+            enable_prompt_cache=enable_prompt_cache,
+            api_key_override=api_key_override,
         )
         req = urllib.request.Request(
             url,
@@ -907,104 +1044,133 @@ class LLMClient:
                     modes = [(False, False)]
 
                 for use_tools, use_json in modes:
-                    t0 = time.perf_counter()
-                    try:
-                        payload = self._payload(
-                            cand_spec,
-                            messages,
-                            max_tokens,
-                            temperature,
-                            use_json,
-                            tools=tools if use_tools else None,
-                            tool_choice=tool_choice if use_tools else None,
-                            enable_prompt_cache=enable_prompt_cache,
-                            reasoning_effort=reasoning_effort,
-                        )
-                        data = self._post(cand_spec, payload, enable_prompt_cache=enable_prompt_cache)
-                        text, actual_model, pt, ct, cache_r, cache_w, tcalls, thinking = self._parse_response(
-                            cand_spec, data, cand_model
-                        )
-                        call_cost = estimate_cost_usd(
-                            actual_model,
-                            pt,
-                            ct,
-                            cache_read_tokens=cache_r,
-                            cache_write_tokens=cache_w,
-                        )
-                        with self._lock:
-                            self._failures[spec.name] = 0
-                            self._cooldown_until.pop(spec.name, None)
-                            self.total_prompt_tokens += pt
-                            self.total_completion_tokens += ct
-                            self.total_cache_read_tokens += cache_r
-                            self.total_cache_write_tokens += cache_w
-                            self.total_cost_usd = round(self.total_cost_usd + call_cost, 8)
-                            self.calls += 1
-                        if not text.strip() and not tcalls:
-                            raise ValueError("empty completion")
-                        return LLMResponse(
-                            text,
-                            spec.name,
-                            actual_model,
-                            pt,
-                            ct,
-                            round((time.perf_counter() - t0) * 1000, 1),
-                            attempts,
-                            cache_read_tokens=cache_r,
-                            cost_usd=call_cost,
-                            cache_write_tokens=cache_w,
-                            tool_calls=tcalls,
-                            thinking_text=thinking,
-                        )
-                    except urllib.error.HTTPError as exc:
-                        detail = exc.read()[:300].decode("utf-8", "replace")
-                        attempts.append(
-                            {
-                                "provider": spec.name,
-                                "model": cand_model,
-                                "http": exc.code,
-                                "detail": detail,
-                                "use_tools": use_tools,
-                                "json_mode": use_json,
-                            }
-                        )
-                        if exc.code == 400 and (use_tools or use_json):
-                            continue  # model rejects tools or response_format -> retry next mode
-                        if exc.code in (402, 404) or "not found" in detail.lower():
-                            break  # advance to next candidate model
-                        quota_dead = "insufficient_quota" in detail or "credit_balance" in detail
-                        if exc.code not in self.RETRYABLE_HTTP or quota_dead:
+                    key_attempts = max(1, len(spec.api_keys()))
+                    model_aborted = False
+                    provider_exhausted = False
+                    for _k_idx in range(key_attempts):
+                        cur_key = self._select_key(spec)
+                        if cur_key is None and not spec.local:
+                            provider_exhausted = True
+                            break
+                        t0 = time.perf_counter()
+                        try:
+                            payload = self._payload(
+                                cand_spec,
+                                messages,
+                                max_tokens,
+                                temperature,
+                                use_json,
+                                tools=tools if use_tools else None,
+                                tool_choice=tool_choice if use_tools else None,
+                                enable_prompt_cache=enable_prompt_cache,
+                                reasoning_effort=reasoning_effort,
+                            )
+                            data = self._post(
+                                cand_spec,
+                                payload,
+                                enable_prompt_cache=enable_prompt_cache,
+                                api_key_override=cur_key,
+                            )
+                            text, actual_model, pt, ct, cache_r, cache_w, tcalls, thinking = self._parse_response(
+                                cand_spec, data, cand_model
+                            )
+                            call_cost = estimate_cost_usd(
+                                actual_model,
+                                pt,
+                                ct,
+                                cache_read_tokens=cache_r,
+                                cache_write_tokens=cache_w,
+                            )
                             with self._lock:
-                                self._dead.add(spec.name)
-                                self._failures[spec.name] = self.breaker_threshold
-                        else:
+                                self._failures[spec.name] = 0
+                                self._cooldown_until.pop(spec.name, None)
+                                self.total_prompt_tokens += pt
+                                self.total_completion_tokens += ct
+                                self.total_cache_read_tokens += cache_r
+                                self.total_cache_write_tokens += cache_w
+                                self.total_cost_usd = round(self.total_cost_usd + call_cost, 8)
+                                self.calls += 1
+                            if not text.strip() and not tcalls:
+                                raise ValueError("empty completion")
+                            return LLMResponse(
+                                text,
+                                spec.name,
+                                actual_model,
+                                pt,
+                                ct,
+                                round((time.perf_counter() - t0) * 1000, 1),
+                                attempts,
+                                cache_read_tokens=cache_r,
+                                cost_usd=call_cost,
+                                cache_write_tokens=cache_w,
+                                tool_calls=tcalls,
+                                thinking_text=thinking,
+                            )
+                        except urllib.error.HTTPError as exc:
+                            detail = exc.read()[:300].decode("utf-8", "replace")
+                            attempts.append(
+                                {
+                                    "provider": spec.name,
+                                    "model": cand_model,
+                                    "http": exc.code,
+                                    "detail": detail,
+                                    "use_tools": use_tools,
+                                    "json_mode": use_json,
+                                }
+                            )
+                            if exc.code == 400 and (use_tools or use_json):
+                                break  # retry next mode
+                            quota_dead = "insufficient_quota" in detail or "credit_balance" in detail
+                            if exc.code in (401, 402, 403, 429) or quota_dead:
+                                rotated = self._rotate_key(
+                                    spec,
+                                    cur_key,
+                                    mark_bad=(exc.code in (401, 402, 403) or quota_dead),
+                                )
+                                if rotated and (_k_idx + 1) < key_attempts:
+                                    continue
+                            if exc.code in (402, 404) or "not found" in detail.lower():
+                                model_aborted = True
+                                break
+                            if exc.code not in self.RETRYABLE_HTTP or quota_dead:
+                                with self._lock:
+                                    self._dead.add(spec.name)
+                                    self._failures[spec.name] = self.breaker_threshold
+                                provider_exhausted = True
+                            else:
+                                with self._lock:
+                                    fails = self._failures.get(spec.name, 0) + 1
+                                    self._failures[spec.name] = fails
+                                    if fails >= self.breaker_threshold:
+                                        self._cooldown_until[spec.name] = time.monotonic() + self.breaker_cooldown_s
+                            model_aborted = True
+                            break
+                        except (
+                            urllib.error.URLError,
+                            TimeoutError,
+                            socket.timeout,
+                            OSError,
+                            ValueError,
+                            json.JSONDecodeError,
+                        ) as exc:
+                            attempts.append(
+                                {
+                                    "provider": spec.name,
+                                    "model": cand_model,
+                                    "error": f"{type(exc).__name__}: {str(exc)[:200]}",
+                                }
+                            )
                             with self._lock:
                                 fails = self._failures.get(spec.name, 0) + 1
                                 self._failures[spec.name] = fails
                                 if fails >= self.breaker_threshold:
                                     self._cooldown_until[spec.name] = time.monotonic() + self.breaker_cooldown_s
+                            model_aborted = True
+                            break
+                    if provider_exhausted or model_aborted:
                         break
-                    except (
-                        urllib.error.URLError,
-                        TimeoutError,
-                        socket.timeout,
-                        OSError,
-                        ValueError,
-                        json.JSONDecodeError,
-                    ) as exc:
-                        attempts.append(
-                            {
-                                "provider": spec.name,
-                                "model": cand_model,
-                                "error": f"{type(exc).__name__}: {str(exc)[:200]}",
-                            }
-                        )
-                        with self._lock:
-                            fails = self._failures.get(spec.name, 0) + 1
-                            self._failures[spec.name] = fails
-                            if fails >= self.breaker_threshold:
-                                self._cooldown_until[spec.name] = time.monotonic() + self.breaker_cooldown_s
-                        break
+                if provider_exhausted:
+                    break
         raise LLMUnavailableError(f"All LLM providers failed: {attempts}")
 
     def chat_multimodal(

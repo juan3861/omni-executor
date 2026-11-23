@@ -203,3 +203,36 @@ def test_v110_best_of_n_hardened_docker_public_bench_and_doctor(tmp_path: Path) 
     assert doc["cpg_scip_ready"] is True
     assert doc["zero_turn_playbook_router_ready"] is True
     assert "unknown" not in doc["rails_by_category"]
+
+
+def test_v110_multikey_pool_rotation_and_env_loader(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+    import urllib.error
+    from am_ua.cognition.llm_client import LLMClient, ProviderSpec, load_local_env
+
+    env_f = tmp_path / "vault.env"
+    env_f.write_text("GROQ_API_KEYS=keyA,keyB,keyC\n", encoding="utf-8")
+    monkeypatch.delenv("GROQ_API_KEYS", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    assert load_local_env(env_f) >= 1
+
+    spec = ProviderSpec("groq", "https://api.groq.com/openai/v1", "GROQ_API_KEY", "openai/gpt-oss-120b")
+    assert spec.api_keys() == ["keyA", "keyB", "keyC"]
+
+    client = LLMClient(providers=[spec])
+    seen_keys: list[str] = []
+
+    def _fake_post(s, body, *, enable_prompt_cache=True, api_key_override=None):  # noqa: ARG001
+        seen_keys.append(str(api_key_override))
+        if api_key_override == "keyA":
+            raise urllib.error.HTTPError("https://api.groq.com", 429, "rate limit", {}, io.BytesIO(b"rate_limit"))
+        return {
+            "model": s.model,
+            "choices": [{"message": {"content": "ROTATED_OK"}}],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 2},
+        }
+
+    monkeypatch.setattr(client, "_post", _fake_post)
+    resp = client.chat([{"role": "user", "content": "hi"}], max_tokens=16)
+    assert resp.text == "ROTATED_OK"
+    assert seen_keys == ["keyA", "keyB"]

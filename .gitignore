@@ -11,6 +11,9 @@ __pycache__/
 node_modules/
 # Local scratch / eval sandboxes
 .am_eval_runs/
+.env
+.env.*
+!.env.example
 
 data/agent_traces/
 data/agui_events/
