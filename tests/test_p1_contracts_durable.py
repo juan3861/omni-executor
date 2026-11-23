@@ -131,8 +131,11 @@ def test_p1_4_durable_engine_outcome_unknown_fencing_and_last_mile_sieve(tmp_pat
     assert sel["selected"] == ["low_task"]
 
     # 2. Durable engine + R08 OUTCOME_UNKNOWN reconciliation without duplicate write
+    from am_ua.contracts.contracts import resolve_omni_temp_dir
+
     engine = DurableExecutionEngine(tmp_path / "durable.db")
-    target_file = Path(r"F:\AetherMind_Temp\r08_reconcile_proof.txt")
+    target_file = resolve_omni_temp_dir("p1_durable_test") / "r08_reconcile_proof.txt"
+    target_file.parent.mkdir(parents=True, exist_ok=True)
     target_file.unlink(missing_ok=True)
     call_count = {"n": 0}
 

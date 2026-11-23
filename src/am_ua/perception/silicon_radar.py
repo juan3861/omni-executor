@@ -86,9 +86,12 @@ class SiliconProjectRadar:
                 "reason": f"Missing binary at {self.aetherscan_exe}",
             }
 
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
+
+        _tmp = str(resolve_omni_temp_dir())
         env = os.environ.copy()
-        env["TMP"] = r"F:\AetherMind_Temp"
-        env["TEMP"] = r"F:\AetherMind_Temp"
+        env["TMP"] = _tmp
+        env["TEMP"] = _tmp
 
         t0 = time.perf_counter()
         proc = subprocess.run(

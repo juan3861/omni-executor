@@ -427,9 +427,12 @@ class MCPStdioClient:
     ) -> None:
         self.command = list(command)
         self.cwd = str(cwd) if cwd else None
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
+
+        _tmp = str(resolve_omni_temp_dir())
         merged_env = os.environ.copy()
-        merged_env["TMP"] = r"F:\AetherMind_Temp"
-        merged_env["TEMP"] = r"F:\AetherMind_Temp"
+        merged_env["TMP"] = _tmp
+        merged_env["TEMP"] = _tmp
         if env:
             merged_env.update(env)
         self.env = merged_env

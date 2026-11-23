@@ -117,8 +117,10 @@ class CDPIndexedBrowser:
         prohibited_domains: Optional[Sequence[str]] = None,
         block_ip_addresses: bool = False,
     ) -> None:
-        self.artifact_dir = Path(
-            artifact_dir or r"F:\AetherMind_Temp\cdp_browser_artifacts"
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
+
+        self.artifact_dir = (
+            Path(artifact_dir) if artifact_dir else resolve_omni_temp_dir("cdp_browser_artifacts")
         ).resolve()
         self.artifact_dir.mkdir(parents=True, exist_ok=True)
         self.headless = bool(headless)

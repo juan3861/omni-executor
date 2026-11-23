@@ -36,9 +36,12 @@ class PersistentPwshSession:
         self._start_session()
 
     def _start_session(self) -> None:
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
+
+        _tmp = str(resolve_omni_temp_dir())
         env = dict(os.environ)
-        env["TMP"] = r"F:\AetherMind_Temp"
-        env["TEMP"] = r"F:\AetherMind_Temp"
+        env["TMP"] = _tmp
+        env["TEMP"] = _tmp
         self._proc = subprocess.Popen(
             [self.exe, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "-"],
             cwd=self.initial_cwd,
@@ -143,10 +146,14 @@ class SpillToDiskMiddleware:
     def __init__(
         self,
         *,
-        spill_dir: str = r"F:\AetherMind_Temp\spill",
+        spill_dir: Optional[str] = None,
         max_inline_chars: int = 16_000,
     ) -> None:
-        self.spill_dir = Path(spill_dir)
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
+
+        self.spill_dir = (
+            Path(spill_dir) if spill_dir else resolve_omni_temp_dir("spill")
+        )
         self.spill_dir.mkdir(parents=True, exist_ok=True)
         self.max_inline_chars = max_inline_chars
 

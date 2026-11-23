@@ -43,7 +43,11 @@ class PCAutomationEngine:
     """Closed-Loop Tri-Modal Desktop & OS Controller (UIA + Set-of-Mark +OCR + PAF Receipts)."""
 
     def __init__(self, artifact_dir: Optional[Path | str] = None) -> None:
-        self.artifact_dir = Path(artifact_dir or r"F:\AetherMind_Temp\pc_automation").resolve()
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
+
+        self.artifact_dir = (
+            Path(artifact_dir) if artifact_dir else resolve_omni_temp_dir("pc_automation")
+        ).resolve()
         self.artifact_dir.mkdir(parents=True, exist_ok=True)
         self.grounder = SetOfMarkGrounder(self.artifact_dir / "som")
         self.window_organ = DesktopProcessWindowOrgan()

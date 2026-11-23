@@ -84,6 +84,7 @@ def scrubbed_env() -> Dict[str, str]:
     tmp_dir = str(default_temp_dir())
     env["TMP"] = env["TEMP"] = tmp_dir
     env["PYTHONIOENCODING"] = "utf-8"
+    env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
     for k in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS"):
         env[k] = "1"
     return env

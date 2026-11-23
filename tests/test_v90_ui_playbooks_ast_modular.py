@@ -146,7 +146,7 @@ def test_v90_18_universal_playbooks_zip_rollback_docker_and_repomap(tmp_path: Pa
                 "path": "calc.py",
                 "old": "VAL = 1",
                 "new": "VAL = 50",
-                "verify_cmd": f'"{sys.executable}" -m pytest -q test_calc.py',
+                "verify_cmd": f'"{sys.executable}" -B -m pytest -q test_calc.py',
             },
         }
     )
@@ -161,7 +161,7 @@ def test_v90_18_universal_playbooks_zip_rollback_docker_and_repomap(tmp_path: Pa
                 "path": "calc.py",
                 "old": "VAL = 1",
                 "new": "VAL = 99",
-                "verify_cmd": f'"{sys.executable}" -m pytest -q test_calc.py',
+                "verify_cmd": f'"{sys.executable}" -B -m pytest -q test_calc.py',
             },
         }
     )

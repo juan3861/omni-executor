@@ -154,8 +154,10 @@ class VerifiedBrowserAdapter:
     )
 
     def __init__(self, profile_base: Optional[Path | str] = None) -> None:
-        self.profile_base = Path(
-            profile_base or r"F:\AetherMind_Temp\rpa_profiles"
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
+
+        self.profile_base = (
+            Path(profile_base) if profile_base else resolve_omni_temp_dir("rpa_profiles")
         ).resolve()
         self.profile_base.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()

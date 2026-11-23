@@ -421,7 +421,7 @@ class AetherMindUniversalAgent:
         self.browser = VerifiedBrowserAdapter()
         self.osint = OlhoDeDeusOSINT()
         self.documents = DocumentMultimodalOrgan()
-        self.ure = URENeuroSymbolicBridge()
+        self.ure = URENeuroSymbolicBridge() if callable(URENeuroSymbolicBridge) else None
         self.evolver = ConstitutionalEvolver(
             self.data_dir / "evolver_archive.db", seal_guard=self.seal_guard
         )

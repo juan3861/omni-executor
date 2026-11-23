@@ -255,9 +255,12 @@ class SafeEditTransactionalJournal:
         self.node_exe = _resolve_node_exe()
 
     def _call_bridge(self, action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
+
+        _tmp = str(resolve_omni_temp_dir())
         env = os.environ.copy()
-        env["TMP"] = r"F:\AetherMind_Temp"
-        env["TEMP"] = r"F:\AetherMind_Temp"
+        env["TMP"] = _tmp
+        env["TEMP"] = _tmp
         proc = subprocess.run(
             [self.node_exe, str(self.bridge_script)],
             input=json.dumps({"action": action, "payload": payload}),
@@ -337,16 +340,21 @@ class WorktreeIsolationManager:
     """Provisions ephemeral `git worktree` sandboxes for parallel subagent lanes (Sonnet S2)."""
 
     def __init__(self, worktree_base: Optional[Path | str] = None) -> None:
-        self.worktree_base = Path(
-            worktree_base or r"F:\AetherMind_Temp\worktrees"
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
+
+        self.worktree_base = (
+            Path(worktree_base) if worktree_base else resolve_omni_temp_dir("worktrees")
         ).resolve()
         self.worktree_base.mkdir(parents=True, exist_ok=True)
         self.git_exe = shutil.which("git") or "git"
 
     def _git(self, cwd: Path, args: List[str]) -> subprocess.CompletedProcess[str]:
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
+
+        _tmp = str(resolve_omni_temp_dir())
         env = os.environ.copy()
-        env["TMP"] = r"F:\AetherMind_Temp"
-        env["TEMP"] = r"F:\AetherMind_Temp"
+        env["TMP"] = _tmp
+        env["TEMP"] = _tmp
         return subprocess.run(
             [self.git_exe, *args],
             cwd=str(cwd),
@@ -460,9 +468,12 @@ class CodexSandboxMuscle:
         self.seal_guard.assert_command_safe(" ".join(command_args))
         cmd = [str(self.codex_exe), "sandbox"]
         cmd.extend(command_args)
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
+
+        _tmp = str(resolve_omni_temp_dir())
         env = os.environ.copy()
-        env["TMP"] = r"F:\AetherMind_Temp"
-        env["TEMP"] = r"F:\AetherMind_Temp"
+        env["TMP"] = _tmp
+        env["TEMP"] = _tmp
         if disable_network:
             env["HTTP_PROXY"] = "http://127.0.0.1:1"
             env["HTTPS_PROXY"] = "http://127.0.0.1:1"

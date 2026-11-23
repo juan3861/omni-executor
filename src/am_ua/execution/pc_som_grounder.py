@@ -60,7 +60,11 @@ class SetOfMarkGrounder:
     }
 
     def __init__(self, artifact_dir: Optional[Path | str] = None) -> None:
-        self.artifact_dir = Path(artifact_dir or r"F:\AetherMind_Temp\pc_som_grounding").resolve()
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
+
+        self.artifact_dir = (
+            Path(artifact_dir) if artifact_dir else resolve_omni_temp_dir("pc_som_grounding")
+        ).resolve()
         self.artifact_dir.mkdir(parents=True, exist_ok=True)
         self.tesseract_exe = self._find_tesseract()
 

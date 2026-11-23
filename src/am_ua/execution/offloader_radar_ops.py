@@ -116,7 +116,9 @@ def off_fastmft_radar(
 
     if mode_norm == "advise":
         if fm_bin and os.name == "nt":
-            temp_base = Path(r"F:\AetherMind_Temp\fastmft_rail")
+            from am_ua.contracts.contracts import resolve_omni_temp_dir
+
+            temp_base = resolve_omni_temp_dir("fastmft_rail")
             if temp_base.parent.exists():
                 temp_base.mkdir(parents=True, exist_ok=True)
                 out_dir = Path(tempfile.mkdtemp(prefix="advise_", dir=str(temp_base)))

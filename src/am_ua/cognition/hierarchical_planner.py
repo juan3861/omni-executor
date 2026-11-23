@@ -175,9 +175,11 @@ class ProactiveHierarchicalPlanner:
         storage_dir: Optional[Path | str] = None,
         max_replans: int = 3,
     ) -> None:
+        from am_ua.contracts.contracts import resolve_omni_temp_dir
+
         self.llm = llm
-        self.storage_dir = Path(
-            storage_dir or r"F:\AetherMind_Temp\hierarchical_plans"
+        self.storage_dir = (
+            Path(storage_dir) if storage_dir else resolve_omni_temp_dir("hierarchical_plans")
         ).resolve()
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.max_replans = max(1, int(max_replans))
