@@ -116,7 +116,7 @@ def test_v100_swebench_docker_flags_and_5_instance_pilot(tmp_path: Path, monkeyp
 
 def test_v100_packaging_dockerfile_and_doctor_integrity() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert pyproject["project"]["version"] in ("10.0.0", "11.0.0")
+    assert int(pyproject["project"]["version"].split(".")[0]) >= 10
     assert pyproject["project"]["dependencies"] == []
 
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")

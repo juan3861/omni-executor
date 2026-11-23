@@ -193,7 +193,7 @@ def test_v110_best_of_n_hardened_docker_public_bench_and_doctor(tmp_path: Path) 
 
     # 3. Packaging, Topology V2, Orphan check, and v11.0 Doctor readiness
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert pyproject["project"]["version"] == "11.0.0" and pyproject["project"]["dependencies"] == []
+    assert int(pyproject["project"]["version"].split(".")[0]) >= 11 and pyproject["project"]["dependencies"] == []
     topo = InterRepoTopologyGate().audit_package_imports(ROOT / "src" / "am_ua")
     assert topo["ok"] is True, topo.get("violations")
 

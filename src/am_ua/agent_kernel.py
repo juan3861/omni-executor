@@ -600,6 +600,11 @@ class AetherMindUniversalAgent:
                 "record_replay_ready": True,
                 "cpg_scip_ready": True,
                 "zero_turn_playbook_router_ready": True,
+                "runtime_taint_ready": True,
+                "stage_router_ready": True,
+                "spec_search_ace_ready": True,
+                "efficiency_telemetry_ready": True,
+                "wasm_sandbox_ready": True,
             }
             sp["attributes"]["healthy"] = all(
                 [

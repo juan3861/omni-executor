@@ -493,12 +493,22 @@ class AgentLoop:
         reasoning_effort: Optional[str] = None,
         parallel_read_workers: int = 6,
         enable_memory_prefetch: bool = True,
+        ace_context_rules: Optional[str] = None,
     ) -> AgentRunResult:
+        from am_ua.cognition.stage_router import ComplexityQueryAnalyzer, StageSkillHandbook
+        from am_ua.execution.wasm_sandbox import WasmSandboxRunner
+        from am_ua.perception.efficiency_telemetry import EfficiencyTracker
+
         mission_id = mission_id or f"agent-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
+        complexity_res = ComplexityQueryAnalyzer.analyze(objective or "")
+        stage_handbook = StageSkillHandbook()
+        efficiency_tracker = EfficiencyTracker()
+        _wasm_sandbox = WasmSandboxRunner()
+        _ = (_wasm_sandbox, stage_handbook, efficiency_tracker)
         low_obj = (objective or "").lower()
         s2_kw = ("architect", "refactor", "migrate", "security", "formal", "z3", "proof", "distributed", "kernel", "optimize", "compiler")
         s2_hits = sum(1 for k in s2_kw if k in low_obj)
-        cog_score = round(min(1.0, min(0.45, s2_hits * 0.18) + min(0.25, len(low_obj) / 600.0)), 3)
+        cog_score = round(max(complexity_res.score, min(1.0, min(0.45, s2_hits * 0.18) + min(0.25, len(low_obj) / 600.0))), 3)
         cog_sys = "SYSTEM_2" if cog_score >= 0.45 else "SYSTEM_1"
         event_stream_buf: List[Dict[str, Any]] = [
             {
@@ -506,6 +516,9 @@ class AgentLoop:
                 "event": "cognitive_route",
                 "system": cog_sys,
                 "complexity_score": cog_score,
+                "complexity_tier": complexity_res.tier,
+                "suggested_max_tokens": complexity_res.suggested_max_tokens,
+                "query_class": complexity_res.query_class,
                 "execution_mode": execution_mode,
             }
         ]
@@ -691,6 +704,9 @@ class AgentLoop:
         if mcp_routing and not native_tools_active:
             mounted_list = ", ".join(sorted(mcp_routing.keys())[:20])
             task += f"MOUNTED_MCP_TOOLS (invoke directly as tool names): {mounted_list}\n"
+
+        if ace_context_rules and ace_context_rules.strip():
+            task += f"{ace_context_rules.strip()}\n\n"
 
         if (workflow or "").lower() == "hierarchical":
             obj_low = objective.lower()

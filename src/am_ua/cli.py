@@ -188,7 +188,42 @@ def main(argv: list[str] | None = None) -> int:
     p_chat.add_argument("--workspace", default=str(ROOT), help="Target workspace directory")
     p_chat.add_argument("--yolo", action="store_true", help="Auto-approve diff edits without prompt")
 
+    p_route = sub.add_parser("route", help="Analyze objective complexity and SkillOrchestra stage routing (v12.0)")
+    p_route.add_argument("--query", required=True, help="Task or objective description")
+    p_route.add_argument("--model", default="", help="Optional target model name (for thinking headroom)")
+    p_route.add_argument("--stage", default="reason", choices=["locate", "reason", "verify"], help="Execution stage")
+
+    p_ace = sub.add_parser("evolve-ace", help="Inspect ACE Context Playbook & SpecSearch self-evolution status (v12.0)")
+    p_ace.add_argument("--playbook", default=str(ROOT / "data" / "ace_playbook.json"), help="Path to ACE playbook JSON")
+    p_ace.add_argument("--status", action="store_true", help="Print playbook rule count and top strategies")
+
     args = parser.parse_args(argv)
+    if args.cmd == "route":
+        from am_ua.cognition.stage_router import ComplexityQueryAnalyzer, StageSkillHandbook
+
+        comp = ComplexityQueryAnalyzer.analyze(args.query, model_name=args.model)
+        hb = StageSkillHandbook()
+        rec_prov = hb.select_provider(args.stage, ["groq", "cerebras", "gemini", "openrouter", "ollama"])
+        print(json.dumps({"complexity": comp.to_dict(), "stage": args.stage, "recommended_provider": rec_prov}, indent=2))
+        return 0
+
+    if args.cmd == "evolve-ace":
+        from am_ua.evolution.spec_search_ace import ACEContextPlaybook
+
+        pb = ACEContextPlaybook(args.playbook)
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "playbook_path": str(args.playbook),
+                    "rules_count": len(pb.rules),
+                    "rendered_preview": pb.render_context(top_k=5),
+                },
+                indent=2,
+            )
+        )
+        return 0
+
     if args.cmd == "ui":
         from am_ua.ui.mission_control_web import MissionControlServer
 

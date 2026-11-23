@@ -56,7 +56,10 @@ class WorkspaceTools:
         hook_engine: Optional[DeterministicHookEngine] = None,
         repo_mapper_factory: Optional[Callable[[Path], Any]] = None,
         knowledge_factory: Optional[Callable[[Path], Any]] = None,
+        enforce_taint: bool = False,
     ) -> None:
+        from am_ua.security.runtime_taint import RuntimeTaintTracker
+
         self.ws = workspace.resolve()
         self.seal_guard = seal_guard
         self.cmd_timeout_s = cmd_timeout_s
@@ -72,6 +75,7 @@ class WorkspaceTools:
         self._checkpoints: Dict[str, Dict[str, bytes]] = {}
         self._task_list: List[Dict[str, str]] = []
         self._io_lock = threading.RLock()
+        self.taint_tracker = RuntimeTaintTracker(enforce=enforce_taint)
         # Workspace itself must be a constitutionally writable location (project root or safe temp root).
         self.seal_guard.assert_write_allowed(self.ws / ".am_probe", actor="agent_loop")
 
@@ -115,7 +119,11 @@ class WorkspaceTools:
         start = max(1, int(args.get("start_line", 1)))
         end = min(len(lines), int(args.get("end_line", start + 399)))
         numbered = "\n".join(f"{i}: {lines[i - 1]}" for i in range(start, end + 1))
-        return {"file": args["file"], "total_lines": len(lines), "content": clip(numbered)}
+        taint = self.taint_tracker.observe_source(str(args["file"]), numbered)
+        res: Dict[str, Any] = {"file": args["file"], "total_lines": len(lines), "content": clip(numbered)}
+        if taint:
+            res["taint_labels"] = taint.to_list()
+        return res
 
     def search(self, args: Dict[str, Any]) -> Dict[str, Any]:
         pat_str = str(args["pattern"])
@@ -192,11 +200,15 @@ class WorkspaceTools:
         p = Path(str(args["path"]))  # already absolute + gate-checked by LastMileSecurityGate
         p.parent.mkdir(parents=True, exist_ok=True)
         content = self._strip_fences(str(args["content"]))
+        taint_res = self.taint_tracker.check_sink("ws.write_file", content)
+        if taint_res["blocked"]:
+            raise ConstitutionalViolationError(str(taint_res["violation"]))
         p.write_text(content, encoding="utf-8", newline="\n")
         return {
             "written": p.relative_to(self.ws).as_posix(),
             "bytes": p.stat().st_size,
             "post_edit_diagnostics": self._post_edit_diagnostics(p),
+            "taint_check": taint_res,
         }
 
     def replace_in_file(self, args: Dict[str, Any]) -> Dict[str, Any]:
