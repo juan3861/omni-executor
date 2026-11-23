@@ -91,9 +91,43 @@ class SWEBenchHarness:
         return "\n".join(diffs)
 
     @staticmethod
-    def _run_pytest_targets(workspace: Path, targets: List[str]) -> Dict[str, Any]:
+    def _run_pytest_targets(
+        workspace: Path,
+        targets: List[str],
+        *,
+        use_docker: bool = False,
+        docker_image: str = "python:3.11-slim",
+    ) -> Dict[str, Any]:
         if not targets:
-            return {"ok": True, "exit_code": 0, "output": ""}
+            return {"ok": True, "exit_code": 0, "output": "", "backend": "none"}
+        if use_docker:
+            import shutil
+
+            docker_bin = shutil.which("docker")
+            if not docker_bin:
+                return {"ok": False, "exit_code": 127, "output": "docker CLI not found", "backend": "docker"}
+            t_list = " ".join(targets)
+            cmd = [
+                docker_bin,
+                "run",
+                "--rm",
+                "--network=none",
+                "-v",
+                f"{workspace}:/ws",
+                "-w",
+                "/ws",
+                docker_image,
+                "sh",
+                "-lc",
+                f"python -m pytest -q -p no:cacheprovider {t_list}",
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=240, check=False)
+            return {
+                "ok": proc.returncode == 0,
+                "exit_code": proc.returncode,
+                "output": ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()[-2000:],
+                "backend": "docker",
+            }
         proc = subprocess.run(
             [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *targets],
             cwd=str(workspace),
@@ -108,6 +142,7 @@ class SWEBenchHarness:
             "ok": proc.returncode == 0,
             "exit_code": proc.returncode,
             "output": ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()[-2000:],
+            "backend": "host_python",
         }
 
     def evaluate_instance(
@@ -115,6 +150,9 @@ class SWEBenchHarness:
         instance: SWEBenchInstance,
         workspace: Path | str,
         solver_fn: Callable[[Path, SWEBenchInstance], Any],
+        *,
+        use_docker: bool = False,
+        docker_image: str = "python:3.11-slim",
     ) -> Dict[str, Any]:
         ws = Path(workspace).resolve()
         t0 = time.perf_counter()
@@ -124,8 +162,8 @@ class SWEBenchHarness:
 
         after = self.snapshot_files(ws)
         patch = self.compute_model_patch(before, after)
-        f2p_res = self._run_pytest_targets(ws, instance.fail_to_pass)
-        p2p_res = self._run_pytest_targets(ws, instance.pass_to_pass)
+        f2p_res = self._run_pytest_targets(ws, instance.fail_to_pass, use_docker=use_docker, docker_image=docker_image)
+        p2p_res = self._run_pytest_targets(ws, instance.pass_to_pass, use_docker=use_docker, docker_image=docker_image)
         resolved = bool(f2p_res["ok"]) and bool(p2p_res["ok"]) and bool(patch.strip())
         return {
             "instance_id": instance.instance_id,
@@ -134,6 +172,7 @@ class SWEBenchHarness:
             "resolved": resolved,
             "fail_to_pass_ok": f2p_res["ok"],
             "pass_to_pass_ok": p2p_res["ok"],
+            "eval_backend": f2p_res.get("backend", "host_python"),
             "elapsed_s": round(time.perf_counter() - t0, 2),
         }
 
@@ -246,6 +285,8 @@ class SWEBenchHarness:
         provider: str = "groq",
         max_cost_usd: Optional[float] = None,
         max_turns: int = 20,
+        use_docker: bool = False,
+        docker_image: str = "python:3.11-slim",
         solver_fn: Optional[Callable[[Path, SWEBenchInstance], Any]] = None,
         out_predictions: Optional[Path | str] = None,
     ) -> Dict[str, Any]:
@@ -304,7 +345,13 @@ class SWEBenchHarness:
             else:
                 ws_candidate = Path.cwd().resolve()
 
-            rec = self.evaluate_instance(inst, ws_candidate, active_solver)
+            rec = self.evaluate_instance(
+                inst,
+                ws_candidate,
+                active_solver,
+                use_docker=use_docker,
+                docker_image=docker_image,
+            )
             results.append(rec)
 
         resolved_count = sum(1 for r in results if r.get("resolved"))

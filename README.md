@@ -2,7 +2,7 @@
 
 **An autonomous software engineering agent with a hierarchical team orchestrator, a self-healing CDP browser engine, closed-loop Windows desktop automation, and an MCP / A2A / AG-UI interoperability harness — built around durable execution, executable verification, and hard safety gates.**
 
-[![Tests](https://img.shields.io/badge/pytest-126%2B%20passed-2ea44f?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/pytest-138%2B%20passed-2ea44f?style=flat-square)](tests/)
 [![Benchmark](https://img.shields.io/badge/AM--Bench%20code-13%2F15%20%2B%202%2F2%20re--run-2ea44f?style=flat-square)](#benchmarks-and-honest-caveats)
 [![Deterministic Rails](https://img.shields.io/badge/deterministic%20rails-220%20zero--token-0969da?style=flat-square)](#complete-cli-reference-all-21-subcommands)
 [![Static analysis](https://img.shields.io/badge/built--in%20SAST-grade%20A-0969da?style=flat-square)](SECURITY.md)
@@ -637,7 +637,7 @@ The repository bundles a sealed real-LLM evaluation suite (`eval/am_bench/`) whe
 
 ### Known Limitations
 
-- **Windows-first runtime:** UI Automation, OCR helpers, Windows DPAPI key vaults, and `pwsh` shell execution target Windows. Core coding, indexing, and CDP browser logic are mostly portable Python but currently tested only on Windows.
+- **Desktop UIA OS scope:** Desktop window/UIA automation in `pc_automation.py` targets interactive Windows sessions; core coding, Mission Control web UI, TUI, CDP browser, Triad Memory, and authenticated envelopes run natively across Windows and POSIX (`Linux`/`macOS`).
 - **Constitutional workspace boundary:** Writes are allowed strictly inside the project directory or the configured `safe_temp_root`, excluding sealed `constitution/` and `eval/` directories. Changing `safe_temp_root` requires updating and re-sealing `constitution/IMMUTABLE_CONSTITUTION.json`.
 - **Minimal package metadata:** `pyproject.toml` leaves dependencies minimal; install optional extras (`playwright`, `pytesseract`, `pillow`, `numpy`, `uiautomation`) only for the organs you activate.
 - **Orchestrator `worker_fn` requirement:** Calling `orchestrate_team()` without supplying `worker_fn` executes an internal stub that logs wave assignments; wire `agent.run_agent_mission` (as shown in [Playbook 2](#2-multi-agent-hierarchical-feature-delivery)) for live LLM multi-agent waves.
@@ -647,8 +647,9 @@ The repository bundles a sealed real-LLM evaluation suite (`eval/am_bench/`) whe
 
 ```text
 omni-executor/
+├── Dockerfile                              # Network-isolated container distribution
 ├── omni-executor.cmd                       # CLI wrapper entry point (Windows)
-├── pyproject.toml                          # Package metadata + console scripts `omni-executor`/`omni` (v8.0.0)
+├── pyproject.toml                          # Package metadata + console scripts `omni-executor`/`omni` (v10.0.0)
 ├── llms.txt                                # Machine-readable AI discovery index
 ├── LICENSE                                 # MIT License
 ├── CONTRIBUTING.md                         # Development, testing & extension guide
@@ -661,7 +662,8 @@ omni-executor/
 │   └── audit_top100_github.py              # Structural parity audit script
 ├── src/am_ua/
 │   ├── agent_kernel.py                     # Primary OmniExecutorAgent orchestration facade
-│   ├── cli.py                              # 21-subcommand CLI router
+│   ├── cli.py                              # Multi-subcommand CLI router
+│   ├── ui/                                 # Web Mission Control (SSE + budget toggle) & interactive TUI (`omni chat`)
 │   ├── cognition/                          # Multi-provider LLM client (OpenAI/Anthropic/Gemini/Ollama, native tools, cache_control), personas, AG-UI, planner, trajectory bank
 │   ├── contracts/                          # Cognitive envelopes, tainting, Brier calibration, portable temp resolver
 │   ├── evolution/                          # UCB1 + MAP-Elites + Pareto-gated evolver

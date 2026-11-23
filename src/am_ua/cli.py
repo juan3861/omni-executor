@@ -166,6 +166,8 @@ def main(argv: list[str] | None = None) -> int:
     p_swe.add_argument("--provider", default="groq", help="LLM provider prioritizing free tier (groq|openrouter|ollama)")
     p_swe.add_argument("--workspace-root", default=None, help="Directory containing checked-out repo workspaces")
     p_swe.add_argument("--max-cost-usd", type=float, default=None, help="Optional hard USD spending cap (unset = no ceiling)")
+    p_swe.add_argument("--docker", action="store_true", help="Evaluate SWE-bench tests inside --network=none Docker container")
+    p_swe.add_argument("--docker-image", default="python:3.11-slim", help="Docker evaluation image (default python:3.11-slim)")
     p_swe.add_argument("--out", default=None, help="Optional path to write predictions.json")
 
     p_fleet = sub.add_parser("fleet", help="Run v5.4 HyperFleet or v8.1 parallel git worktree swarm")
@@ -264,6 +266,8 @@ def main(argv: list[str] | None = None) -> int:
             workspace_root=args.workspace_root,
             provider=args.provider,
             max_cost_usd=args.max_cost_usd,
+            use_docker=bool(args.docker),
+            docker_image=args.docker_image,
             out_predictions=args.out,
         )
         print(json.dumps(report, indent=2, ensure_ascii=False, default=str))

@@ -8,11 +8,14 @@ Python over Win32 `CryptProtectData` / `CryptUnprotectData`.
 from __future__ import annotations
 
 import ctypes
-from ctypes import wintypes
 import hashlib
 import hmac
 import json
 import os
+if os.name == "nt":
+    from ctypes import wintypes
+else:  # pragma: no cover
+    wintypes = None  # type: ignore[assignment]
 import secrets
 import sqlite3
 import time
@@ -31,22 +34,55 @@ class ReplayAttackError(PermissionError):
     """Raised when a previously consumed nonce/event_id is replayed."""
 
 
-class _DATA_BLOB(ctypes.Structure):
-    _fields_ = [
-        ("cbData", wintypes.DWORD),
-        ("pbData", ctypes.POINTER(ctypes.c_ubyte)),
-    ]
+if os.name == "nt" and wintypes is not None:
+    class _DATA_BLOB(ctypes.Structure):
+        _fields_ = [
+            ("cbData", wintypes.DWORD),
+            ("pbData", ctypes.POINTER(ctypes.c_ubyte)),
+        ]
+else:  # pragma: no cover
+    class _DATA_BLOB:  # type: ignore[no-redef]
+        def __init__(self, cbData: int = 0, pbData: Any = None) -> None:
+            self.cbData = cbData
+            self.pbData = pbData
 
 
 class WindowsDPAPIProvider:
-    """Hardware/User-session bound secret storage using Win32 Crypt32 DPAPI."""
+    """Hardware/User-session bound secret storage (Win32 Crypt32 DPAPI + POSIX PBKDF2/HMAC fallback)."""
 
     CRYPTPROTECT_UI_FORBIDDEN = 0x1
+    _POSIX_MAGIC = b"OMNI_POSIX_V1:"
+
+    @classmethod
+    def _posix_keys(cls, salt: bytes, entropy: bytes) -> tuple[bytes, bytes]:
+        uid = getattr(os, "getuid", lambda: 0)()
+        home = os.path.expanduser("~")
+        material = f"{uid}::{home}".encode("utf-8") + b"::" + entropy
+        dk = hashlib.pbkdf2_hmac("sha256", material, salt, 60_000, dklen=64)
+        return dk[:32], dk[32:]
+
+    @classmethod
+    def _posix_keystream(cls, enc_key: bytes, salt: bytes, n_bytes: int) -> bytes:
+        blocks: list[bytes] = []
+        counter = 0
+        while sum(len(b) for b in blocks) < n_bytes:
+            blocks.append(hashlib.sha256(enc_key + salt + counter.to_bytes(4, "big")).digest())
+            counter += 1
+        return b"".join(blocks)[:n_bytes]
+
+    @staticmethod
+    def _use_win32_dpapi() -> bool:
+        return os.name == "nt"
 
     @classmethod
     def protect(cls, plaintext: bytes, entropy: bytes = b"AetherMind_UA_v1") -> bytes:
-        if os.name != "nt":
-            raise RuntimeError("WindowsDPAPIProvider requires Windows NT")
+        if not cls._use_win32_dpapi():
+            salt = secrets.token_bytes(16)
+            enc_key, mac_key = cls._posix_keys(salt, entropy)
+            ks = cls._posix_keystream(enc_key, salt, len(plaintext))
+            ct = bytes(a ^ b for a, b in zip(plaintext, ks))
+            tag = hmac.new(mac_key, cls._POSIX_MAGIC + salt + ct, hashlib.sha256).digest()
+            return cls._POSIX_MAGIC + salt + tag + ct
         in_buf = (ctypes.c_ubyte * len(plaintext)).from_buffer_copy(plaintext)
         in_blob = _DATA_BLOB(len(plaintext), in_buf)
         ent_buf = (ctypes.c_ubyte * len(entropy)).from_buffer_copy(entropy)
@@ -71,8 +107,19 @@ class WindowsDPAPIProvider:
 
     @classmethod
     def unprotect(cls, ciphertext: bytes, entropy: bytes = b"AetherMind_UA_v1") -> bytes:
-        if os.name != "nt":
-            raise RuntimeError("WindowsDPAPIProvider requires Windows NT")
+        if not cls._use_win32_dpapi():
+            if not ciphertext.startswith(cls._POSIX_MAGIC) or len(ciphertext) < len(cls._POSIX_MAGIC) + 48:
+                raise EnvelopeTamperedError("Invalid POSIX sealed key envelope")
+            off = len(cls._POSIX_MAGIC)
+            salt = ciphertext[off : off + 16]
+            tag = ciphertext[off + 16 : off + 48]
+            ct = ciphertext[off + 48 :]
+            enc_key, mac_key = cls._posix_keys(salt, entropy)
+            expected = hmac.new(mac_key, cls._POSIX_MAGIC + salt + ct, hashlib.sha256).digest()
+            if not hmac.compare_digest(tag, expected):
+                raise EnvelopeTamperedError("POSIX sealed key envelope HMAC mismatch")
+            ks = cls._posix_keystream(enc_key, salt, len(ct))
+            return bytes(a ^ b for a, b in zip(ct, ks))
         in_buf = (ctypes.c_ubyte * len(ciphertext)).from_buffer_copy(ciphertext)
         in_blob = _DATA_BLOB(len(ciphertext), in_buf)
         ent_buf = (ctypes.c_ubyte * len(entropy)).from_buffer_copy(entropy)
@@ -110,6 +157,11 @@ class WindowsDPAPIProvider:
             encrypted = cls.protect(raw_key)
             tmp = path.with_suffix(f".{os.getpid()}.{secrets.token_hex(4)}.tmp")
             tmp.write_bytes(encrypted)
+            if os.name != "nt":
+                try:
+                    os.chmod(tmp, 0o600)
+                except OSError:
+                    pass
             try:
                 os.replace(tmp, path)
                 return raw_key
