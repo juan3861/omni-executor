@@ -197,9 +197,9 @@ class SWEBenchHarness:
         use_sympy_runner = "sympy" in (repo or "").lower() and (workspace / "bin" / "test").is_file()
         if use_sympy_runner:
             cmd = [python_exe, "-B", "bin/test", *files]
-            if k_joined:
-                cmd.extend(["-k", k_joined])
-            return {"runner": "sympy_bin_test", "cmd": cmd, "files": files, "k_expr": k_joined}
+            for expr in k_exprs:
+                cmd.extend(["-k", expr])
+            return {"runner": "sympy_bin_test", "cmd": cmd, "files": files, "k_exprs": k_exprs}
 
         pytest_args = [*node_args, *files]
         if k_joined:

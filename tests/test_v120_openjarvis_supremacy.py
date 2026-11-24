@@ -388,6 +388,7 @@ def test_v120_dirty_worktree_preservation_and_live_best_of_n_escalation(tmp_path
     (sympy_ws / "bin" / "test").write_text("# runner\n", encoding="utf-8")
     (sympy_ws / "sympy" / "matrices").mkdir(parents=True)
     (sympy_ws / "sympy" / "matrices" / "test_matexpr.py").write_text("def test_Identity(): pass\n", encoding="utf-8")
-    spec = SWEBenchHarness.resolve_repo_test_command(sympy_ws, ["test_Identity"], repo="sympy/sympy")
+    spec = SWEBenchHarness.resolve_repo_test_command(sympy_ws, ["test_Identity", "test_ZeroMatrix"], repo="sympy/sympy")
     assert spec["runner"] == "sympy_bin_test" and "bin/test" in spec["cmd"]
+    assert spec["cmd"].count("-k") == 2 and " or " not in " ".join(spec["cmd"])
 
