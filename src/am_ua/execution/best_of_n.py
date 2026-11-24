@@ -87,15 +87,24 @@ class BehaviorBestOfNEngine:
         self.scratch_root.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
-    def _is_git_repo(ws: Path) -> bool:
-        return (ws / ".git").exists()
+    def _is_clean_git_repo(ws: Path) -> bool:
+        if not (ws / ".git").exists():
+            return False
+        st = subprocess.run(
+            ["git", "-C", str(ws), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        return st.returncode == 0 and not st.stdout.strip()
 
     @staticmethod
     def _prepare_candidate_workspace(src: Path, dst: Path, *, use_git_worktree: bool = True) -> bool:
-        """Prepare an isolated candidate workspace using fast `git worktree` when possible, else `copytree`."""
+        """Prepare an isolated candidate workspace using fast `git worktree` when clean, else `copytree` (preserving uncommitted test patches)."""
         if dst.exists():
             shutil.rmtree(dst, ignore_errors=True)
-        if use_git_worktree and BehaviorBestOfNEngine._is_git_repo(src):
+        if use_git_worktree and BehaviorBestOfNEngine._is_clean_git_repo(src):
             proc = subprocess.run(
                 ["git", "-C", str(src), "worktree", "add", "--detach", str(dst)],
                 capture_output=True,

@@ -1718,3 +1718,107 @@ class AgentLoop:
             "ok": bool(bo_res.get("winner_candidate_id")) and bool(bo_res.get("winner_passed_oracle")) and not bool(bo_res.get("rolled_back")),
             "best_of_n": bo_res,
         }
+
+    def run_live_best_of_n(
+        self,
+        objective: str,
+        workspace: Path | str,
+        *,
+        verify_cmd: str,
+        n: int = 3,
+        max_turns: int = 25,
+        early_stop_on_first_verified: bool = True,
+        use_judge: bool = False,
+        ace_context_rules: Optional[str] = None,
+        post_sync_verify_fn: Optional[Callable[[Path], bool]] = None,
+    ) -> Dict[str, Any]:
+        """Run up to `n` diverse live AgentLoop trajectories in isolated sandboxes with PYTHONPATH isolation and post-mortem escalation."""
+        import os
+        from am_ua.execution.best_of_n import BehaviorBestOfNEngine
+
+        strategies: Tuple[Tuple[str, str], ...] = (
+            ("react", "general_engineer"),
+            ("sparc", "tdd_enforcer"),
+            ("hierarchical", "build_error_resolver"),
+            ("react", "tdd_enforcer"),
+            ("sparc", "general_engineer"),
+        )
+        prior_notes: List[str] = []
+        run_records: List[AgentRunResult] = []
+        target_ws = Path(workspace).resolve()
+
+        def _live_runner(cand_ws: Path, idx: int) -> AgentRunResult:
+            wf, rl = strategies[(idx - 1) % len(strategies)]
+            cand_obj = objective
+            if prior_notes:
+                cand_obj += (
+                    "\n\n[PRIOR ATTEMPT POST-MORTEM — DO NOT REPEAT FAILED APPROACH]\n"
+                    + "\n".join(prior_notes[-2:])
+                )
+            old_pypath = os.environ.get("PYTHONPATH")
+            py_parts = [str(cand_ws / "src"), str(cand_ws)] if (cand_ws / "src").is_dir() else [str(cand_ws)]
+            if old_pypath:
+                py_parts.append(old_pypath)
+            os.environ["PYTHONPATH"] = os.pathsep.join(py_parts)
+            try:
+                cand_engine = DurableExecutionEngine(cand_ws.parent / f"{cand_ws.name}_durable.db")
+                cand_loop = AgentLoop(
+                    engine=cand_engine,
+                    seal_guard=self.seal_guard,
+                    llm=self.llm,
+                    pc_engine=self.pc_engine,
+                    skill_forge=self.skill_forge,
+                )
+                res = cand_loop.run(
+                    objective=cand_obj,
+                    workspace=cand_ws,
+                    verify_cmd=verify_cmd,
+                    max_turns=max_turns,
+                    workflow=wf,
+                    role=rl,
+                    use_judge=use_judge,
+                    ace_context_rules=ace_context_rules,
+                )
+            finally:
+                if old_pypath is None:
+                    os.environ.pop("PYTHONPATH", None)
+                else:
+                    os.environ["PYTHONPATH"] = old_pypath
+
+            run_records.append(res)
+            passed = bool(res.verification and res.verification.get("passed"))
+            if not passed:
+                prior_notes.append(
+                    f"- Attempt {idx} ({wf}/{rl}) ended with status={res.status} turns={res.turns} changed={res.changed_files}: {str(res.final_summary)[:220]}"
+                )
+            return res
+
+        bo_res = BehaviorBestOfNEngine(llm=self.llm).run_code_best_of_n(
+            objective=objective,
+            workspace=target_ws,
+            runner_fn=_live_runner,
+            n=n,
+            early_stop_on_first_verified=early_stop_on_first_verified,
+            use_llm_judge=False,
+            parallel=not early_stop_on_first_verified,
+            post_sync_verify_fn=post_sync_verify_fn,
+        )
+        agg_prompt = sum(int(r.tokens.get("prompt", 0)) for r in run_records)
+        agg_comp = sum(int(r.tokens.get("completion", 0)) for r in run_records)
+        agg_turns = sum(int(r.turns) for r in run_records)
+        agg_calls = sum(int(r.llm_calls) for r in run_records)
+        provs: List[str] = []
+        for r in run_records:
+            for p in r.actor_providers:
+                if p not in provs:
+                    provs.append(p)
+        return {
+            "ok": bool(bo_res.get("winner_passed_oracle")) and not bool(bo_res.get("rolled_back")),
+            "best_of_n": bo_res,
+            "attempts_run": len(run_records),
+            "turns_total": agg_turns,
+            "llm_calls_total": agg_calls,
+            "tokens_total": {"prompt": agg_prompt, "completion": agg_comp},
+            "providers": provs,
+            "last_status": run_records[-1].status if run_records else "NONE",
+        }

@@ -230,3 +230,96 @@ def test_v120_efficiency_telemetry_wasm_sandbox_topology_and_cli(capsys: Any) ->
     assert cli.main(["evolve-ace", "--status"]) == 0
     out_ace = json.loads(capsys.readouterr().out)
     assert out_ace["ok"] is True
+
+
+def test_v120_dirty_worktree_preservation_and_live_best_of_n_escalation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    from am_ua.execution.agent_loop import AgentLoop, AgentRunResult
+    from am_ua.execution.best_of_n import BehaviorBestOfNEngine
+    from am_ua.execution.durable_engine import DurableExecutionEngine
+
+    # 1. Dirty git repo must fall back to copytree so uncommitted SWE-bench test_patch is never lost
+    repo = tmp_path / "dirty_repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t.local"], cwd=str(repo), capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), capture_output=True, check=True)
+    (repo / "app.py").write_text("VAL = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "app.py"], cwd=str(repo), capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
+    # Apply uncommitted test_patch file
+    (repo / "test_patch_uncommitted.py").write_text("assert True\n", encoding="utf-8")
+
+    cand_dst = tmp_path / "cand_dirty"
+    used_wt = BehaviorBestOfNEngine._prepare_candidate_workspace(repo, cand_dst, use_git_worktree=True)
+    assert used_wt is False
+    assert (cand_dst / "test_patch_uncommitted.py").is_file()
+
+    # 2. AgentLoop.run_live_best_of_n escalates from failed attempt 1 to passing attempt 2 and stops early
+    seen_calls: list[tuple[str, str, str]] = []
+
+    def _fake_run(self, objective: str, workspace: Path | str, **kwargs: Any) -> AgentRunResult:  # noqa: ANN001
+        ws_p = Path(workspace)
+        wf = str(kwargs.get("workflow", "react"))
+        rl = str(kwargs.get("role", "general_engineer"))
+        seen_calls.append((wf, rl, os.environ.get("PYTHONPATH", "")))
+        if len(seen_calls) == 1:
+            return AgentRunResult(
+                mission_id="m1",
+                objective=objective,
+                workspace=str(ws_p),
+                status="BUDGET_EXHAUSTED",
+                epistemic_tag="NAO VERIFICADO",
+                final_summary="ran out of turns",
+                actor_confidence=0.2,
+                actor_providers=["groq"],
+                turns=5,
+                tool_calls=[],
+                verification={"passed": False, "exit_code": 1, "output": "fail"},
+                judge=None,
+                changed_files=[],
+                diff="",
+                tokens={"prompt": 100, "completion": 20},
+                llm_calls=5,
+                elapsed_s=1.0,
+                stop_reason="max_turns",
+            )
+        (ws_p / "app.py").write_text("VAL = 99\n", encoding="utf-8")
+        return AgentRunResult(
+            mission_id="m2",
+            objective=objective,
+            workspace=str(ws_p),
+            status="VERIFIED",
+            epistemic_tag="PROVADO",
+            final_summary="fixed VAL=99",
+            actor_confidence=0.95,
+            actor_providers=["openrouter"],
+            turns=2,
+            tool_calls=[],
+            verification={"passed": True, "exit_code": 0, "output": "ok"},
+            judge=None,
+            changed_files=["app.py"],
+            diff="+VAL = 99",
+            tokens={"prompt": 80, "completion": 15},
+            llm_calls=2,
+            elapsed_s=0.5,
+            stop_reason="finish",
+        )
+
+    import os
+    monkeypatch.setattr(AgentLoop, "run", _fake_run)
+    loop = AgentLoop(engine=DurableExecutionEngine(tmp_path / "bbon.db"), seal_guard=ConstitutionSealGuard(ROOT))
+    out = loop.run_live_best_of_n(
+        "Set VAL = 99",
+        repo,
+        verify_cmd="pytest -q",
+        n=3,
+        max_turns=10,
+        early_stop_on_first_verified=True,
+        post_sync_verify_fn=lambda p: "VAL = 99" in (p / "app.py").read_text(encoding="utf-8"),
+    )
+    assert out["ok"] is True
+    assert out["attempts_run"] == 2  # stopped early before candidate 3!
+    assert seen_calls[0][:2] == ("react", "general_engineer")
+    assert seen_calls[1][:2] == ("sparc", "tdd_enforcer")
+    assert (repo / "app.py").read_text(encoding="utf-8").strip() == "VAL = 99"

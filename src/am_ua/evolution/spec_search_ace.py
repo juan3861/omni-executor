@@ -135,6 +135,13 @@ class ACEContextPlaybook:
                     domain=domain,
                 )
             )
+        elif status == "BUDGET_EXHAUSTED" and patch_bytes > 0:
+            added.append(
+                self.add_or_reinforce(
+                    "Read target source files directly with read_file/search and edit via replace_in_file; avoid multi-line python -c shell quoting loops or untracked scratch files, and run the exact verify command immediately after each edit.",
+                    domain=domain,
+                )
+            )
         elif status in ("VERIFIED", "VERIFIED_AFTER_BUDGET") and patch_bytes > 0 and turns <= 20:
             added.append(
                 self.add_or_reinforce(
