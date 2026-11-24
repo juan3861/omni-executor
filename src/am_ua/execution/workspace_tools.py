@@ -342,6 +342,14 @@ class WorkspaceTools:
             )
         timeout = min(float(args.get("timeout_s", self.cmd_timeout_s)), 600.0)
         sandbox_mode = str(args.get("sandbox") or ("hermetic" if args.get("hermetic") else "")).strip().lower()
+        # Host-bound Windows commands (drive paths / .exe) cannot execute inside Linux containers/WSL microVMs
+        targets_windows_host = os.name == "nt" and bool(
+            re.search(r'(?:[A-Za-z]:[/\\]|\.exe\b)', cmd)
+        )
+        sandbox_note = ""
+        if sandbox_mode in ("hermetic", "docker") and targets_windows_host:
+            sandbox_note = f"host_fallback_from_{sandbox_mode}_for_windows_binary"
+            sandbox_mode = ""
         if sandbox_mode == "hermetic":
             from am_ua.execution.hermetic_sandbox_bridge import HermeticSandboxBridge
 
@@ -358,11 +366,17 @@ class WorkspaceTools:
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
             )
             d_out = (d_proc.stdout or "") + (("\n[stderr]\n" + d_proc.stderr) if d_proc.stderr else "")
-            return {"exit_code": d_proc.returncode, "output": clip(str(d_out)), "elapsed_s": round(time.perf_counter() - t0_d, 2), "sandbox": "docker"}
-        # In PowerShell, invoking a quoted path requires the call operator '&'
+            if d_proc.returncode != 0 and "dockerDesktopLinuxEngine" in d_out:
+                sandbox_note = "host_fallback_docker_daemon_stopped"
+                sandbox_mode = ""
+            else:
+                return {"exit_code": d_proc.returncode, "output": clip(str(d_out)), "elapsed_s": round(time.perf_counter() - t0_d, 2), "sandbox": "docker"}
         if os.name == "nt":
+            # Normalize MSYS/Git-Bash drive prefixes (`/f/...` -> `F:/...`) and add PowerShell call `&` before quoted executables
+            cmd = re.sub(r'(^|\s|&&|;)(["\']?)/([A-Za-z])/', r'\1\2\3:/', cmd)
             if cmd.startswith(('"', "'")) and not cmd.startswith("&"):
                 cmd = f"& {cmd}"
+            cmd = re.sub(r'(&&|;)\s*(?=["\'])', r'\1 & ', cmd)
             argv = ["pwsh", "-NoProfile", "-NonInteractive", "-Command", cmd]
         else:
             argv = ["bash", "-lc", cmd]
@@ -376,7 +390,10 @@ class WorkspaceTools:
             code, out = proc.returncode, (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
         except subprocess.TimeoutExpired as exc:
             code, out = 124, f"TIMEOUT after {timeout}s\n{(exc.stdout or '')}"
-        return {"exit_code": code, "output": clip(str(out)), "elapsed_s": round(time.perf_counter() - t0, 2)}
+        res: Dict[str, Any] = {"exit_code": code, "output": clip(str(out)), "elapsed_s": round(time.perf_counter() - t0, 2)}
+        if sandbox_note:
+            res["sandbox_note"] = sandbox_note
+        return res
 
     # ---- PC Automation & Adaptive Skill Tools
     def pc_observe(self, args: Dict[str, Any]) -> Dict[str, Any]:

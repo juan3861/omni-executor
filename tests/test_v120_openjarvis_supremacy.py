@@ -323,3 +323,12 @@ def test_v120_dirty_worktree_preservation_and_live_best_of_n_escalation(tmp_path
     assert seen_calls[0][:2] == ("react", "general_engineer")
     assert seen_calls[1][:2] == ("sparc", "tdd_enforcer")
     assert (repo / "app.py").read_text(encoding="utf-8").strip() == "VAL = 99"
+
+    # 3. Verify WorkspaceTools.run PowerShell quoted-chain normalization and Windows binary hermetic bypass
+    import sys
+    wt_ps = WorkspaceTools(repo, ConstitutionSealGuard(ROOT))
+    if os.name == "nt":
+        py_q = f'"{Path(sys.executable).as_posix()}"'
+        r_chain = wt_ps.run({"command": f"cd . && {py_q} -c \"print('PWSH_CHAIN_OK')\"", "sandbox": "hermetic"})
+        assert r_chain["exit_code"] == 0 and "PWSH_CHAIN_OK" in r_chain["output"]
+        assert r_chain.get("sandbox_note") == "host_fallback_from_hermetic_for_windows_binary"

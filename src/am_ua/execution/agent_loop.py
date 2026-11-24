@@ -1743,12 +1743,21 @@ class AgentLoop:
             ("react", "tdd_enforcer"),
             ("sparc", "general_engineer"),
         )
+        avail_provs = list(self.llm.available()) if self.llm and hasattr(self.llm, "available") else []
+        prov_schedule: List[Optional[str]] = []
+        for p in ("groq", "gemini", "openrouter", "cerebras", "nvidia"):
+            if p in avail_provs:
+                prov_schedule.append(p)
+        for p in avail_provs:
+            if p not in prov_schedule:
+                prov_schedule.append(p)
         prior_notes: List[str] = []
         run_records: List[AgentRunResult] = []
         target_ws = Path(workspace).resolve()
 
         def _live_runner(cand_ws: Path, idx: int) -> AgentRunResult:
             wf, rl = strategies[(idx - 1) % len(strategies)]
+            pref_prov = prov_schedule[(idx - 1) % len(prov_schedule)] if prov_schedule else None
             cand_obj = objective
             if prior_notes:
                 cand_obj += (
@@ -1774,6 +1783,7 @@ class AgentLoop:
                     workspace=cand_ws,
                     verify_cmd=verify_cmd,
                     max_turns=max_turns,
+                    actor_provider=pref_prov,
                     workflow=wf,
                     role=rl,
                     use_judge=use_judge,
