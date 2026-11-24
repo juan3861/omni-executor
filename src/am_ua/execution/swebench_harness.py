@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, field
 import difflib
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -89,6 +90,122 @@ class SWEBenchHarness:
             if lines:
                 diffs.append("".join(lines))
         return "\n".join(diffs)
+
+    @staticmethod
+    def extract_test_patch_targets(test_patch: str) -> List[str]:
+        """Extract `file::test_name` targets added or modified in a SWE-bench `test_patch` diff."""
+        if not test_patch or not test_patch.strip():
+            return []
+        targets: List[str] = []
+        current_file = ""
+        current_hunk_func = ""
+        for line in test_patch.splitlines():
+            if line.startswith("+++ b/"):
+                current_file = line[6:].strip()
+                current_hunk_func = ""
+            elif line.startswith("@@"):
+                m_ctx = re.search(r"def\s+(test_[A-Za-z0-9_]+)\s*\(", line)
+                current_hunk_func = m_ctx.group(1) if m_ctx else ""
+                if current_file and current_hunk_func:
+                    node = f"{current_file}::{current_hunk_func}"
+                    if node not in targets:
+                        targets.append(node)
+            elif current_file and line.startswith("+") and not line.startswith("+++"):
+                m_def = re.match(r"^\+\s*def\s+(test_[A-Za-z0-9_]+)\s*\(", line)
+                if m_def:
+                    node = f"{current_file}::{m_def.group(1)}"
+                    if node not in targets:
+                        targets.append(node)
+        return targets
+
+    @staticmethod
+    def sanitize_pytest_target(raw_target: str) -> str:
+        """Repair malformed space-truncated parametrized SWE-bench test nodeids."""
+        t = str(raw_target or "").strip()
+        if not t:
+            return ""
+        if "[" in t and ("]" not in t or " " in t[t.find("[") :]):
+            t = t[: t.find("[")].strip()
+        return t
+
+    @classmethod
+    def select_priority_tests(cls, instance: SWEBenchInstance, *, limit: int = 6) -> List[str]:
+        """Prioritize tests added/changed in `test_patch` before raw `fail_to_pass` ordering."""
+        ordered: List[str] = []
+        seen_keys: set[str] = set()
+        candidates = [*cls.extract_test_patch_targets(instance.test_patch), *instance.fail_to_pass]
+        for raw in candidates:
+            cleaned = cls.sanitize_pytest_target(raw)
+            if not cleaned:
+                continue
+            fn_tail = cleaned.split("::")[-1]
+            key = f"{cleaned.split('::')[0]}::{fn_tail}" if "::" in cleaned else fn_tail
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            ordered.append(cleaned)
+            if len(ordered) >= max(1, int(limit)):
+                break
+        return ordered
+
+    @classmethod
+    def resolve_repo_test_command(
+        cls,
+        workspace: Path,
+        raw_targets: Sequence[str],
+        *,
+        repo: str = "",
+        python_exe: str = sys.executable,
+    ) -> Dict[str, Any]:
+        """Build a repo-aware test command (SymPy `bin/test` for XFAIL correctness, else `pytest`)."""
+        node_args: List[str] = []
+        files: List[str] = []
+        k_exprs: List[str] = []
+        for raw in raw_targets:
+            t = cls.sanitize_pytest_target(raw)
+            if not t:
+                continue
+            if "::" in t:
+                parts = t.split("::")
+                rel_file = parts[0]
+                if len(parts) == 2 and (workspace / rel_file).is_file():
+                    if rel_file not in files:
+                        files.append(rel_file)
+                    if parts[1] not in k_exprs:
+                        k_exprs.append(parts[1])
+                else:
+                    if t not in node_args:
+                        node_args.append(t)
+            elif t.endswith(".py"):
+                if t not in files:
+                    files.append(t)
+            else:
+                if t not in k_exprs:
+                    k_exprs.append(t)
+                for p in workspace.rglob("*.py"):
+                    if "test" not in p.name.lower():
+                        continue
+                    try:
+                        if f"def {t}" in p.read_text(encoding="utf-8", errors="ignore"):
+                            rel = p.relative_to(workspace).as_posix()
+                            if rel not in files:
+                                files.append(rel)
+                    except OSError:
+                        pass
+
+        k_joined = " or ".join(k_exprs) if k_exprs else ""
+        use_sympy_runner = "sympy" in (repo or "").lower() and (workspace / "bin" / "test").is_file()
+        if use_sympy_runner:
+            cmd = [python_exe, "-B", "bin/test", *files]
+            if k_joined:
+                cmd.extend(["-k", k_joined])
+            return {"runner": "sympy_bin_test", "cmd": cmd, "files": files, "k_expr": k_joined}
+
+        pytest_args = [*node_args, *files]
+        if k_joined:
+            pytest_args.extend(["-k", k_joined])
+        cmd = [python_exe, "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider", *pytest_args]
+        return {"runner": "pytest", "cmd": cmd, "files": files, "node_args": node_args, "k_expr": k_joined}
 
     @staticmethod
     def build_docker_command(

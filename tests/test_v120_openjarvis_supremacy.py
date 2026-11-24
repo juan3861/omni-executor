@@ -354,3 +354,40 @@ def test_v120_dirty_worktree_preservation_and_live_best_of_n_escalation(tmp_path
         verify_cmd="pytest -q",
         execution_mode="plan",
     ) == ""
+
+    # 5. Verify SWEBenchHarness prioritizes test_patch tests, sanitizes broken nodeids, and routes SymPy to bin/test
+    from am_ua.execution.swebench_harness import SWEBenchHarness, SWEBenchInstance
+
+    inst = SWEBenchInstance(
+        instance_id="psf__requests-1921",
+        repo="psf/requests",
+        base_commit="3c88e520",
+        problem_statement="Session header None",
+        fail_to_pass=[
+            "test_requests.py::RequestsTestCase::test_a",
+            "test_requests.py::RequestsTestCase::test_b",
+            "test_requests.py::RequestsTestCase::test_c",
+            "test_requests.py::RequestsTestCase::test_headers_on_session_with_None_are_not_sent",
+            "tests/unittest_pyreverse_writer.py::test_get_annotation_annassign[a:",
+        ],
+        test_patch=(
+            "diff --git a/test_requests.py b/test_requests.py\n"
+            "--- a/test_requests.py\n"
+            "+++ b/test_requests.py\n"
+            "@@ -211,6 +211,9 @@ class RequestsTestCase:\n"
+            "+    def test_headers_on_session_with_None_are_not_sent(self):\n"
+            "+        pass\n"
+        ),
+    )
+    selected = SWEBenchHarness.select_priority_tests(inst, limit=3)
+    assert selected[0] == "test_requests.py::test_headers_on_session_with_None_are_not_sent"
+    assert SWEBenchHarness.sanitize_pytest_target("tests/u.py::test_fn[a:") == "tests/u.py::test_fn"
+
+    sympy_ws = tmp_path / "sympy_repo"
+    (sympy_ws / "bin").mkdir(parents=True)
+    (sympy_ws / "bin" / "test").write_text("# runner\n", encoding="utf-8")
+    (sympy_ws / "sympy" / "matrices").mkdir(parents=True)
+    (sympy_ws / "sympy" / "matrices" / "test_matexpr.py").write_text("def test_Identity(): pass\n", encoding="utf-8")
+    spec = SWEBenchHarness.resolve_repo_test_command(sympy_ws, ["test_Identity"], repo="sympy/sympy")
+    assert spec["runner"] == "sympy_bin_test" and "bin/test" in spec["cmd"]
+
