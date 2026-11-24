@@ -332,3 +332,25 @@ def test_v120_dirty_worktree_preservation_and_live_best_of_n_escalation(tmp_path
         r_chain = wt_ps.run({"command": f"cd . && {py_q} -c \"print('PWSH_CHAIN_OK')\"", "sandbox": "hermetic"})
         assert r_chain["exit_code"] == 0 and "PWSH_CHAIN_OK" in r_chain["output"]
         assert r_chain.get("sandbox_note") == "host_fallback_from_hermetic_for_windows_binary"
+
+    # 4. Verify deterministic anti-stagnation edit nudge fires at half-budget iff 0 replace_in_file edits occurred
+    nudge = AgentLoop._build_anti_stagnation_edit_nudge(
+        turn=6,
+        max_turns=12,
+        tool_log=[{"turn": 1, "tool": "read_file", "ok": True}],
+        verify_cmd="pytest -q",
+    )
+    assert "ANTI_STAGNATION_EDIT_NUDGE" in nudge
+    assert AgentLoop._build_anti_stagnation_edit_nudge(
+        turn=6,
+        max_turns=12,
+        tool_log=[{"turn": 3, "tool": "replace_in_file", "ok": True}],
+        verify_cmd="pytest -q",
+    ) == ""
+    assert AgentLoop._build_anti_stagnation_edit_nudge(
+        turn=6,
+        max_turns=12,
+        tool_log=[],
+        verify_cmd="pytest -q",
+        execution_mode="plan",
+    ) == ""

@@ -1384,6 +1384,15 @@ class AgentLoop:
                 if (stuck_verdict.is_stuck and stuck_verdict.recovery_nudge)
                 else ""
             )
+            edit_nudge = self._build_anti_stagnation_edit_nudge(
+                turn=turn,
+                max_turns=max_turns,
+                tool_log=tool_log,
+                verify_cmd=verify_cmd,
+                execution_mode=execution_mode,
+            )
+            if edit_nudge:
+                stuck_note = f"{stuck_note}\n{edit_nudge}".strip() if stuck_note else edit_nudge
 
             if used_native_tool_turn:
                 for t_name, _t_args, t_cid in batch:
@@ -1580,6 +1589,30 @@ class AgentLoop:
                 obs["vlm_som_recovery_hint"] = str(getattr(vlm_resp, "text", ""))[:500]
             except Exception:
                 pass
+
+    @staticmethod
+    def _build_anti_stagnation_edit_nudge(
+        *,
+        turn: int,
+        max_turns: int,
+        tool_log: Sequence[Dict[str, Any]],
+        verify_cmd: Optional[str],
+        execution_mode: str = "act",
+    ) -> str:
+        """Emit a mid-budget edit nudge if no `replace_in_file` has succeeded by half-budget."""
+        if not verify_cmd or execution_mode.strip().lower() == "plan" or max_turns < 8:
+            return ""
+        half = max(6, max_turns // 2)
+        checkpoints = (half, max(half + 1, max_turns - 3))
+        if turn not in checkpoints:
+            return ""
+        if any(bool(e.get("ok")) and e.get("tool") == "replace_in_file" for e in tool_log):
+            return ""
+        return (
+            f"[ANTI_STAGNATION_EDIT_NUDGE: Turn {turn}/{max_turns} reached with 0 source edits via "
+            f"replace_in_file. Stop read-only exploration/scratch scripts now: apply the minimal targeted "
+            f"fix to the repository source file with replace_in_file and run verify_cmd.]"
+        )
 
     @staticmethod
     def _condense(messages: List[Dict[str, Any]], max_chars: int = 45_000) -> List[Dict[str, Any]]:
