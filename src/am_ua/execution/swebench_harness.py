@@ -337,8 +337,9 @@ class SWEBenchHarness:
         return p
 
     FREE_TIER_MODELS: Dict[str, str] = {
-        "groq": "llama-3.3-70b-versatile",
-        "openrouter": "qwen/qwen-2.5-coder-32b-instruct:free",
+        "groq": "openai/gpt-oss-120b",
+        "openrouter": "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "nvidia": "nvidia/nemotron-3-ultra-550b-a55b",
         "ollama": "qwen2.5-coder:7b",
     }
 

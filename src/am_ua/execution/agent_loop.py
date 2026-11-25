@@ -1778,7 +1778,7 @@ class AgentLoop:
         )
         avail_provs = list(self.llm.available()) if self.llm and hasattr(self.llm, "available") else []
         prov_schedule: List[Optional[str]] = []
-        for p in ("groq", "gemini", "openrouter", "cerebras", "nvidia"):
+        for p in ("groq", "openrouter", "nvidia", "gemini", "cerebras"):
             if p in avail_provs:
                 prov_schedule.append(p)
         for p in avail_provs:

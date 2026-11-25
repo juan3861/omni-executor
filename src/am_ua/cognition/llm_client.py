@@ -222,8 +222,12 @@ _DEFAULTS: Dict[str, Dict[str, Any]] = {
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
         "key_env": "OPENROUTER_API_KEY",
-        "model": "cohere/north-mini-code:free",
-        "fallback_models": ("nvidia/nemotron-3.5-lightning:free",),
+        "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "fallback_models": (
+            "google/gemma-4-31b-it:free",
+            "nvidia/nemotron-3.5-super-vl:free",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+        ),
         "protocol": "openai_compat",
     },
     "openai": {
@@ -256,15 +260,18 @@ _DEFAULTS: Dict[str, Dict[str, Any]] = {
     "cerebras": {
         "base_url": "https://api.cerebras.ai/v1",
         "key_env": "CEREBRAS_API_KEY",
-        "model": "qwen-3-32b",
-        "fallback_models": ("llama-3.3-70b", "llama3.1-8b"),
+        "model": "gpt-oss-120b",
+        "fallback_models": ("qwen-3.8-27b",),
         "protocol": "openai_compat",
     },
     "nvidia": {
         "base_url": "https://integrate.api.nvidia.com/v1",
         "key_env": "NVIDIA_API_KEY",
-        "model": "qwen/qwen2.5-coder-32b-instruct",
-        "fallback_models": ("nvidia/llama-3.3-nemotron-super-49b-v1.5",),
+        "model": "nvidia/nemotron-3-ultra-550b-a55b",
+        "fallback_models": (
+            "nvidia/nemotron-3.5-super-vl-120b-a12b",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        ),
         "protocol": "openai_compat",
     },
     "sambanova": {

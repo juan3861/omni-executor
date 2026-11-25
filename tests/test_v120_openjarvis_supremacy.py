@@ -392,3 +392,12 @@ def test_v120_dirty_worktree_preservation_and_live_best_of_n_escalation(tmp_path
     assert spec["runner"] == "sympy_bin_test" and "bin/test" in spec["cmd"]
     assert spec["cmd"].count("-k") == 2 and " or " not in " ".join(spec["cmd"])
 
+    # 6. Verify updated live zero-cost provider model defaults (no retired 404/410 IDs)
+    from am_ua.cognition.llm_client import _DEFAULTS
+
+    assert _DEFAULTS["openrouter"]["model"].endswith(":free") and "north-mini-code" not in _DEFAULTS["openrouter"]["model"]
+    assert "nemotron-3-ultra-550b" in _DEFAULTS["nvidia"]["model"]
+    assert _DEFAULTS["cerebras"]["model"] == "gpt-oss-120b"
+    assert SWEBenchHarness.FREE_TIER_MODELS["openrouter"].endswith(":free")
+
+
