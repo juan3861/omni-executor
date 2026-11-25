@@ -400,4 +400,17 @@ def test_v120_dirty_worktree_preservation_and_live_best_of_n_escalation(tmp_path
     assert _DEFAULTS["cerebras"]["model"] == "gpt-oss-120b"
     assert SWEBenchHarness.FREE_TIER_MODELS["openrouter"].endswith(":free")
 
+    # 7. Verify Missing-Symbol Synthesis Directive extracts ImportError/AttributeError target paths into nudge & hints
+    miss_log = "ImportError: cannot import name 'get_annotation' from 'pylint.pyreverse.utils'"
+    nudge_miss = AgentLoop._build_anti_stagnation_edit_nudge(
+        turn=6,
+        max_turns=12,
+        tool_log=[{"turn": 1, "tool": "run", "ok": True}],
+        verify_cmd="pytest -q",
+        recent_observations=[miss_log],
+    )
+    assert "MISSING_SYMBOL_SYNTHESIS_DIRECTIVE" in nudge_miss
+    assert "pylint/pyreverse/utils.py" in nudge_miss and "get_annotation" in nudge_miss
+
+
 

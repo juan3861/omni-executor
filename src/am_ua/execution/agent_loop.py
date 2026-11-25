@@ -1359,8 +1359,15 @@ class AgentLoop:
                                         ok = False
                                         if not isinstance(obs, dict) or "error" not in obs:
                                             obs = {"error": f"Output guardrail rejected tool output: {guard_dec.reason}"}
-                                if tool == "run" and isinstance(obs, dict) and obs.get("exit_code") not in (0, None):
-                                    ok = True  # a failing command is still valid information
+                                if tool == "run" and isinstance(obs, dict):
+                                    miss_hint = self._extract_missing_symbol_guidance(
+                                        str(obs.get("output") or obs.get("stderr") or ""),
+                                        ws.ws,
+                                    )
+                                    if miss_hint:
+                                        obs["missing_symbol_synthesis_hint"] = miss_hint
+                                    if obs.get("exit_code") not in (0, None):
+                                        ok = True  # a failing command is still valid information
                         except RepeatToolLoopError as exc:
                             ok, obs = False, {"error": f"{exc}. Change strategy."}
                         except ToolGuardrailTripwireError:
@@ -1390,6 +1397,8 @@ class AgentLoop:
                 tool_log=tool_log,
                 verify_cmd=verify_cmd,
                 execution_mode=execution_mode,
+                recent_observations=[str(ev.get("observation") or "") for ev in stuck_events_log[-6:]],
+                workspace=ws.ws,
             )
             if edit_nudge:
                 stuck_note = f"{stuck_note}\n{edit_nudge}".strip() if stuck_note else edit_nudge
@@ -1591,28 +1600,65 @@ class AgentLoop:
                 pass
 
     @staticmethod
+    def _extract_missing_symbol_guidance(output_text: str, workspace: Optional[Path] = None) -> str:
+        """Detect ImportError/AttributeError missing symbols and direct synthesis toward target source & test contracts."""
+        txt = str(output_text or "")
+        if not txt:
+            return ""
+        findings: List[str] = []
+        for m in re.finditer(r"cannot import name ['\"]([A-Za-z_][A-Za-z0-9_]*)['\"] from ['\"]([A-Za-z0-9_.]+)['\"]", txt):
+            sym, mod = m.group(1), m.group(2)
+            rel_mod = mod.replace(".", "/") + ".py"
+            pkg_dir = mod.rsplit(".", 1)[0].replace(".", "/") if "." in mod else ""
+            if workspace is not None and not (workspace / rel_mod).is_file():
+                init_mod = mod.replace(".", "/") + "/__init__.py"
+                if (workspace / init_mod).is_file():
+                    rel_mod = init_mod
+            findings.append(f"symbol '{sym}' missing in '{rel_mod}' (package '{pkg_dir or rel_mod}')")
+        for m in re.finditer(r"module ['\"]([A-Za-z0-9_.]+)['\"] has no attribute ['\"]([A-Za-z_][A-Za-z0-9_]*)['\"]", txt):
+            mod, sym = m.group(1), m.group(2)
+            rel_mod = mod.replace(".", "/") + ".py"
+            findings.append(f"attribute '{sym}' missing on '{rel_mod}'")
+        if not findings:
+            return ""
+        uniq = list(dict.fromkeys(findings))[:4]
+        return (
+            "[MISSING_SYMBOL_SYNTHESIS_DIRECTIVE: " + "; ".join(uniq) + ". "
+            "Do NOT waste turns grepping for symbols that have not been implemented yet. "
+            "Read the failing test file to inspect exact expected signatures/return types and downstream package callers, "
+            "implement the missing symbol(s) cleanly in the target module via replace_in_file, and re-run verification.]"
+        )
+
+    @classmethod
     def _build_anti_stagnation_edit_nudge(
+        cls,
         *,
         turn: int,
         max_turns: int,
         tool_log: Sequence[Dict[str, Any]],
         verify_cmd: Optional[str],
         execution_mode: str = "act",
+        recent_observations: Optional[Sequence[str]] = None,
+        workspace: Optional[Path] = None,
     ) -> str:
-        """Emit a mid-budget edit nudge if no `replace_in_file` has succeeded by half-budget."""
+        """Emit a mid-budget edit nudge (enriched with missing-symbol diagnosis) if no edit has succeeded."""
         if not verify_cmd or execution_mode.strip().lower() == "plan" or max_turns < 8:
             return ""
         half = max(6, max_turns // 2)
         checkpoints = (half, max(half + 1, max_turns - 3))
         if turn not in checkpoints:
             return ""
-        if any(bool(e.get("ok")) and e.get("tool") == "replace_in_file" for e in tool_log):
+        if any(bool(e.get("ok")) and e.get("tool") in ("replace_in_file", "write_file") for e in tool_log):
             return ""
-        return (
+        miss_hint = ""
+        if recent_observations:
+            miss_hint = cls._extract_missing_symbol_guidance("\n".join(recent_observations), workspace)
+        base_msg = (
             f"[ANTI_STAGNATION_EDIT_NUDGE: Turn {turn}/{max_turns} reached with 0 source edits via "
             f"replace_in_file. Stop read-only exploration/scratch scripts now: apply the minimal targeted "
-            f"fix to the repository source file with replace_in_file and run verify_cmd.]"
+            f"fix or synthesize the required new helper/API in the repository source file with replace_in_file and run verify_cmd.]"
         )
+        return f"{base_msg}\n{miss_hint}" if miss_hint else base_msg
 
     @staticmethod
     def _condense(messages: List[Dict[str, Any]], max_chars: int = 45_000) -> List[Dict[str, Any]]:
