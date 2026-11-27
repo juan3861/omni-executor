@@ -259,7 +259,8 @@ class WorkspaceTools:
             lsp.shutdown()
 
     def write_file(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        p = Path(str(args["path"]))  # already absolute + gate-checked by LastMileSecurityGate
+        raw_p = str(args.get("path") or args.get("file") or args.get("file_path") or "")
+        p = Path(raw_p) if Path(raw_p).is_absolute() else self.resolve(raw_p)
         p.parent.mkdir(parents=True, exist_ok=True)
         content = self._strip_fences(str(args["content"]))
         taint_res = self.taint_tracker.check_sink("ws.write_file", content)
@@ -276,7 +277,8 @@ class WorkspaceTools:
     def replace_in_file(self, args: Dict[str, Any]) -> Dict[str, Any]:
         from am_ua.execution.workspace_fs import apply_hunks_safely
 
-        p = Path(str(args["path"]))
+        raw_p = str(args.get("path") or args.get("file") or args.get("file_path") or "")
+        p = Path(raw_p) if Path(raw_p).is_absolute() else self.resolve(raw_p)
         text = p.read_text(encoding="utf-8")
         raw_hunks = args.get("hunks")
         if isinstance(raw_hunks, list) and raw_hunks:

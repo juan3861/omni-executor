@@ -206,7 +206,7 @@ class TraceToPlaybookCompiler:
             raw_args = dict(tc.get("args") or {})
             templated_args: Dict[str, Any] = {}
             for k, v in raw_args.items():
-                if isinstance(v, str) and len(v) <= 240 and k in ("path", "file_path", "url", "command", "target", "old", "new", "pattern", "filter", "window_title"):
+                if isinstance(v, str) and len(v) <= 240 and k in ("path", "file", "file_path", "url", "command", "target", "old", "new", "pattern", "filter", "window_title"):
                     var_name = f"s{idx}_{k}"
                     param_defaults[var_name] = v
                     templated_args[k] = f"{{{{{var_name}}}}}"
