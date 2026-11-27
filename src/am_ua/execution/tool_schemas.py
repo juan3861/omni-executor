@@ -142,6 +142,31 @@ TOOL_JSON_SCHEMAS: Dict[str, Dict[str, Any]] = {
         },
         required=("action",),
     ),
+    "ast_grep_search": _fn(
+        "ast_grep_search",
+        "Run structural AST pattern search across code files (`ast-grep` with Python fallback).",
+        {
+            "pattern": {"type": "string", "description": "AST pattern with optional $VAR metavariables."},
+            "lang": {"type": "string", "description": "Language name (default 'python')."},
+            "path": {"type": "string", "description": "Optional relative directory/file scope."},
+            "max_hits": {"type": "integer"},
+        },
+        required=("pattern",),
+    ),
+    "lsp_query": _fn(
+        "lsp_query",
+        "Run LSP diagnostics (including type/lint checks), goto_definition, find_references, or hover signature.",
+        {
+            "action": {"type": "string", "enum": ["diagnostics", "definition", "references", "hover"]},
+            "file": {"type": "string", "description": "Target relative file path (for diagnostics/hover)."},
+            "symbol": {"type": "string", "description": "Target symbol name (for definition/references)."},
+            "line": {"type": "integer", "description": "1-based line number (for hover)."},
+            "path": {"type": "string", "description": "Optional relative scope directory."},
+            "language": {"type": "string", "description": "Language (default 'python')."},
+            "include_typecheck": {"type": "boolean"},
+        },
+        required=("action",),
+    ),
     "knowledge_query": _fn(
         "knowledge_query",
         "Query the workspace SQLite FTS5 / knowledge index.",

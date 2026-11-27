@@ -30,6 +30,7 @@ from .durable_engine import (
     StepStatus,
     ToolContract,
 )
+from .github_pr_bridge import GitHubPRBridge
 from .human_wheel import HumanWheelGate, WheelOutcome
 from .mcp_federation import (
     AetherMindMCPServer,
@@ -82,6 +83,7 @@ __all__ = [
     "StaleLeaseFenceError",
     "StepStatus",
     "ToolContract",
+    "GitHubPRBridge",
     "HumanWheelGate",
     "WheelOutcome",
     "AetherMindMCPServer",

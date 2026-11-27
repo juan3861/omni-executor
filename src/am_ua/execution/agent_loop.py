@@ -115,6 +115,8 @@ class AgentRunResult:
     event_ledger_path: Optional[str] = None
     pre_critic: Optional[Dict[str, Any]] = None
     structured_output: Optional[Any] = None
+    efficiency_summary: Optional[Dict[str, Any]] = None
+    stage_routing_history: Optional[List[Dict[str, Any]]] = None
 
 
 from am_ua.execution.loop_policies import (
@@ -176,6 +178,8 @@ class AgentLoop:
         "browser_extract": EffectClass.PURE_READ,
         "repo_map": EffectClass.PURE_READ,
         "cpg_impact": EffectClass.PURE_READ,
+        "ast_grep_search": EffectClass.PURE_READ,
+        "lsp_query": EffectClass.PURE_READ,
         "knowledge_query": EffectClass.PURE_READ,
         "web_fetch": EffectClass.PURE_READ,
         "spill_query": EffectClass.PURE_READ,
@@ -193,6 +197,8 @@ class AgentLoop:
         "search",
         "repo_map",
         "cpg_impact",
+        "ast_grep_search",
+        "lsp_query",
         "knowledge_query",
         "web_fetch",
         "spill_query",
@@ -494,6 +500,7 @@ class AgentLoop:
         parallel_read_workers: int = 6,
         enable_memory_prefetch: bool = True,
         ace_context_rules: Optional[str] = None,
+        allow_frontier: bool = False,
     ) -> AgentRunResult:
         from am_ua.cognition.stage_router import ComplexityQueryAnalyzer, StageSkillHandbook
         from am_ua.execution.wasm_sandbox import WasmSandboxRunner
@@ -504,7 +511,8 @@ class AgentLoop:
         stage_handbook = StageSkillHandbook()
         efficiency_tracker = EfficiencyTracker()
         _wasm_sandbox = WasmSandboxRunner()
-        _ = (_wasm_sandbox, stage_handbook, efficiency_tracker)
+        _ = _wasm_sandbox
+        stage_routing_history: List[Dict[str, Any]] = []
         low_obj = (objective or "").lower()
         s2_kw = ("architect", "refactor", "migrate", "security", "formal", "z3", "proof", "distributed", "kernel", "optimize", "compiler")
         s2_hits = sum(1 for k in s2_kw if k in low_obj)
@@ -828,6 +836,22 @@ class AgentLoop:
 
         for turn in range(1, max_turns + 1):
             messages = self._condense(messages)
+            has_edits_so_far = any(
+                bool(e.get("ok")) and e.get("tool") in ("write_file", "replace_in_file") for e in tool_log
+            )
+            cur_stage = stage_handbook.infer_stage(
+                turn=turn,
+                has_edits=has_edits_so_far,
+                pending_verify=bool(verify_cmd and has_edits_so_far and pre_verification is None),
+            )
+            avail_provs = list(self.llm.available()) if hasattr(self.llm, "available") else []
+            turn_provider = actor_provider or stage_handbook.select_provider(
+                cur_stage,
+                avail_provs,
+                prefer_free=not allow_frontier,
+                allow_frontier=allow_frontier,
+                complexity_score=cog_score,
+            )
             try:
                 if event_bus is not None and hasattr(self.llm, "chat_stream"):
                     if native_tools_active and native_tools:
@@ -836,7 +860,7 @@ class AgentLoop:
                             max_tokens=4096,
                             temperature=0.2,
                             json_mode=False,
-                            prefer=actor_provider,
+                            prefer=turn_provider,
                             tools=native_tools,
                             tool_choice="auto",
                             enable_prompt_cache=True,
@@ -853,7 +877,7 @@ class AgentLoop:
                             max_tokens=4096,
                             temperature=0.2,
                             json_mode=True,
-                            prefer=actor_provider,
+                            prefer=turn_provider,
                             on_delta=lambda d: bus.emit(
                                 AGUIEventType.TEXT_MESSAGE_CONTENT,
                                 messageId=f"msg-{turn}",
@@ -867,19 +891,47 @@ class AgentLoop:
                             max_tokens=4096,
                             temperature=0.2,
                             json_mode=False,
-                            prefer=actor_provider,
+                            prefer=turn_provider,
                             tools=native_tools,
                             tool_choice="auto",
                             enable_prompt_cache=True,
                             reasoning_effort=effective_reasoning,
                         )
                     else:
-                        resp = self.llm.chat(messages, max_tokens=4096, temperature=0.2, json_mode=True, prefer=actor_provider)
+                        resp = self.llm.chat(messages, max_tokens=4096, temperature=0.2, json_mode=True, prefer=turn_provider)
             except LLMUnavailableError as exc:
                 stop_reason = f"llm_unavailable: {str(exc)[:300]}"
                 break
             if resp.provider not in providers_used:
                 providers_used.append(resp.provider)
+            turn_lat_s = max(0.001, float(getattr(resp, "latency_ms", 1.0) or 1.0) / 1000.0)
+            efficiency_tracker.record(
+                turn=turn,
+                provider=resp.provider,
+                model=resp.model,
+                stage=cur_stage,
+                prompt_tokens=int(getattr(resp, "prompt_tokens", 0) or 0),
+                completion_tokens=int(getattr(resp, "completion_tokens", 0) or 0),
+                latency_s=turn_lat_s,
+                ttft_ms=float(getattr(resp, "ttft_ms", 0.0) or 0.0),
+                itl_ms=list(getattr(resp, "itl_ms", None) or []),
+                cost_usd=float(getattr(resp, "cost_usd", 0.0) or 0.0),
+            )
+            stage_handbook.record_outcome(
+                provider=resp.provider,
+                model=resp.model,
+                stage=cur_stage,
+                success=True,
+                latency_s=turn_lat_s,
+            )
+            stage_routing_history.append({
+                "turn": turn,
+                "stage": cur_stage,
+                "requested_provider": turn_provider,
+                "actual_provider": resp.provider,
+                "model": resp.model,
+                "ttft_ms": float(getattr(resp, "ttft_ms", 0.0) or 0.0),
+            })
 
             resp_tool_calls: List[ToolCall] = list(getattr(resp, "tool_calls", None) or [])
             used_native_tool_turn = bool(resp_tool_calls)
@@ -1360,13 +1412,20 @@ class AgentLoop:
                                         if not isinstance(obs, dict) or "error" not in obs:
                                             obs = {"error": f"Output guardrail rejected tool output: {guard_dec.reason}"}
                                 if tool == "run" and isinstance(obs, dict):
-                                    miss_hint = self._extract_missing_symbol_guidance(
-                                        str(obs.get("output") or obs.get("stderr") or ""),
-                                        ws.ws,
-                                    )
+                                    out_txt = str(obs.get("output") or obs.get("stderr") or "")
+                                    miss_hint = self._extract_missing_symbol_guidance(out_txt, ws.ws)
                                     if miss_hint:
                                         obs["missing_symbol_synthesis_hint"] = miss_hint
                                     if obs.get("exit_code") not in (0, None):
+                                        edited_paths = [
+                                            str((e.get("args") or {}).get("path", ""))
+                                            for e in tool_log
+                                            if bool(e.get("ok")) and e.get("tool") in ("write_file", "replace_in_file")
+                                        ]
+                                        if edited_paths:
+                                            tb_lock = self._extract_post_edit_traceback_lock(out_txt, edited_paths)
+                                            if tb_lock:
+                                                obs["post_edit_traceback_lock"] = tb_lock
                                         ok = True  # a failing command is still valid information
                         except RepeatToolLoopError as exc:
                             ok, obs = False, {"error": f"{exc}. Change strategy."}
@@ -1551,6 +1610,8 @@ class AgentLoop:
             event_ledger_path=ledger_path_str,
             pre_critic=pre_critic,
             structured_output=structured_output,
+            efficiency_summary=efficiency_tracker.summary(quality_score=1.0 if status.startswith("VERIFIED") else 0.0),
+            stage_routing_history=stage_routing_history,
         )
         if self.trace_dir is not None:
             self.trace_dir.mkdir(parents=True, exist_ok=True)
@@ -1598,6 +1659,27 @@ class AgentLoop:
                 obs["vlm_som_recovery_hint"] = str(getattr(vlm_resp, "text", ""))[:500]
             except Exception:
                 pass
+
+    @staticmethod
+    def _extract_post_edit_traceback_lock(output_text: str, edited_files: Sequence[str]) -> str:
+        """Lock post-edit refinement onto the exact failing assertion/exception instead of drifting back to blind search."""
+        txt = str(output_text or "")
+        if not txt:
+            return ""
+        err_lines: List[str] = []
+        for ln in txt.splitlines():
+            s = ln.strip()
+            if re.search(r"^(?:E\s+|FAILED\s+|AssertionError|AttributeError|TypeError|ImportError|NameError|ValueError)", s):
+                err_lines.append(s[:180])
+        if not err_lines:
+            return ""
+        uniq_files = list(dict.fromkeys(Path(f).name for f in edited_files if f))[:4]
+        focus = " | ".join(err_lines[:4])
+        return (
+            f"[POST_EDIT_TRACEBACK_LOCK: Edited file(s) {uniq_files} still fail with: {focus}. "
+            "Stay locked on this exact failure contract — inspect diagnostics (`lsp_query`) or the failing test assertions, "
+            "refine the edited implementation with replace_in_file, and re-run verification instead of broad search loops.]"
+        )
 
     @staticmethod
     def _extract_missing_symbol_guidance(output_text: str, workspace: Optional[Path] = None) -> str:

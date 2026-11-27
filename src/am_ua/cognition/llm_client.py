@@ -197,6 +197,8 @@ class LLMResponse:
     cache_write_tokens: int = 0
     tool_calls: List[ToolCall] = field(default_factory=list)
     thinking_text: str = ""
+    ttft_ms: float = 0.0
+    itl_ms: List[float] = field(default_factory=list)
 
     @property
     def total_tokens(self) -> int:
@@ -1099,19 +1101,21 @@ class LLMClient:
                                 self.calls += 1
                             if not text.strip() and not tcalls:
                                 raise ValueError("empty completion")
+                            lat_ms = round((time.perf_counter() - t0) * 1000, 1)
                             return LLMResponse(
                                 text,
                                 spec.name,
                                 actual_model,
                                 pt,
                                 ct,
-                                round((time.perf_counter() - t0) * 1000, 1),
+                                lat_ms,
                                 attempts,
                                 cache_read_tokens=cache_r,
                                 cost_usd=call_cost,
                                 cache_write_tokens=cache_w,
                                 tool_calls=tcalls,
                                 thinking_text=thinking,
+                                ttft_ms=lat_ms,
                             )
                         except urllib.error.HTTPError as exc:
                             detail = exc.read()[:300].decode("utf-8", "replace")
@@ -1295,6 +1299,19 @@ class LLMClient:
             method="POST",
         )
         t0 = time.perf_counter()
+        first_tok_t: Optional[float] = None
+        prev_tok_t: Optional[float] = None
+        itl_samples: List[float] = []
+
+        def _mark_stream_tick() -> None:
+            nonlocal first_tok_t, prev_tok_t
+            now = time.perf_counter()
+            if first_tok_t is None:
+                first_tok_t = now
+            elif prev_tok_t is not None and len(itl_samples) < 250:
+                itl_samples.append(round((now - prev_tok_t) * 1000, 3))
+            prev_tok_t = now
+
         chunks: List[str] = []
         think_chunks: List[str] = []
         streamed_tc_acc: Dict[int, Dict[str, str]] = {}
@@ -1323,18 +1340,20 @@ class LLMClient:
                         self.total_cache_write_tokens += cache_w
                         self.total_cost_usd = round(self.total_cost_usd + cost, 8)
                         self.calls += 1
+                    lat_ms = round((time.perf_counter() - t0) * 1000, 1)
                     return LLMResponse(
                         text,
                         spec.name,
                         actual_model,
                         pt,
                         ct,
-                        round((time.perf_counter() - t0) * 1000, 1),
+                        lat_ms,
                         cache_read_tokens=cache_r,
                         cost_usd=cost,
                         cache_write_tokens=cache_w,
                         tool_calls=tcalls,
                         thinking_text=thinking,
+                        ttft_ms=lat_ms,
                     )
 
                 for raw_line in resp:
@@ -1371,16 +1390,19 @@ class LLMClient:
                             delta_obj = ev.get("delta") or {}
                             dtype = delta_obj.get("type")
                             if dtype == "text_delta" and delta_obj.get("text"):
+                                _mark_stream_tick()
                                 txt = str(delta_obj["text"])
                                 chunks.append(txt)
                                 if on_delta is not None:
                                     on_delta(txt)
                             elif dtype == "thinking_delta" and delta_obj.get("thinking"):
+                                _mark_stream_tick()
                                 tk = str(delta_obj["thinking"])
                                 think_chunks.append(tk)
                                 if on_thinking_delta is not None:
                                     on_thinking_delta(tk)
                             elif dtype == "input_json_delta" and delta_obj.get("partial_json"):
+                                _mark_stream_tick()
                                 acc = streamed_tc_acc.setdefault(idx, {"id": f"toolu_{idx}", "name": "", "arguments": ""})
                                 acc["arguments"] += str(delta_obj["partial_json"])
                         elif etype == "message_delta":
@@ -1394,17 +1416,20 @@ class LLMClient:
                     delta_obj = ((ev.get("choices") or [{}])[0]).get("delta") or {}
                     delta_txt = delta_obj.get("content")
                     if delta_txt:
+                        _mark_stream_tick()
                         chunks.append(delta_txt)
                         if on_delta is not None:
                             on_delta(delta_txt)
                     delta_think = delta_obj.get("reasoning_content") or delta_obj.get("reasoning")
                     if delta_think:
+                        _mark_stream_tick()
                         think_chunks.append(str(delta_think))
                         if on_thinking_delta is not None:
                             on_thinking_delta(str(delta_think))
                     for tc_delta in delta_obj.get("tool_calls") or []:
                         if not isinstance(tc_delta, dict):
                             continue
+                        _mark_stream_tick()
                         idx = int(tc_delta.get("index", 0))
                         acc = streamed_tc_acc.setdefault(idx, {"id": "", "name": "", "arguments": ""})
                         if tc_delta.get("id"):
@@ -1450,18 +1475,22 @@ class LLMClient:
                 self.total_cache_write_tokens += cache_w
                 self.total_cost_usd = round(self.total_cost_usd + cost, 8)
                 self.calls += 1
+            lat_ms = round((time.perf_counter() - t0) * 1000, 1)
+            ttft_val = round((first_tok_t - t0) * 1000, 2) if first_tok_t is not None else lat_ms
             return LLMResponse(
                 full_text,
                 spec.name,
                 actual_model,
                 pt,
                 ct,
-                round((time.perf_counter() - t0) * 1000, 1),
+                lat_ms,
                 cache_read_tokens=cache_r,
                 cost_usd=cost,
                 cache_write_tokens=cache_w,
                 tool_calls=tcalls_out,
                 thinking_text=full_thinking,
+                ttft_ms=ttft_val,
+                itl_ms=itl_samples,
             )
         except Exception:
             return self.chat(

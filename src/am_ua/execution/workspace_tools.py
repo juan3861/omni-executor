@@ -169,21 +169,48 @@ class WorkspaceTools:
         return strip_code_fences(content)
 
     @staticmethod
-    def _post_edit_diagnostics(p: Path) -> Dict[str, Any]:
-        """Run immediate deterministic AST/JSON syntax verification right after file mutation."""
+    def _post_edit_diagnostics(p: Path, *, workspace: Optional[Path] = None) -> Dict[str, Any]:
+        """Run immediate AST syntax verification + fast Ruff/Typecheck semantic checks right after file mutation."""
         ext = p.suffix.lower()
         if ext == ".py":
             import ast
 
             try:
                 ast.parse(p.read_text(encoding="utf-8", errors="replace"), filename=str(p))
-                return {"ok": True, "kind": "python_ast", "errors": []}
             except SyntaxError as exc:
                 return {
                     "ok": False,
+                    "semantic_ok": False,
                     "kind": "python_ast",
                     "errors": [{"line": exc.lineno or 0, "col": exc.offset or 0, "msg": exc.msg}],
+                    "semantic_diagnostics": [],
                 }
+            semantic_diags: List[Dict[str, Any]] = []
+            backends_used: List[str] = ["python_ast"]
+            ws_root = workspace or p.parent
+            try:
+                from am_ua.execution.native_backends import NativeBackendRouter
+
+                ruff_res = NativeBackendRouter.ruff_diagnostics(ws_root, p, timeout_s=3.5)
+                has_ruff = ruff_res.get("backend") not in (None, "none")
+                if has_ruff:
+                    backends_used.append(str(ruff_res["backend"]))
+                    semantic_diags.extend(ruff_res.get("diagnostics") or [])
+                if (not has_ruff) or os.environ.get("AM_UA_POST_EDIT_TYPECHECK", "0") == "1":
+                    tc_res = NativeBackendRouter.typecheck_file(ws_root, p, timeout_s=5.0)
+                    if tc_res.get("backend") not in (None, "none", "python_ast"):
+                        backends_used.append(str(tc_res["backend"]))
+                        semantic_diags.extend(tc_res.get("diagnostics") or [])
+            except Exception:
+                pass
+            return {
+                "ok": True,
+                "semantic_ok": not any(d.get("severity") == "error" for d in semantic_diags),
+                "kind": "python_ast",
+                "backends": backends_used,
+                "errors": [],
+                "semantic_diagnostics": semantic_diags[:15],
+            }
         if ext == ".json":
             try:
                 json.loads(p.read_text(encoding="utf-8", errors="replace"))
@@ -196,6 +223,41 @@ class WorkspaceTools:
                 }
         return {"ok": True, "kind": "none", "errors": []}
 
+    def ast_grep_search(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Run structural AST search via `NativeBackendRouter.ast_grep_search` within the workspace."""
+        from am_ua.execution.native_backends import NativeBackendRouter
+
+        pattern = str(args.get("pattern") or "").strip()
+        if not pattern:
+            return {"ok": False, "error": "missing required 'pattern'"}
+        lang = str(args.get("lang") or "python").strip().lower()
+        target = self.resolve(str(args.get("path", ".")))
+        max_hits = min(int(args.get("max_hits", 150)), 300)
+        return NativeBackendRouter.ast_grep_search(self.ws, pattern, lang=lang, target=target, max_hits=max_hits)
+
+    def lsp_query(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Query `PersistentLSPClient` (`diagnostics` | `definition` | `references` | `hover`) in the workspace."""
+        from am_ua.perception.lsp_client import PersistentLSPClient
+
+        action = str(args.get("action") or "diagnostics").strip().lower()
+        prefer_external = bool(args.get("prefer_external", False))
+        lsp = PersistentLSPClient(self.ws, language=str(args.get("language") or "python"))
+        lsp.start(prefer_external=prefer_external)
+        try:
+            if action == "diagnostics":
+                target = self.resolve(str(args.get("file") or args.get("path") or ""))
+                return lsp.get_diagnostics(str(target), include_typecheck=bool(args.get("include_typecheck", True)))
+            if action == "definition":
+                return lsp.goto_definition(str(args.get("symbol") or ""), target_dir=str(args.get("path") or "."))
+            if action == "references":
+                return lsp.find_references(str(args.get("symbol") or ""), target_dir=str(args.get("path") or "."))
+            if action == "hover":
+                target = self.resolve(str(args.get("file") or args.get("path") or ""))
+                return lsp.hover_signature(str(target), line=int(args.get("line", 1)))
+            return {"ok": False, "error": f"Unsupported lsp_query action: {action!r}"}
+        finally:
+            lsp.shutdown()
+
     def write_file(self, args: Dict[str, Any]) -> Dict[str, Any]:
         p = Path(str(args["path"]))  # already absolute + gate-checked by LastMileSecurityGate
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -207,7 +269,7 @@ class WorkspaceTools:
         return {
             "written": p.relative_to(self.ws).as_posix(),
             "bytes": p.stat().st_size,
-            "post_edit_diagnostics": self._post_edit_diagnostics(p),
+            "post_edit_diagnostics": self._post_edit_diagnostics(p, workspace=self.ws),
             "taint_check": taint_res,
         }
 
@@ -257,7 +319,7 @@ class WorkspaceTools:
         res: Dict[str, Any] = {
             "replaced_in": p.relative_to(self.ws).as_posix(),
             "hunks_applied": len(hunks),
-            "post_edit_diagnostics": self._post_edit_diagnostics(p),
+            "post_edit_diagnostics": self._post_edit_diagnostics(p, workspace=self.ws),
         }
         if syn_err:
             res["syntax_error"] = syn_err

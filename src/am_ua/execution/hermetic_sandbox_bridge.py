@@ -77,12 +77,32 @@ class HermeticSandboxBridge:
                 return False
         return Path("/dev/shm").is_dir()
 
+    @staticmethod
+    def docker_daemon_alive(*, timeout_s: float = 4.0) -> bool:
+        """Probe whether the local Docker daemon is actively responding."""
+        docker_bin = shutil.which("docker")
+        if not docker_bin:
+            return False
+        try:
+            proc = subprocess.run(
+                [docker_bin, "info", "--format", "{{.ServerVersion}}"],
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+                check=False,
+            )
+            return proc.returncode == 0 and bool((proc.stdout or "").strip())
+        except Exception:
+            return False
+
     def status(self) -> Dict[str, Any]:
         installed = self.is_installed()
         ready = self.is_runtime_ready() if installed else False
+        docker_alive = self.docker_daemon_alive()
         return {
             "installed": installed,
             "runtime_ready": ready,
+            "docker_daemon_alive": docker_alive,
             "vendor_dir": str(self.vendor_dir),
         }
 
@@ -92,10 +112,41 @@ class HermeticSandboxBridge:
         *,
         timeout_s: float = 60.0,
         memory_mb: int = 512,
+        workspace: Optional[Path | str] = None,
+        fallback_docker: bool = True,
+        docker_image: str = "python:3.11-slim",
     ) -> Dict[str, Any]:
-        if not self.is_installed():
-            return {"ok": False, "error": "Hermetic MicroVM Sandbox is not installed in vendor/hermetic_sandbox"}
-        if not self.is_runtime_ready():
+        if not self.is_installed() or not self.is_runtime_ready():
+            if fallback_docker and self.docker_daemon_alive():
+                from am_ua.execution.swebench_harness import SWEBenchHarness
+
+                ws_p = Path(workspace or Path.cwd()).resolve()
+                cmd = SWEBenchHarness.build_docker_shell_command(
+                    ws_p,
+                    command,
+                    docker_image=docker_image,
+                    hardened=True,
+                    network_none=True,
+                )
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=max(10, int(timeout_s)),
+                    check=False,
+                )
+                out = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+                return {
+                    "ok": proc.returncode == 0,
+                    "exit_code": proc.returncode,
+                    "output": out,
+                    "sandbox": "docker_hardened",
+                    "docker_image": docker_image,
+                }
+            if not self.is_installed():
+                return {"ok": False, "error": "Hermetic MicroVM Sandbox is not installed in vendor/hermetic_sandbox"}
             return {"ok": False, "error": "Hermetic MicroVM runtime (WSL2 / /dev/shm) is not ready on this host"}
         Sandbox = self._load_sandbox_cls()
         with Sandbox(template="base", timeout=max(5, int(timeout_s)), memory_mb=memory_mb) as sb:

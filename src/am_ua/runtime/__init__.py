@@ -10,6 +10,8 @@ from .enhancers import (
     SymbolicPreLLMBypass,
     SynapseContextBracketEngine,
 )
+from .daemon_queue import DurableDaemonQueue
+from .daemon_worker import DurableDaemonWorker
 from .omh_wiring import (
     ExperimentalArbitrator,
     OMHMaestroBridge,
@@ -18,6 +20,8 @@ from .omh_wiring import (
 __all__ = [
     "AmortizedContextCondenser",
     "ContextBracket",
+    "DurableDaemonQueue",
+    "DurableDaemonWorker",
     "PersistentPwshSession",
     "RepeatToolLoopBreaker",
     "RepeatToolLoopError",

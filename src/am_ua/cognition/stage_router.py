@@ -150,6 +150,7 @@ class ModelStageProfile:
     cost_per_1k_usd: float = 0.0
     attempts: int = 0
     successes: int = 0
+    tier: str = "free"  # "zero_token" | "free" | "frontier"
 
     def score(self, *, prefer_free: bool = True) -> float:
         cost_penalty = (0.25 * self.cost_per_1k_usd) if prefer_free else (0.05 * self.cost_per_1k_usd)
@@ -160,10 +161,13 @@ class ModelStageProfile:
 class StageSkillHandbook:
     """SkillOrchestra-style per-stage model/provider router (`locate` -> `reason` -> `verify`)."""
 
+    FREE_PROVIDERS: Tuple[str, ...] = ("groq", "openrouter", "nvidia", "cerebras", "ollama")
+    FRONTIER_PROVIDERS: Tuple[str, ...] = ("anthropic", "openai", "gemini")
+
     DEFAULT_STAGE_PREFERENCE: Dict[str, Tuple[str, ...]] = {
-        "locate": ("groq", "cerebras", "gemini", "openrouter", "ollama"),
-        "reason": ("groq", "gemini", "openrouter", "anthropic", "openai", "cerebras"),
-        "verify": ("groq", "cerebras", "openrouter", "gemini", "ollama"),
+        "locate": ("groq", "openrouter", "nvidia", "cerebras", "ollama", "gemini"),
+        "reason": ("groq", "openrouter", "nvidia", "anthropic", "openai", "gemini", "cerebras"),
+        "verify": ("groq", "openrouter", "nvidia", "cerebras", "ollama", "gemini"),
     }
 
     def __init__(self, profiles: Optional[Sequence[ModelStageProfile]] = None) -> None:
@@ -213,19 +217,30 @@ class StageSkillHandbook:
         available_providers: Sequence[str],
         *,
         prefer_free: bool = True,
+        allow_frontier: bool = False,
+        complexity_score: float = 0.0,
     ) -> Optional[str]:
         avail = list(available_providers)
         if not avail:
             return None
+        pool = list(avail)
+        if prefer_free and not allow_frontier:
+            free_only = [p for p in avail if p not in self.FRONTIER_PROVIDERS]
+            if free_only:
+                pool = free_only
+        elif allow_frontier and complexity_score >= 0.78:
+            frontier_avail = [p for p in self.FRONTIER_PROVIDERS if p in avail]
+            if frontier_avail:
+                return frontier_avail[0]
         stage_key = stage if stage in self.DEFAULT_STAGE_PREFERENCE else "reason"
-        candidates = [p for p in self.profiles if p.stage == stage_key and p.provider in avail and p.attempts >= 3]
+        candidates = [p for p in self.profiles if p.stage == stage_key and p.provider in pool and p.attempts >= 3]
         if candidates:
             best = max(candidates, key=lambda p: p.score(prefer_free=prefer_free))
             return best.provider
         for pref in self.DEFAULT_STAGE_PREFERENCE[stage_key]:
-            if pref in avail:
+            if pref in pool:
                 return pref
-        return avail[0]
+        return pool[0]
 
 
 class LearnedRouterPolicy:

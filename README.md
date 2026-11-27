@@ -2,10 +2,10 @@
 
 **An autonomous software engineering agent with a hierarchical team orchestrator, a self-healing CDP browser engine, closed-loop Windows desktop automation, and an MCP / A2A / AG-UI interoperability harness — built around durable execution, executable verification, and hard safety gates.**
 
-[![Tests](https://img.shields.io/badge/pytest-146%2B%20passed-2ea44f?style=flat-square)](tests/)
-[![SWE-bench Pilot](https://img.shields.io/badge/SWE--bench%20Verified%20pilot-3%2F3%20%28100%25%20%40%20%240.00%29-2ea44f?style=flat-square)](#benchmarks-and-honest-caveats)
+[![Tests](https://img.shields.io/badge/pytest-150%2B%20passed-2ea44f?style=flat-square)](tests/)
+[![SWE-bench Verified](https://img.shields.io/badge/SWE--bench%20Verified-9%2F12%20%2875%25%20%40%20%240.00%29-2ea44f?style=flat-square)](#benchmarks-and-honest-caveats)
 [![Benchmark](https://img.shields.io/badge/AM--Bench%20code-13%2F15%20%2B%202%2F2%20re--run-2ea44f?style=flat-square)](#benchmarks-and-honest-caveats)
-[![Deterministic Rails](https://img.shields.io/badge/deterministic%20rails-220%20zero--token-0969da?style=flat-square)](#complete-cli-reference-all-21-subcommands)
+[![Deterministic Rails](https://img.shields.io/badge/deterministic%20rails-220%20zero--token-0969da?style=flat-square)](#complete-cli-reference-all-24-subcommands)
 [![Static analysis](https://img.shields.io/badge/built--in%20SAST-grade%20A-0969da?style=flat-square)](SECURITY.md)
 [![Protocols](https://img.shields.io/badge/protocols-MCP%20%7C%20A2A%20v0.3%20%7C%20AG--UI-8250df?style=flat-square)](#protocol-integrations)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square)](pyproject.toml)
@@ -19,8 +19,8 @@
 2. [Capability Overview](#capability-overview)
 3. [Architecture & Mission Lifecycle](#architecture--mission-lifecycle)
 4. [Quick Start & Environment Configuration](#quick-start--environment-configuration)
-5. [Complete CLI Reference (All 21 Subcommands)](#complete-cli-reference-all-21-subcommands)
-6. [Complete Agent Tool Catalog (All 32 Workspace Tools)](#complete-agent-tool-catalog-all-32-workspace-tools)
+5. [Complete CLI Reference (All 24 Subcommands)](#complete-cli-reference-all-24-subcommands)
+6. [Complete Agent Tool Catalog (All 34 Workspace Tools)](#complete-agent-tool-catalog-all-34-workspace-tools)
 7. [Hierarchical Team Orchestration & Engineering Personas](#hierarchical-team-orchestration--engineering-personas)
 8. [Protocol Integrations (MCP, A2A v0.3, Multi-Channel Gateway & AG-UI SSE)](#protocol-integrations)
 9. [Built-in Security Analyzer & Deterministic Guardrails](#built-in-security-analyzer--deterministic-guardrails)
@@ -53,9 +53,9 @@ OmniExecutor Agent treats every one of those failure modes as a systems-engineer
 | **Autonomous Coding Loop** | Native typed tool calling (`tools` / `tool_calls`) across OpenAI, Anthropic, Gemini Native, Groq, OpenRouter & Ollama with explicit `cache_control` prompt caching, extended thinking budgets, and SSE streamed tool assembly; parallel `ThreadPoolExecutor` dispatch for `PURE_READ` batches; dynamic first-class MCP tool mounting (`mcp__<server>__<tool>`); ReAct, SPARC (`S/P/A/R/C`), and Hierarchical DAG workflows; Turn-0 inventory + `AgentlessThreePhaseLocalizer`; live `grammar_json_repair`, `SimHashSemanticCache`, `prompt_token_pruner`, `OpenHandsStuckDetector`, `ShellSemanticPolicyRails`, and `AiderFuzzySearchReplaceEngine` cascade; `Plan`/`Act` gate | `cognition/llm_client.py`, `execution/agent_loop.py`, `execution/workspace_tools.py`, `execution/tool_schemas.py`, `execution/loop_policies.py`, `execution/openhands_organs.py`, `execution/apex_codeact_fuzzy.py` |
 | **220 Deterministic Zero-Token Rails** | Sub-millisecond zero-token rails spanning `ast-grep`, `LibCST`, `Comby`, polyglot JS/TS/Rust/Go/clone detection, live host silicon CPU cache & DRAM bandwidth probing (`Win32_CacheMemory` / `sysfs`), `LLMLingua` token pruning, `Z3` SMT, `Hypothesis`, `ddmin`, `Ochiai` SBFL fault localization, `TLA+` TLC model checker, `Raft/Paxos` self-healing, Windows app/PATH/process discovery, Electron ASAR probing, BM25 full-text search, SQL/Pydantic schema inference, CRDT/VectorClocks/JWT/Merkle verification, and `fastmft`/Casimir radar | `execution/deterministic_offloader.py`, `execution/deterministic_matrix_100.py`, `execution/deterministic_matrix_v70.py`, `execution/token_latency_savers.py`, `execution/apex_fault_localizer.py`, `execution/tla_formal_verifier.py`, `execution/raft_paxos_healing.py`, `execution/cpu_cache_telemetry.py`, `execution/apex_v62_extracts.py` |
 | **HyperFleet & Worktree Swarm** | Concurrent `WorktreeSwarmCoordinator` + `GitWorktreeManager` launching parallel isolated `AgentLoop` workers across `git worktree` branches with 3-way diff merge and conflict resolution (`--worktrees`), plus in-process `HyperFleet` executing **1,000+ concurrent agents** at **`0.173 KB` RAM/agent** with Go-style `SingleFlightCoalescer`, `begin_generation` zero-erasure chaining, hard USD budget gate, `ResourceLockManager` (`FIFOLock`), and severity-scored (`0–10`) Dev Squad / Executive Fleet waves | `execution/worktree_swarm.py`, `execution/subagent_bus.py`, `execution/openhands_organs.py`, `cognition/personas.py` |
-| **Code Intelligence & CPG/SCIP** | Unified Code Property Graph (`CodePropertyGraphBuilder` combining AST + CFG + Dataflow taint slicing `trace_taint_slice` & `impact_analysis`) + compiler-grade **SCIP** symbol index (`SCIPIndexStore`) exposed via `cpg_impact`; polyglot AST/parser symbol map ranked with weighted PageRank (`Python`, `JS/TS`, `Rust`, `Go`); vectorless Merkle-tree index (`sync_incremental`) with ACL/RBAC scoping & Mermaid graph export; persistent stdio LSP client & Efficiency Telemetry (`TTFT`, `ITL p50/p95`, `GFLOPs`) | `perception/code_property_graph.py`, `perception/efficiency_telemetry.py`, `perception/polyglot_repomap.py`, `perception/knowledge_index.py`, `perception/lsp_client.py`, `perception/silicon_radar.py` |
-| **Deterministic Playbooks, Turn-0 Router & Record-Replay** | `run_playbook` engine with **18 pre-fixed universal workflows** across **Code**, **Windows/Docker**, and **Browser**; **`TurnZeroPlaybookRouter`** executing matched intents in `0` LLM tokens; **`TraceToPlaybookCompiler`** distilling agent trajectories into deterministic playbooks; Temporal/Restate-style **`DeterministicRecordReplayEngine`** (`RecorderSession`/`ReplaySession`/`NonDeterminismDriftError`); zero-Docker **`WasmSandboxRunner`** (optional `wasmtime` + deterministic AST fallback); `NativeBackendRouter` dispatching `ripgrep`, `tree-sitter`, `z3`, `tlc2`, & hardened Docker (`--cap-drop=ALL`, `--read-only`) | `execution/playbook_compiler.py`, `execution/record_replay.py`, `execution/wasm_sandbox.py`, `execution/parametric_playbooks.py`, `execution/native_backends.py` |
-| **SkillOrchestra Stage Router & Multi-Key Rotation** | `ComplexityQueryAnalyzer` (`0.0–1.0` complexity score + dynamic `1024–16384` token tiers with `2x` thinking headroom), **`StageSkillHandbook`** per-stage routing (`locate` → `reason` → `verify`), **`LearnedRouterPolicy`** (`min_samples` trace-driven model selection), and automatic multi-key pool rotation (`_select_key`/`_rotate_key` on HTTP `401/402/403/429`) in `LLMClient` | `cognition/stage_router.py`, `cognition/llm_client.py` |
+| **Code Intelligence, Real LSP & CPG/SCIP** | Real JSON-RPC 2.0 `Content-Length` stdio `PersistentLSPClient` (`basedpyright-langserver`/`pyright-langserver`/`pylsp` + `diagnostics`, `goto_definition`, `find_references`, `hover_signature`) paired with instant post-edit `ruff` / `basedpyright` / `mypy` semantic diagnostics and native `ripgrep` / `ast-grep` search; Unified Code Property Graph (`CodePropertyGraphBuilder` combining AST + CFG + Dataflow taint slicing `trace_taint_slice` & `impact_analysis`) + compiler-grade **SCIP** symbol index (`SCIPIndexStore`) exposed via `cpg_impact`; polyglot AST/parser symbol map ranked with weighted PageRank (`Python`, `JS/TS`, `Rust`, `Go`); vectorless Merkle-tree index (`sync_incremental`) with ACL/RBAC scoping & Mermaid graph export; live `TTFT` / `ITL p50/p95` telemetry | `perception/lsp_client.py`, `execution/native_backends.py`, `perception/code_property_graph.py`, `perception/efficiency_telemetry.py`, `perception/polyglot_repomap.py`, `perception/knowledge_index.py`, `perception/silicon_radar.py` |
+| **Deterministic Playbooks, Turn-0 Router & Record-Replay** | `run_playbook` engine with **18 pre-fixed universal workflows** across **Code**, **Windows/Docker**, and **Browser**; **`TurnZeroPlaybookRouter`** executing matched intents in `0` LLM tokens; **`TraceToPlaybookCompiler`** distilling agent trajectories into deterministic playbooks; Temporal/Restate-style **`DeterministicRecordReplayEngine`** (`RecorderSession`/`ReplaySession`/`NonDeterminismDriftError`) & always-on **`DurableDaemonWorker`** with crash-lease recovery and retry backoff; zero-Docker **`WasmSandboxRunner`**; `NativeBackendRouter` dispatching `ripgrep`, `ast-grep`, `basedpyright`, `ruff`, `tree-sitter`, `z3`, & hardened Docker (`--cap-drop=ALL`, `--network=none`) including legacy Python 2.7/3.9 routing | `runtime/daemon_worker.py`, `execution/playbook_compiler.py`, `execution/record_replay.py`, `execution/wasm_sandbox.py`, `execution/parametric_playbooks.py`, `execution/native_backends.py`, `execution/swebench_harness.py` |
+| **SkillOrchestra Stage Router, Traceback Lock & PR Bridge** | `ComplexityQueryAnalyzer` (`0.0–1.0` complexity score + dynamic token tiers), live **`StageSkillHandbook`** per-stage routing (`locate` → `reason` → `verify`) with free-tier default (`allow_frontier=False`) and live `TTFT`/`ITL` recording, **`POST_EDIT_TRACEBACK_LOCK`** for multi-file synthesis, **`LearnedRouterPolicy`**, automatic multi-key pool rotation (`401/402/403/429`), and **`GitHubPRBridge`** (`AgentShield`-gated `gh` PR creation & CI check/fix objectives) | `cognition/stage_router.py`, `cognition/llm_client.py`, `execution/agent_loop.py`, `execution/github_pr_bridge.py` |
 | **Web Mission Control & TUI** | Loopback SSE cockpit (`omni ui`) with live **`on_demand` (free tier) ↔ `fixed` (USD cap)** budget switching on `HomeostasisGovernor` and Take-the-Wheel signals, plus streaming terminal console (`omni chat`) with `[y/n/a/e]` diff approval & slash commands | `ui/mission_control_web.py`, `ui/tui.py` |
 | **Browser Automation** | Isolated Chromium via Playwright/CDP with `[1..N]` indexed interactive elements, closed-loop pre/post visual Set-of-Mark SHA-256 delta verification, self-healing locators, payment hard-stop, and SSRF-guarded `web_fetch` | `gui/cdp_browser.py`, `gui/verified_browser_adapter.py` |
 | **Desktop Automation (Windows)** | Closed-loop Win32 UI Automation + Set-of-Mark visual tagging + OCR + window/process/port/clipboard control protected by a process-wide exclusive GUI lock | `execution/pc_automation.py` |
@@ -195,19 +195,24 @@ pytest tests -q                # Full automated suite (105 unit & integration te
 
 ---
 
-## Complete CLI Reference (All 21 Subcommands)
+## Complete CLI Reference (All 24 Subcommands)
 
 Every capability is accessible through `.\omni-executor.cmd <command> [args]` (or `python -m am_ua.cli <command>`).
 
 | Command | Summary | Key Options & Arguments |
 | :--- | :--- | :--- |
-| **`doctor`** | Full readiness audit: single state owner, constitutional SHA-256 seal, topology compliance, memory layers, and host RAM/disk headroom | None (`exit 0` if healthy and topology valid) |
+| **`doctor`** | Full readiness audit: single state owner, constitutional SHA-256 seal, topology compliance, native accelerators (`rg`/`ast-grep`/`basedpyright`/`ruff`/`docker`/`gh`), daemon & PR bridge readiness, and host headroom | None (`exit 0` if healthy and topology valid) |
 | **`shield`** | Static security scanner covering secrets, MCP configs, hook injection, dangerous permissions, and unsafe code sinks | `[target]` (default repo root); prints JSON score + grade `A`–`F` |
-| **`det`** | Programmable Deterministic Command Hub: list or invoke any of the **220 zero-token deterministic rails** (`ast_syntax_sweep`, `sbfl_ochiai_fault_localize`, `tla_bounded_model_checker`, `raft_partition_self_healer`, `live_silicon_cpu_cache_probe`, `bm25_workspace_fulltext_search`, `electron_asar_manifest_probe`, `v70_omega_220_full_spectrum_gate`, etc.) | `list\|run` `[rail]` `--workspace DIR` `--params JSON` |
+| **`det`** | Programmable Deterministic Command Hub: list or invoke any of the **220 zero-token deterministic rails** (`ast_syntax_sweep`, `sbfl_ochiai_fault_localize`, `tla_bounded_model_checker`, `raft_partition_self_healer`, `live_silicon_cpu_cache_probe`, `bm25_workspace_fulltext_search`, `electron_asar_manifest_probe`, `v70_omega_220_full_spectrum_gate`, etc.) | `list\|run\|list-playbooks\|run-playbook` `[rail]` `--workspace DIR` `--params JSON` |
 | **`fleet`** | Launch `HyperFleet` high-density in-process concurrent agent swarm (`1,000+` agents at `<1 KB` RAM/agent, `SingleFlight` coalescing & USD cap) | `--count N` `--max-usd FLOAT` `--concurrency N` `--objective TEXT` `--workspace DIR` |
-| **`swebench`** | Official SWE-bench instance/prediction validation & deterministic evaluation harness | `validate-predictions` `--predictions PATH` `--workspace DIR` |
-| **`lsp`** | Query `PersistentLSPClient` diagnostics or symbol `goto_definition` (JSON-RPC 2.0 stdio with instant Python AST fallback) | `diagnostics\|definition` `<target>` `--workspace DIR` `--language LANG` |
-| **`daemon`** | Interact with the crash-safe SQLite-WAL `DurableDaemonQueue` for always-on queued tasks & webhooks | `enqueue\|stats\|claim` `--objective TEXT` `--workspace DIR` `--priority N` `--worker-id ID` `--db PATH` |
+| **`swebench`** | Official SWE-bench instance/prediction validation, Docker Linux runtime routing (`python:2.7-slim`/`3.9-slim`/`3.11-slim`), & deterministic evaluation harness | `validate-predictions\|run` `--predictions PATH` `--workspace DIR` |
+| **`lsp`** | Query `PersistentLSPClient` JSON-RPC 2.0 stdio server (`basedpyright-langserver`/`pyright-langserver`) or AST/typecheck fallback (`diagnostics`, `definition`, `references`, `hover`) | `diagnostics\|definition\|references\|hover` `<target>` `--workspace DIR` `--language LANG` `--line N` `--typecheck` `--external` |
+| **`daemon`** | Interact with the crash-safe SQLite-WAL `DurableDaemonQueue` and `DurableDaemonWorker` (lease recovery + Record-and-Replay drain) | `enqueue\|stats\|claim\|drain` `--objective TEXT` `--workspace DIR` `--priority N` `--worker-id ID` `--max-tasks N` `--db PATH` |
+| **`pr`** | Governed GitHub Pull Request lifecycle via `GitHubPRBridge` (`AgentShield` audit gate, PR creation / `--dry-run`, and CI check inspection) | `audit\|create\|check` `--workspace DIR` `--title TEXT` `--body TEXT` `--base BRANCH` `--dry-run` `--pr N` |
+| **`route`** | Complexity scoring (`0.0–1.0`), token budget sizing, and SkillOrchestra per-stage provider recommendation | `--query TEXT` `--stage locate\|reason\|verify` |
+| **`evolve-ace`** | Inspect native zero-dep ACE Context Playbook (`[str-XXXXX] helpful=N harmful=M`) and SpecSearch self-evolution status | `--status` |
+| **`ui`** | Localhost Web Mission Control dashboard streaming AG-UI SSE events with live free-tier ↔ USD cap budget toggle | `--port 8765` |
+| **`chat`** | Interactive streaming TUI console with `[y/n/a/e]` diff approval and slash commands | `--yolo` |
 | **`a2a-serve`** | Serve `GET /.well-known/agent.json` AgentCard and `POST /a2a` (`tasks/send`, `tasks/get`, `tasks/cancel`) or print AgentCard | `--host HOST` `--port PORT` `--auth-token TOK` `--card-only` |
 | **`mission`** | Run the autonomous coding/browser/desktop agent on a workspace | `<objective>` `--workspace DIR` `--verify CMD` `--max-turns 30` `--provider P` `--role ROLE` `--workflow react\|sparc\|hierarchical` `--best-of-n N` `--wheel-timeout SEC` `--agui-port PORT` `--mission-id ID` `--full-json` |
 | **`repomap`** | Generate a PageRank-weighted symbol summary across `.py`, `.js/.ts`, `.rs`, and `.go` files | `[target]` (default `src`) `--max-chars 3000` |
@@ -250,7 +255,7 @@ Every capability is accessible through `.\omni-executor.cmd <command> [args]` (o
 
 ---
 
-## Complete Agent Tool Catalog (All 32 Workspace Tools)
+## Complete Agent Tool Catalog (All 34 Workspace Tools)
 
 Inside `AgentLoop`, every action is validated against workspace boundaries, constitutional rules, and pre/post AST hooks. The system advertises only relevant tool groups to save tokens, and supports single calls (`{"tool": ..., "args": ...}`) or **batched execution of up to 6 actions per turn** (`{"actions": [...]}`).
 
@@ -277,6 +282,8 @@ Inside `AgentLoop`, every action is validated against workspace boundaries, cons
 | Tool | Effect Class | Key Arguments | Behavior |
 | :--- | :--- | :--- | :--- |
 | `repo_map` | `pure_read` | `max_chars` (default `3000`, max `12000`) | Returns top PageRank-ranked files, symbol counts, and compact structural summary |
+| `ast_grep_search` | `pure_read` | `pattern`, optional `lang`, `path`, `max_hits` | Structural AST pattern search via native `ast-grep` (`sg`) with zero-dep Python fallback |
+| `lsp_query` | `pure_read` | `action` (`diagnostics`\|`definition`\|`references`\|`hover`), `file`/`symbol`, optional `line`, `include_typecheck` | Queries real JSON-RPC 2.0 `PersistentLSPClient` (`basedpyright-langserver`) or deterministic typecheck/AST fallback |
 | `knowledge_query` | `pure_read` | `question`, `top_k` (max `15`) | Queries `HierarchicalKnowledgeIndex` over docs, SQL schemas, configs, and source without external vector DBs |
 | `task_tracker` | `idempotent_write` | `command` (`view`\|`plan`), `task_list` | Tracks structured subtasks (`todo`, `in_progress`, `done`) with alias normalization and live AG-UI `STATE_DELTA` updates |
 | `web_fetch` | `pure_read` | `url`, `max_chars` (max `20000`) | Lightweight HTML-to-Markdown reader with DNS/IP SSRF guard (blocks loopback, RFC1918, `169.254.0.0/16`, IPv4-mapped IPv6) and `UNTRUSTED_EXTERNAL` taint tagging |
@@ -617,12 +624,13 @@ The repository bundles a sealed real-LLM evaluation suite (`eval/am_bench/`) whe
 
 | Check | Observed Result | Proof Artifact / Command |
 | :--- | :--- | :--- |
+| Public `SWE-bench_Verified` diverse live batch v7 (`pallets/flask`, `sympy/sympy`, `pytest-dev/pytest`, `psf/requests`, `pylint-dev/pylint`) | **9 / 12 resolved (`75.0%`, `$0.00` free-tier pool)** | `.proof/swebench_verified_live_batch_12.json` ([`test_v130_industrial_tier1.py`](tests/test_v130_industrial_tier1.py)) |
 | Public `SWE-bench_Verified` live pilot v4 (`pallets__flask-5014`, `pytest-dev__pytest-10051`, `sympy__sympy-11618`) | **3 / 3 resolved (`100.0%`, `$0.00` free-tier pool)** | `.proof/swebench_verified_live_pilot_3.json` ([`test_v120_openjarvis_supremacy.py`](tests/test_v120_openjarvis_supremacy.py)) |
 | Code tasks v5.2.0 (`eval/am_bench`, 15-task baseline) | 13 / 15 passed (`86.7%`) | [`am_bench_v52_tier1_20261121_034816.json`](.proof/am_bench_v52_tier1_20261121_034816.json) |
 | Code tasks v5.2.0 (`c04`, `c05` post-fix re-run) | 2 / 2 passed (`100%` after Self-Review boundary probe + newline unescaping) | [`am_bench_v52_fix_c04_c05_20261121_040648.json`](.proof/am_bench_v52_fix_c04_c05_20261121_040648.json) |
 | Code tasks v3.9 (`eval/am_bench`) | 15 / 15 passed | [`am_bench_v39_rapid_full20_20261117_011748.json`](.proof/am_bench_v39_rapid_full20_20261117_011748.json) |
 | Browser tasks (`eval/am_bench`) | 5 / 5 passed (separate re-run after navigation fix) | [`am_bench_v39_browser_all5_20261117_161109.json`](.proof/am_bench_v39_browser_all5_20261117_161109.json) |
-| Unit & integration test suite | 146+ passed (`tests/`) | `pytest tests -q` ([`tests/`](tests/)) |
+| Unit & integration test suite | 150+ passed (`tests/`) | `pytest tests -q` ([`tests/`](tests/)) |
 | Built-in static analysis | Grade `A`, `0` findings | `.\omni-executor.cmd shield .` |
 
 **Honest Interpretation & Methodological Caveats:**
@@ -652,7 +660,7 @@ The repository bundles a sealed real-LLM evaluation suite (`eval/am_bench/`) whe
 omni-executor/
 ├── Dockerfile                              # Network-isolated container distribution
 ├── omni-executor.cmd                       # CLI wrapper entry point (Windows)
-├── pyproject.toml                          # Package metadata + console scripts `omni-executor`/`omni` (v12.0.0)
+├── pyproject.toml                          # Package metadata + console scripts `omni-executor`/`omni` (v13.0.0)
 ├── llms.txt                                # Machine-readable AI discovery index
 ├── LICENSE                                 # MIT License
 ├── CONTRIBUTING.md                         # Development, testing & extension guide

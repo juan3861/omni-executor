@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omni-executor"
-version = "12.0.0"
+version = "13.0.0"
 description = "OmniExecutor Agent: autonomous coding agent, hierarchical team orchestrator, self-healing browser and MCP/A2A/ACP harness"
 requires-python = ">=3.11"
 license = { text = "MIT" }

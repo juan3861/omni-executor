@@ -100,12 +100,12 @@ def clip(text: str, limit: int = MAX_OBS_CHARS) -> str:
 TOOL_FAMILIES: Dict[str, Tuple[str, ...]] = {
     "core_code": (
         "list_dir", "read_file", "search", "write_file", "replace_in_file",
-        "run", "repo_map", "cpg_impact", "knowledge_query", "task_tracker",
+        "run", "repo_map", "cpg_impact", "ast_grep_search", "lsp_query", "knowledge_query", "task_tracker",
         "spill_query", "code_sandbox", "deterministic_preflight", "deterministic_exec", "run_playbook",
         "checkpoint", "restore_checkpoint", "request_human", "finish",
     ),
     "readonly_audit": (
-        "list_dir", "read_file", "search", "run", "repo_map", "cpg_impact", "knowledge_query", "finish",
+        "list_dir", "read_file", "search", "run", "repo_map", "cpg_impact", "ast_grep_search", "lsp_query", "knowledge_query", "finish",
     ),
     "browser_web": (
         "browser_observe", "browser_act", "browser_extract", "web_fetch",
@@ -139,6 +139,8 @@ _TOOL_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     "list_dir": ("dir", "directory", "folder", "files", "tree", "layout", "workspace"),
     "read_file": ("read", "file", "inspect", "view", "code", "source", "bug", "module"),
     "search": ("search", "grep", "find", "pattern", "regex", "symbol", "reference"),
+    "ast_grep_search": ("ast", "structural", "pattern", "ast-grep", "refactor", "signature"),
+    "lsp_query": ("lsp", "typecheck", "types", "diagnostics", "definition", "references", "hover", "pyright", "mypy"),
     "write_file": ("create", "new", "write", "file", "script", "generate"),
     "replace_in_file": ("fix", "edit", "update", "modify", "patch", "replace", "refactor", "rename", "bug"),
     "run": ("run", "test", "pytest", "verify", "exec", "command", "build", "compile", "lint"),

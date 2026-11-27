@@ -206,9 +206,10 @@ def test_v120_efficiency_telemetry_wasm_sandbox_topology_and_cli(capsys: Any) ->
     bad_res = sb.run_restricted_python("import os\nprint(os.listdir('.'))")
     assert bad_res.ok is False and "Forbidden" in bad_res.error
 
-    # 3. Packaging 12.0.0 zero-dep, Topology V2, Doctor v12 flags & CLI smoke
+    # 3. Packaging >=12.0.0 zero-dep, Topology V2, Doctor v12 flags & CLI smoke
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert pyproject["project"]["version"] == "12.0.0" and pyproject["project"]["dependencies"] == []
+    ver_tuple = tuple(int(x) for x in pyproject["project"]["version"].split(".")[:2])
+    assert ver_tuple >= (12, 0) and pyproject["project"]["dependencies"] == []
     topo = InterRepoTopologyGate().audit_package_imports(ROOT / "src" / "am_ua")
     assert topo["ok"] is True, topo.get("violations")
 

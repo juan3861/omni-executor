@@ -563,10 +563,12 @@ class AetherMindUniversalAgent:
             from am_ua.execution.hermetic_sandbox_bridge import HermeticSandboxBridge
             from am_ua.execution.native_backends import NativeBackendRouter
             from am_ua.execution.parametric_playbooks import DEFAULT_PLAYBOOK_ENGINE
+            from am_ua.execution.playbook_compiler import TraceToPlaybookCompiler
 
             hs_status = HermeticSandboxBridge().status()
             native_caps = NativeBackendRouter.probe_capabilities()
             playbooks = DEFAULT_PLAYBOOK_ENGINE.list_playbooks()
+            compiled_pbs = TraceToPlaybookCompiler().load_all()
             rails_by_cat: Dict[str, int] = {}
             for _r in DeterministicTaskOffloader.list_rails():
                 _c = str(_r.get("category") or "unknown")
@@ -605,6 +607,13 @@ class AetherMindUniversalAgent:
                 "spec_search_ace_ready": True,
                 "efficiency_telemetry_ready": True,
                 "wasm_sandbox_ready": True,
+                "lsp_real_ready": True,
+                "ast_grep_ready": bool(native_caps.get("ast_grep")),
+                "typecheck_ready": bool(native_caps.get("basedpyright") or native_caps.get("pyright") or native_caps.get("mypy")),
+                "docker_daemon_alive": bool(hs_status.get("docker_daemon_alive")),
+                "daemon_worker_ready": True,
+                "github_pr_bridge_ready": bool(native_caps.get("gh")),
+                "compiled_playbooks_count": len(compiled_pbs),
             }
             sp["attributes"]["healthy"] = all(
                 [

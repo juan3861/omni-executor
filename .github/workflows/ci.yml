@@ -159,9 +159,9 @@ jobs:
           print("ALL_PORTABLE_CI_CHECKS_PASSED")
           PY
 
-      - name: Pytest v5.0 to v12.0, Triad Memory & AgentDojo Red-Team
+      - name: Pytest v5.0 to v13.0, Triad Memory & AgentDojo Red-Team
         run: |
-          pytest tests/test_p3_triad_memory.py tests/test_v50_seven_layers_300_gears.py tests/test_v51_live_wiring_lsp_daemon.py tests/test_v52_tier1_modular_lsp_daemon_cli.py tests/test_v53_swebench_rail29_daemon_worker_fs.py tests/test_v54_hyperfleet_1000_agents_zero_copy.py tests/test_v55_100_deterministic_rails_matrix.py tests/test_v56_openhands_maximum_extraction.py tests/test_v58_120_rails_token_latency_savers.py tests/test_v60_apex_2077_senior_agi_organs.py tests/test_v61_tla_raft_cpu_cache_frontiers.py tests/test_v62_top100_live_wiring_no_stubs.py tests/test_v70_full_spectrum_220_rails_silicon_ci.py tests/test_v80_native_tool_calling_caching_mcp.py tests/test_v81_worktree_swarm_portable_memory.py tests/test_v82_playbooks_native_som_swebench.py tests/test_agentdojo_redteam_suite.py tests/test_v90_ui_playbooks_ast_modular.py tests/test_v100_portable_docker_release.py tests/test_v110_agi_determinism_supremacy.py tests/test_v120_openjarvis_supremacy.py --basetemp=.ci_pytest_tmp -v
+          pytest tests/test_p3_triad_memory.py tests/test_v50_seven_layers_300_gears.py tests/test_v51_live_wiring_lsp_daemon.py tests/test_v52_tier1_modular_lsp_daemon_cli.py tests/test_v53_swebench_rail29_daemon_worker_fs.py tests/test_v54_hyperfleet_1000_agents_zero_copy.py tests/test_v55_100_deterministic_rails_matrix.py tests/test_v56_openhands_maximum_extraction.py tests/test_v58_120_rails_token_latency_savers.py tests/test_v60_apex_2077_senior_agi_organs.py tests/test_v61_tla_raft_cpu_cache_frontiers.py tests/test_v62_top100_live_wiring_no_stubs.py tests/test_v70_full_spectrum_220_rails_silicon_ci.py tests/test_v80_native_tool_calling_caching_mcp.py tests/test_v81_worktree_swarm_portable_memory.py tests/test_v82_playbooks_native_som_swebench.py tests/test_agentdojo_redteam_suite.py tests/test_v90_ui_playbooks_ast_modular.py tests/test_v100_portable_docker_release.py tests/test_v110_agi_determinism_supremacy.py tests/test_v120_openjarvis_supremacy.py tests/test_v130_industrial_tier1.py --basetemp=.ci_pytest_tmp -v
           rm -rf .ci_pytest_tmp
 
   verify-windows:
@@ -188,7 +188,8 @@ jobs:
           omni-executor det list-playbooks --domain code
           omni-executor route --query "Debug pytest fixture in src/app.py" --stage locate
           omni-executor evolve-ace --status
+          omni-executor pr audit
 
       - name: Windows Win32 DPAPI, Contracts, Playbooks & Portability Tests
         run: |
-          pytest tests/test_p1_contracts_durable.py tests/test_v82_playbooks_native_som_swebench.py tests/test_v90_ui_playbooks_ast_modular.py tests/test_v100_portable_docker_release.py tests/test_v110_agi_determinism_supremacy.py tests/test_v120_openjarvis_supremacy.py --basetemp=.ci_win_tmp -v
+          pytest tests/test_p1_contracts_durable.py tests/test_v82_playbooks_native_som_swebench.py tests/test_v90_ui_playbooks_ast_modular.py tests/test_v100_portable_docker_release.py tests/test_v110_agi_determinism_supremacy.py tests/test_v120_openjarvis_supremacy.py tests/test_v130_industrial_tier1.py --basetemp=.ci_win_tmp -v

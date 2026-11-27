@@ -208,6 +208,60 @@ class SWEBenchHarness:
         return {"runner": "pytest", "cmd": cmd, "files": files, "node_args": node_args, "k_expr": k_joined}
 
     @staticmethod
+    def select_docker_image_for_instance(
+        instance: SWEBenchInstance,
+        *,
+        default_image: str = "python:3.11-slim",
+    ) -> str:
+        """Choose an appropriate isolated Linux Docker runtime image for a SWE-bench instance."""
+        repo = (instance.repo or "").lower()
+        iid = (instance.instance_id or "").lower()
+        tp = instance.test_patch or ""
+        # Legacy Python 2 unicode-method / Py2-era requests bugs (e.g. requests-1724)
+        if "requests" in repo and ("u'post'" in tp.lower() or 'u"post"' in tp.lower() or iid.endswith("-1724")):
+            return "python:2.7-slim"
+        if any(k in repo for k in ("sympy", "pylint", "pytest", "requests", "django", "scikit-learn", "matplotlib")):
+            return "python:3.9-slim"
+        return default_image
+
+    @staticmethod
+    def build_docker_shell_command(
+        workspace: Path | str,
+        shell_cmd: str,
+        *,
+        docker_bin: str = "docker",
+        docker_image: str = "python:3.11-slim",
+        hardened: bool = True,
+        read_only_root: bool = False,
+        network_none: bool = True,
+    ) -> List[str]:
+        """Build a hardened isolated Docker command executing an arbitrary shell check against `/ws`."""
+        cmd = [docker_bin, "run", "--rm"]
+        if network_none:
+            cmd.append("--network=none")
+        if hardened:
+            cmd.extend([
+                "--cap-drop=ALL",
+                "--security-opt=no-new-privileges:true",
+                "--pids-limit=256",
+                "--memory=2g",
+            ])
+        if read_only_root:
+            cmd.extend(["--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid"])
+        ws_mount = str(Path(workspace).resolve())
+        cmd.extend([
+            "-v",
+            f"{ws_mount}:/ws",
+            "-w",
+            "/ws",
+            docker_image,
+            "sh",
+            "-lc",
+            shell_cmd,
+        ])
+        return cmd
+
+    @staticmethod
     def build_docker_command(
         workspace: Path | str,
         pytest_targets: List[str],
@@ -598,3 +652,127 @@ class PublicBenchmarkSuiteAdapter:
             "total_cost_usd": round(total_cost, 6),
             "results": results,
         }
+
+    @classmethod
+    def run_terminal_bench_task(
+        cls,
+        task: Dict[str, Any],
+        workspace: Path | str,
+        *,
+        use_docker: bool = False,
+        docker_image: str = "python:3.11-slim",
+        timeout_s: int = 120,
+    ) -> Dict[str, Any]:
+        """Execute a normalized Terminal-Bench CLI task deterministically in an isolated workspace or Docker."""
+        import shutil
+
+        ws = Path(workspace).resolve()
+        ws.mkdir(parents=True, exist_ok=True)
+        cmd_str = str(task.get("verify_cmd") or task.get("metadata", {}).get("setup_and_verify_cmd") or "").strip()
+        if not cmd_str:
+            return {"ok": False, "error": "Missing verify_cmd for terminal_bench task", "llm_calls": 0, "cost_usd": 0.0}
+        if use_docker:
+            docker_bin = shutil.which("docker")
+            if not docker_bin:
+                return {"ok": False, "error": "docker CLI not found", "llm_calls": 0, "cost_usd": 0.0}
+            full_cmd = SWEBenchHarness.build_docker_shell_command(
+                ws, cmd_str, docker_bin=docker_bin, docker_image=docker_image, hardened=True, network_none=True
+            )
+            proc = subprocess.run(full_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout_s, check=False)
+            backend = "docker_hardened"
+        else:
+            proc = subprocess.run(
+                cmd_str,
+                cwd=str(ws),
+                shell=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout_s,
+                check=False,
+            )
+            backend = "host_shell"
+        out = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+        expected = [str(k) for k in (task.get("expected_keywords") or []) if str(k).strip()]
+        kw_ok = all(k in out for k in expected)
+        return {
+            "ok": proc.returncode == 0 and kw_ok,
+            "exit_code": proc.returncode,
+            "keywords_matched": kw_ok,
+            "backend": backend,
+            "output_tail": out[-1500:],
+            "llm_calls": 0,
+            "cost_usd": 0.0,
+        }
+
+    @classmethod
+    def run_webarena_task(
+        cls,
+        task: Dict[str, Any],
+        *,
+        browser: Any = None,
+        browser_factory: Optional[Callable[[bool], Any]] = None,
+        headless: bool = True,
+    ) -> Dict[str, Any]:
+        """Execute a normalized WebArena task via injected `CDPIndexedBrowser` or stdlib fetch fallback (OMNI_TOPOLOGY_V2 safe)."""
+        import urllib.request
+
+        url = str(task.get("start_url") or "").strip()
+        if not url:
+            return {"ok": False, "error": "Missing start_url for webarena task", "llm_calls": 0, "cost_usd": 0.0}
+        expected = [str(k).lower() for k in (task.get("expected_keywords") or []) if str(k).strip()]
+        actions = list((task.get("metadata") or {}).get("actions") or [])
+        owns_browser = browser is None and browser_factory is not None
+        br = browser
+        try:
+            if br is None and browser_factory is not None:
+                br = browser_factory(headless)
+            if br is None:
+                # Deterministic stdlib fetch fallback for static/local HTML verification without gui cross-layer import
+                with urllib.request.urlopen(url, timeout=15) as resp:
+                    raw = resp.read(256_000).decode("utf-8", errors="replace").lower()
+                kw_ok = all(k in raw for k in expected)
+                return {
+                    "ok": kw_ok,
+                    "url": url,
+                    "actions_executed": 0,
+                    "keywords_matched": kw_ok,
+                    "backend": "urllib_static",
+                    "llm_calls": 0,
+                    "cost_usd": 0.0,
+                }
+            obs = br.observe(url=url)
+            if not obs.get("ok"):
+                return {"ok": False, "error": obs.get("error", "observe failed"), "llm_calls": 0, "cost_usd": 0.0}
+            receipts: List[Dict[str, Any]] = []
+            for act in actions:
+                if not isinstance(act, dict):
+                    continue
+                r_act = br.act(
+                    str(act.get("action") or "click"),
+                    idx=act.get("idx"),
+                    target=act.get("target"),
+                    text=act.get("text"),
+                    url=act.get("url"),
+                )
+                receipts.append(r_act)
+            ext = br.extract(selector=str((task.get("metadata") or {}).get("extract_selector") or "body"))
+            body_low = json.dumps(ext, ensure_ascii=False).lower()
+            kw_ok = all(k in body_low for k in expected)
+            return {
+                "ok": bool(ext.get("ok", True)) and kw_ok,
+                "url": url,
+                "actions_executed": len(receipts),
+                "keywords_matched": kw_ok,
+                "receipts": receipts,
+                "backend": "cdp_browser",
+                "llm_calls": 0,
+                "cost_usd": 0.0,
+            }
+        finally:
+            if owns_browser and br is not None:
+                try:
+                    br.close()
+                except Exception:
+                    pass
