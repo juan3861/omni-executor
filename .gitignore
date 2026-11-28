@@ -3,6 +3,7 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 data/*.jsonl
+data/*.bin
 __pycache__/
 *.pyc
 .pytest_cache/

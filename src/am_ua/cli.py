@@ -494,6 +494,94 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(res_det, indent=2, ensure_ascii=False, default=str))
         return 0 if res_det.get("ok", True) else 1
 
+    if args.cmd == "vault":
+        from am_ua.security.blind_vault import BlindSecretVault
+        v = BlindSecretVault(args.vault_path or None)
+        if args.action == "list":
+            entries = v.list_entries()
+            print(json.dumps({"ok": True, "count": len(entries), "entries": entries}, indent=2))
+            return 0
+        if args.action == "revoke":
+            ok = v.revoke_secret(args.alias)
+            print(json.dumps({"ok": ok, "alias": args.alias}, indent=2))
+            return 0 if ok else 1
+        sec_val = os.environ.get(args.secret_env, "") if args.secret_env else ""
+        doms = [d.strip() for d in args.domains.split(",") if d.strip()]
+        meta = v.store_secret(args.alias, sec_val, allowed_domains=doms, kind=args.kind)
+        print(json.dumps({"ok": True, "entry": meta.to_dict()}, indent=2))
+        return 0
+
+    if args.cmd == "schedule":
+        from am_ua.runtime.scheduler_receipts import RecurringScheduleStore
+        st = RecurringScheduleStore(args.db or None)
+        if args.action == "list":
+            scheds = st.list_schedules()
+            print(json.dumps({"ok": True, "count": len(scheds), "schedules": scheds}, indent=2))
+            return 0
+        if args.action == "pause":
+            ok = st.set_status(args.id, "paused")
+            print(json.dumps({"ok": ok, "status": "paused"}, indent=2))
+            return 0 if ok else 1
+        if args.action == "resume":
+            ok = st.set_status(args.id, "active")
+            print(json.dumps({"ok": ok, "status": "active"}, indent=2))
+            return 0 if ok else 1
+        if args.action == "tick":
+            due = st.pop_due_schedules()
+            print(json.dumps({"ok": True, "due_count": len(due), "due": due}, indent=2))
+            return 0
+        created = st.create_schedule(
+            name=args.name,
+            objective=args.objective or args.name,
+            workspace=args.workspace,
+            expression=args.expr,
+            provider=args.provider,
+        )
+        print(json.dumps({"ok": True, "schedule": created}, indent=2))
+        return 0
+
+    if args.cmd == "receipt":
+        from am_ua.runtime.scheduler_receipts import RecurringScheduleStore
+        st = RecurringScheduleStore(args.db or None)
+        rcpts = st.list_receipts(limit=args.limit)
+        print(json.dumps({"ok": True, "count": len(rcpts), "receipts": rcpts}, indent=2))
+        return 0
+
+    if args.cmd == "workflow":
+        from am_ua.execution.proactive_and_workflows import WorkflowDraftManager
+        mgr = WorkflowDraftManager(args.store or None)
+        if args.action == "list":
+            drafts = mgr.list_drafts()
+            print(json.dumps({"ok": True, "count": len(drafts), "drafts": drafts}, indent=2))
+            return 0
+        if args.action == "draft":
+            res = mgr.create_draft(args.name, objective=args.objective, target_system=args.target_system)
+            print(json.dumps({"ok": True, "draft": res}, indent=2))
+            return 0
+        if args.action == "test":
+            res = mgr.test_draft_with_sample(args.id)
+            print(json.dumps(res, indent=2))
+            return 0 if res.get("ok") else 1
+        if args.action == "publish":
+            res = mgr.publish_draft(args.id, human_approved=bool(args.approve))
+            print(json.dumps(res, indent=2))
+            return 0 if res.get("ok") else 1
+        res = WorkflowDraftManager.troubleshoot_execution({"error": args.objective or "step failed"})
+        print(json.dumps(res, indent=2))
+        return 0
+
+    if args.cmd == "memory":
+        from am_ua.memory.triad_provider import TriadMemoryProvider
+        mem = TriadMemoryProvider()
+        if args.action == "list":
+            res = mem.list_memories(query=args.query)
+        elif args.action == "delete":
+            res = mem.delete_memory(args.id)
+        else:
+            res = {"ok": True, "firewall_stats": mem.firewall.stats()}
+        print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
+        return 0 if res.get("ok") else 1
+
     agent = AetherMindUniversalAgent()
 
     if args.cmd == "doctor":
@@ -747,92 +835,6 @@ def main(argv: list[str] | None = None) -> int:
                 return 0 if res.get("ok") else 1
         finally:
             br.close()
-
-    if args.cmd == "vault":
-        from am_ua.security.blind_vault import BlindSecretVault
-        v = BlindSecretVault(args.vault_path or None)
-        if args.action == "list":
-            entries = v.list_entries()
-            print(json.dumps({"ok": True, "count": len(entries), "entries": entries}, indent=2))
-            return 0
-        if args.action == "revoke":
-            ok = v.revoke_secret(args.alias)
-            print(json.dumps({"ok": ok, "alias": args.alias}, indent=2))
-            return 0 if ok else 1
-        sec_val = os.environ.get(args.secret_env, "") if args.secret_env else ""
-        doms = [d.strip() for d in args.domains.split(",") if d.strip()]
-        meta = v.store_secret(args.alias, sec_val, allowed_domains=doms, kind=args.kind)
-        print(json.dumps({"ok": True, "entry": meta.to_dict()}, indent=2))
-        return 0
-
-    if args.cmd == "schedule":
-        from am_ua.runtime.scheduler_receipts import RecurringScheduleStore
-        st = RecurringScheduleStore(args.db or None)
-        if args.action == "list":
-            scheds = st.list_schedules()
-            print(json.dumps({"ok": True, "count": len(scheds), "schedules": scheds}, indent=2))
-            return 0
-        if args.action == "pause":
-            ok = st.set_status(args.id, "paused")
-            print(json.dumps({"ok": ok, "status": "paused"}, indent=2))
-            return 0 if ok else 1
-        if args.action == "resume":
-            ok = st.set_status(args.id, "active")
-            print(json.dumps({"ok": ok, "status": "active"}, indent=2))
-            return 0 if ok else 1
-        if args.action == "tick":
-            due = st.pop_due_schedules()
-            print(json.dumps({"ok": True, "due_count": len(due), "due": due}, indent=2))
-            return 0
-        created = st.create_schedule(
-            name=args.name,
-            objective=args.objective or args.name,
-            workspace=args.workspace,
-            expression=args.expr,
-            provider=args.provider,
-        )
-        print(json.dumps({"ok": True, "schedule": created}, indent=2))
-        return 0
-
-    if args.cmd == "memory":
-        if args.action == "list":
-            res = agent.memory.list_memories(query=args.query)
-        elif args.action == "delete":
-            res = agent.memory.delete_memory(args.id)
-        else:
-            res = {"ok": True, "firewall_stats": agent.memory.firewall.stats()}
-        print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
-        return 0 if res.get("ok") else 1
-
-    if args.cmd == "receipt":
-        from am_ua.runtime.scheduler_receipts import RecurringScheduleStore
-        st = RecurringScheduleStore(args.db or None)
-        rcpts = st.list_receipts(limit=args.limit)
-        print(json.dumps({"ok": True, "count": len(rcpts), "receipts": rcpts}, indent=2))
-        return 0
-
-    if args.cmd == "workflow":
-        from am_ua.execution.proactive_and_workflows import WorkflowDraftManager
-        mgr = WorkflowDraftManager(args.store or None)
-        if args.action == "list":
-            drafts = mgr.list_drafts()
-            print(json.dumps({"ok": True, "count": len(drafts), "drafts": drafts}, indent=2))
-            return 0
-        if args.action == "draft":
-            res = mgr.create_draft(args.name, objective=args.objective, target_system=args.target_system)
-            print(json.dumps({"ok": True, "draft": res}, indent=2))
-            return 0
-        if args.action == "test":
-            res = mgr.test_draft_with_sample(args.id)
-            print(json.dumps(res, indent=2))
-            return 0 if res.get("ok") else 1
-        if args.action == "publish":
-            res = mgr.publish_draft(args.id, human_approved=bool(args.approve))
-            print(json.dumps(res, indent=2))
-            return 0 if res.get("ok") else 1
-        res = WorkflowDraftManager.troubleshoot_execution({"error": args.objective or "step failed"})
-        print(json.dumps(res, indent=2))
-        return 0
 
     return 1
 
