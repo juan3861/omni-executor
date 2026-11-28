@@ -614,6 +614,11 @@ class AetherMindUniversalAgent:
                 "daemon_worker_ready": True,
                 "github_pr_bridge_ready": bool(native_caps.get("gh")),
                 "compiled_playbooks_count": len(compiled_pbs),
+                "blind_vault_ready": True,
+                "intent_authority_ready": True,
+                "memory_firewall_ready": True,
+                "scheduler_receipts_ready": True,
+                "proactive_workflow_ready": True,
             }
             sp["attributes"]["healthy"] = all(
                 [

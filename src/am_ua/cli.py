@@ -210,6 +210,43 @@ def main(argv: list[str] | None = None) -> int:
     p_ace.add_argument("--playbook", default=str(ROOT / "data" / "ace_playbook.json"), help="Path to ACE playbook JSON")
     p_ace.add_argument("--status", action="store_true", help="Print playbook rule count and top strategies")
 
+    p_vault = sub.add_parser("vault", help="Manage host-only encrypted BlindSecretVault entries (v14.0)")
+    p_vault.add_argument("action", choices=["add", "list", "revoke"], help="Vault action")
+    p_vault.add_argument("--alias", default="", help="Secret alias")
+    p_vault.add_argument("--secret-env", default="", help="Environment variable holding the secret to import securely")
+    p_vault.add_argument("--domains", default="", help="Comma-separated allowed domains (e.g. portal.example.com)")
+    p_vault.add_argument("--kind", default="password", choices=["login", "username", "password", "card", "token", "generic"])
+    p_vault.add_argument("--vault-path", default="", help="Optional custom vault JSON path")
+
+    p_sched = sub.add_parser("schedule", help="Manage natural-language recurring schedules & wake catch-up (v14.0)")
+    p_sched.add_argument("action", choices=["add", "list", "pause", "resume", "tick"], help="Schedule action")
+    p_sched.add_argument("--name", default="Recurring Task")
+    p_sched.add_argument("--objective", default="")
+    p_sched.add_argument("--workspace", default=str(ROOT))
+    p_sched.add_argument("--expr", default="every day at 08:00", help="Natural-language or 5-field cron schedule")
+    p_sched.add_argument("--provider", default="groq")
+    p_sched.add_argument("--id", default="", help="Schedule ID (for pause/resume)")
+    p_sched.add_argument("--db", default="", help="Optional schedules SQLite DB path")
+
+    p_mem = sub.add_parser("memory", help="Inspect or manage Triad Memory & Poison Firewall stats (v14.0)")
+    p_mem.add_argument("action", choices=["list", "delete", "firewall-stats"], help="Memory action")
+    p_mem.add_argument("--query", default="")
+    p_mem.add_argument("--id", default="")
+
+    p_rcpt = sub.add_parser("receipt", help="Inspect signed TaskAuditReceipts and monthly budget ledger (v14.0)")
+    p_rcpt.add_argument("action", choices=["list"], help="Receipt action")
+    p_rcpt.add_argument("--limit", type=int, default=20)
+    p_rcpt.add_argument("--db", default="", help="Optional schedules SQLite DB path")
+
+    p_wf = sub.add_parser("workflow", help="Manage Draft -> Sample-Test -> Publish Gate workflows (v14.0)")
+    p_wf.add_argument("action", choices=["draft", "test", "publish", "list", "troubleshoot"], help="Workflow action")
+    p_wf.add_argument("--name", default="automation_draft")
+    p_wf.add_argument("--objective", default="Automated task")
+    p_wf.add_argument("--id", default="", help="Draft ID")
+    p_wf.add_argument("--approve", action="store_true", help="Explicit human publish approval")
+    p_wf.add_argument("--target-system", default="omni", choices=["omni", "n8n"])
+    p_wf.add_argument("--store", default="", help="Optional workflow drafts JSON path")
+
     args = parser.parse_args(argv)
     if args.cmd == "route":
         from am_ua.cognition.stage_router import ComplexityQueryAnalyzer, StageSkillHandbook
@@ -710,6 +747,92 @@ def main(argv: list[str] | None = None) -> int:
                 return 0 if res.get("ok") else 1
         finally:
             br.close()
+
+    if args.cmd == "vault":
+        from am_ua.security.blind_vault import BlindSecretVault
+        v = BlindSecretVault(args.vault_path or None)
+        if args.action == "list":
+            entries = v.list_entries()
+            print(json.dumps({"ok": True, "count": len(entries), "entries": entries}, indent=2))
+            return 0
+        if args.action == "revoke":
+            ok = v.revoke_secret(args.alias)
+            print(json.dumps({"ok": ok, "alias": args.alias}, indent=2))
+            return 0 if ok else 1
+        sec_val = os.environ.get(args.secret_env, "") if args.secret_env else ""
+        doms = [d.strip() for d in args.domains.split(",") if d.strip()]
+        meta = v.store_secret(args.alias, sec_val, allowed_domains=doms, kind=args.kind)
+        print(json.dumps({"ok": True, "entry": meta.to_dict()}, indent=2))
+        return 0
+
+    if args.cmd == "schedule":
+        from am_ua.runtime.scheduler_receipts import RecurringScheduleStore
+        st = RecurringScheduleStore(args.db or None)
+        if args.action == "list":
+            scheds = st.list_schedules()
+            print(json.dumps({"ok": True, "count": len(scheds), "schedules": scheds}, indent=2))
+            return 0
+        if args.action == "pause":
+            ok = st.set_status(args.id, "paused")
+            print(json.dumps({"ok": ok, "status": "paused"}, indent=2))
+            return 0 if ok else 1
+        if args.action == "resume":
+            ok = st.set_status(args.id, "active")
+            print(json.dumps({"ok": ok, "status": "active"}, indent=2))
+            return 0 if ok else 1
+        if args.action == "tick":
+            due = st.pop_due_schedules()
+            print(json.dumps({"ok": True, "due_count": len(due), "due": due}, indent=2))
+            return 0
+        created = st.create_schedule(
+            name=args.name,
+            objective=args.objective or args.name,
+            workspace=args.workspace,
+            expression=args.expr,
+            provider=args.provider,
+        )
+        print(json.dumps({"ok": True, "schedule": created}, indent=2))
+        return 0
+
+    if args.cmd == "memory":
+        if args.action == "list":
+            res = agent.memory.list_memories(query=args.query)
+        elif args.action == "delete":
+            res = agent.memory.delete_memory(args.id)
+        else:
+            res = {"ok": True, "firewall_stats": agent.memory.firewall.stats()}
+        print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
+        return 0 if res.get("ok") else 1
+
+    if args.cmd == "receipt":
+        from am_ua.runtime.scheduler_receipts import RecurringScheduleStore
+        st = RecurringScheduleStore(args.db or None)
+        rcpts = st.list_receipts(limit=args.limit)
+        print(json.dumps({"ok": True, "count": len(rcpts), "receipts": rcpts}, indent=2))
+        return 0
+
+    if args.cmd == "workflow":
+        from am_ua.execution.proactive_and_workflows import WorkflowDraftManager
+        mgr = WorkflowDraftManager(args.store or None)
+        if args.action == "list":
+            drafts = mgr.list_drafts()
+            print(json.dumps({"ok": True, "count": len(drafts), "drafts": drafts}, indent=2))
+            return 0
+        if args.action == "draft":
+            res = mgr.create_draft(args.name, objective=args.objective, target_system=args.target_system)
+            print(json.dumps({"ok": True, "draft": res}, indent=2))
+            return 0
+        if args.action == "test":
+            res = mgr.test_draft_with_sample(args.id)
+            print(json.dumps(res, indent=2))
+            return 0 if res.get("ok") else 1
+        if args.action == "publish":
+            res = mgr.publish_draft(args.id, human_approved=bool(args.approve))
+            print(json.dumps(res, indent=2))
+            return 0 if res.get("ok") else 1
+        res = WorkflowDraftManager.troubleshoot_execution({"error": args.objective or "step failed"})
+        print(json.dumps(res, indent=2))
+        return 0
 
     return 1
 

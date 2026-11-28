@@ -9,6 +9,12 @@ Unites:
 
 from .core_blocks import CoreMemoryBlock, CoreMemoryBlockStore
 from .hybrid_vector_index import HybridVectorIndex
+from .memory_firewall import (
+    MemoryProvenanceFirewall,
+    MemoryWriteVerdict,
+    ProceduralNoteStore,
+    evaluate_longmemeval_and_whisperbench,
+)
 from .mnemos_connector import MnemosBiTemporalAdapter
 from .msea_client import MSEAFrankensteinClient
 from .msea_native import NativeMSEAEngine
@@ -18,8 +24,12 @@ __all__ = [
     "CoreMemoryBlock",
     "CoreMemoryBlockStore",
     "HybridVectorIndex",
+    "MemoryProvenanceFirewall",
+    "MemoryWriteVerdict",
     "MnemosBiTemporalAdapter",
     "MSEAFrankensteinClient",
     "NativeMSEAEngine",
+    "ProceduralNoteStore",
     "TriadMemoryProvider",
+    "evaluate_longmemeval_and_whisperbench",
 ]

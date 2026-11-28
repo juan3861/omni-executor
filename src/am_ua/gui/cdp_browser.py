@@ -66,7 +66,8 @@ DOM_INDEXER_JS = """
         const ariaLabel = el.getAttribute('aria-label') || '';
         const placeholder = el.getAttribute('placeholder') || '';
         const nameAttr = el.getAttribute('name') || el.id || '';
-        const rawText = (el.innerText || el.value || ariaLabel || placeholder || nameAttr || '').trim().replace(/\\s+/g, ' ');
+        const safeVal = (tag === 'input' && type === 'password') ? '' : (el.value || '');
+        const rawText = (el.innerText || safeVal || ariaLabel || placeholder || nameAttr || '').trim().replace(/\\s+/g, ' ');
 
         results.push({
             idx: idx,
@@ -135,6 +136,7 @@ class CDPIndexedBrowser:
         self.last_elements: Dict[int, IndexedDOMElement] = {}
         self.last_observation: Optional[Dict[str, Any]] = None
         self.receipts: List[Dict[str, Any]] = []
+        self._blind_secret_masks: List[str] = []
         from am_ua.execution.playbook_compiler import SelfHealingSelectorCache
 
         self.selector_cache = SelfHealingSelectorCache(self.artifact_dir / "healed_selectors.json")
@@ -275,8 +277,16 @@ class CDPIndexedBrowser:
         png_path = self.artifact_dir / f"browser_view_{ts}.png"
 
         html_content = page.content()
+        for mask_s in self._blind_secret_masks:
+            if mask_s and mask_s in html_content:
+                html_content = html_content.replace(mask_s, "[REDACTED_SECRET]")
         html_path.write_text(html_content, encoding="utf-8", errors="replace")
         page.screenshot(path=str(png_path), full_page=False)
+
+        for el in indexed:
+            for mask_s in self._blind_secret_masks:
+                if mask_s and mask_s in el.text:
+                    el.text = el.text.replace(mask_s, "[REDACTED_SECRET]")
 
         obs = {
             "ok": True,
@@ -359,9 +369,12 @@ class CDPIndexedBrowser:
         target: Optional[str] = None,
         text: Optional[str] = None,
         url: Optional[str] = None,
+        vault_alias: Optional[str] = None,
+        vault: Any = None,
+        mission_id: str = "",
         allow_payment_override: bool = False,
     ) -> Dict[str, Any]:
-        """Stagehand/browser-use `act` primitive with self-healing selector recovery and Triple Proof."""
+        """Stagehand/browser-use `act` primitive with self-healing selector recovery, blind secret fill, and Triple Proof."""
         t0 = time.perf_counter()
         act_name = action.lower().strip()
 
@@ -412,6 +425,30 @@ class CDPIndexedBrowser:
         resolved_idx = int(idx) if idx is not None else None
         self_healed = False
         locator_str = f'[data-am-idx="{resolved_idx}"]' if resolved_idx is not None else (target or "")
+        secret_alias_used: Optional[str] = None
+        secret_val: Optional[str] = None
+
+        if act_name == "fill_secret":
+            alias = str(vault_alias or text or "").strip()
+            if not alias:
+                return {"ok": False, "error": "fill_secret requires 'vault_alias'"}
+            if vault is None:
+                from am_ua.security.blind_vault import BlindSecretVault
+
+                vault = BlindSecretVault()
+            try:
+                secret_val = vault.resolve_for_domain(alias, url_before, purpose="browser_fill", mission_id=mission_id)
+                secret_alias_used = alias
+                if secret_val and secret_val not in self._blind_secret_masks:
+                    self._blind_secret_masks.append(secret_val)
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "blocked_by_vault_guard": True,
+                    "action": "fill_secret",
+                    "vault_alias": alias,
+                    "error": str(exc),
+                }
 
         try:
             if resolved_idx is None and target:
@@ -427,6 +464,9 @@ class CDPIndexedBrowser:
                 page.locator(locator_str).first.click(timeout=5000)
             elif act_name in ("fill", "type"):
                 page.locator(locator_str).first.fill(str(text or ""), timeout=5000)
+            elif act_name == "fill_secret":
+                page.locator(locator_str).first.fill(str(secret_val or ""), timeout=5000)
+                secret_val = None  # drop reference immediately
             elif act_name == "select":
                 page.locator(locator_str).first.select_option(str(text or ""), timeout=5000)
             elif act_name == "press":
@@ -446,6 +486,9 @@ class CDPIndexedBrowser:
                     page.locator(locator_str).first.click(timeout=5000)
                 elif act_name in ("fill", "type"):
                     page.locator(locator_str).first.fill(str(text or ""), timeout=5000)
+                elif act_name == "fill_secret":
+                    page.locator(locator_str).first.fill(str(secret_val or ""), timeout=5000)
+                    secret_val = None
             elif act_name == "click" and target:
                 try:
                     page.get_by_text(str(target), exact=False).first.click(timeout=3000)
@@ -455,6 +498,8 @@ class CDPIndexedBrowser:
                     return {"ok": False, "action": act_name, "locator": locator_str, "error": str(exc)}
             else:
                 return {"ok": False, "action": act_name, "locator": locator_str, "error": str(exc)}
+        finally:
+            secret_val = None
 
         post_obs = self.observe(wait_ms=100)
         after_visual_sha256 = _file_sha256(post_obs.get("visual_screenshot_path"))
@@ -467,6 +512,8 @@ class CDPIndexedBrowser:
             "action": act_name,
             "locator_used": locator_str,
             "self_healed": self_healed,
+            "secret_filled_alias": secret_alias_used,
+            "secret_redacted": bool(secret_alias_used),
             "url_before": url_before,
             "url_after": post_obs["url"],
             "before_visual_sha256": before_visual_sha256,
@@ -485,6 +532,25 @@ class CDPIndexedBrowser:
         self.receipts.append(receipt)
         return {"ok": True, "receipt": receipt, "observation": post_obs}
 
+    def fill_secret(
+        self,
+        vault_alias: str,
+        *,
+        idx: Optional[int] = None,
+        target: Optional[str] = None,
+        vault: Any = None,
+        mission_id: str = "",
+    ) -> Dict[str, Any]:
+        """Fill a domain-pinned encrypted secret into a form input without exposing plaintext to the LLM."""
+        return self.act(
+            "fill_secret",
+            idx=idx,
+            target=target,
+            vault_alias=vault_alias,
+            vault=vault,
+            mission_id=mission_id,
+        )
+
     def extract(self, selector: str = "body") -> Dict[str, Any]:
         """Stagehand `extract` primitive: extract text and structured attributes from the live DOM."""
         page = self._ensure_page()
@@ -492,6 +558,9 @@ class CDPIndexedBrowser:
             loc = page.locator(selector).first
             text = loc.inner_text(timeout=5000)
             html = loc.inner_html(timeout=5000)
+            for mask_s in self._blind_secret_masks:
+                if mask_s:
+                    text = text.replace(mask_s, "[REDACTED_SECRET]")
             return {
                 "ok": True,
                 "url": page.url,
@@ -516,6 +585,7 @@ class CDPIndexedBrowser:
             except Exception:
                 pass
         self._page = self._context = self._browser = self._pw = None
+        self._blind_secret_masks.clear()
 
     def __enter__(self) -> "CDPIndexedBrowser":
         self._ensure_page()

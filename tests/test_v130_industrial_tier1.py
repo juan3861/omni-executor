@@ -244,7 +244,8 @@ def test_v130_daemon_worker_github_pr_bridge_topology_and_cli(tmp_path: Path, ca
 
     # 3. Packaging 13.0.0 zero-dep, Topology V2, Doctor v13 flags & CLI smoke
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert pyproject["project"]["version"] == "13.0.0" and pyproject["project"]["dependencies"] == []
+    ver_parts = tuple(int(p) for p in pyproject["project"]["version"].split(".")[:2])
+    assert ver_parts >= (13, 0) and pyproject["project"]["dependencies"] == []
     topo = InterRepoTopologyGate().audit_package_imports(ROOT / "src" / "am_ua")
     assert topo["ok"] is True, topo.get("violations")
 

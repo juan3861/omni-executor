@@ -2,10 +2,10 @@
 
 **An autonomous software engineering agent with a hierarchical team orchestrator, a self-healing CDP browser engine, closed-loop Windows desktop automation, and an MCP / A2A / AG-UI interoperability harness — built around durable execution, executable verification, and hard safety gates.**
 
-[![Tests](https://img.shields.io/badge/pytest-150%2B%20passed-2ea44f?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/pytest-158%2B%20passed-2ea44f?style=flat-square)](tests/)
 [![SWE-bench Verified](https://img.shields.io/badge/SWE--bench%20Verified-9%2F12%20%2875%25%20%40%20%240.00%29-2ea44f?style=flat-square)](#benchmarks-and-honest-caveats)
 [![Benchmark](https://img.shields.io/badge/AM--Bench%20code-13%2F15%20%2B%202%2F2%20re--run-2ea44f?style=flat-square)](#benchmarks-and-honest-caveats)
-[![Deterministic Rails](https://img.shields.io/badge/deterministic%20rails-220%20zero--token-0969da?style=flat-square)](#complete-cli-reference-all-24-subcommands)
+[![Deterministic Rails](https://img.shields.io/badge/deterministic%20rails-220%20zero--token-0969da?style=flat-square)](#complete-cli-reference-all-29-subcommands)
 [![Static analysis](https://img.shields.io/badge/built--in%20SAST-grade%20A-0969da?style=flat-square)](SECURITY.md)
 [![Protocols](https://img.shields.io/badge/protocols-MCP%20%7C%20A2A%20v0.3%20%7C%20AG--UI-8250df?style=flat-square)](#protocol-integrations)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square)](pyproject.toml)
@@ -19,7 +19,7 @@
 2. [Capability Overview](#capability-overview)
 3. [Architecture & Mission Lifecycle](#architecture--mission-lifecycle)
 4. [Quick Start & Environment Configuration](#quick-start--environment-configuration)
-5. [Complete CLI Reference (All 24 Subcommands)](#complete-cli-reference-all-24-subcommands)
+5. [Complete CLI Reference (All 29 Subcommands)](#complete-cli-reference-all-29-subcommands)
 6. [Complete Agent Tool Catalog (All 34 Workspace Tools)](#complete-agent-tool-catalog-all-34-workspace-tools)
 7. [Hierarchical Team Orchestration & Engineering Personas](#hierarchical-team-orchestration--engineering-personas)
 8. [Protocol Integrations (MCP, A2A v0.3, Multi-Channel Gateway & AG-UI SSE)](#protocol-integrations)
@@ -61,8 +61,8 @@ OmniExecutor Agent treats every one of those failure modes as a systems-engineer
 | **Desktop Automation (Windows)** | Closed-loop Win32 UI Automation + Set-of-Mark visual tagging + OCR + window/process/port/clipboard control protected by a process-wide exclusive GUI lock | `execution/pc_automation.py` |
 | **Skill Self-Extension** | Runtime Python skill creation gated by an AST sandbox, symlink rejection, and SHA-256 verification, plus one-call wrapping of external CLI binaries into typed JSON skills | `execution/adaptive_skills.py` |
 | **Protocol Federation** | Built-in MCP server (`mcp-serve`) & client hub; A2A v0.3 JSON-RPC 2.0 router; burst-debounced multi-channel ingress gateway; zero-dependency loopback AG-UI SSE streamer; [`llms.txt`](llms.txt) repository index | `execution/mcp_federation.py`, `execution/subagent_bus.py`, `cognition/agui_protocol.py` |
-| **Security & Governance** | SHA-256 seal guard; 15-rule `shield` SAST scanner; runtime information-flow **`RuntimeTaintTracker`** (`TaintLabel.PII | SECRET | USER_PRIVATE | EXTERNAL` + `SINK_POLICY`), **`SSRFValidator`** (blocking loopback/RFC1918/cloud metadata), and **`MountAllowlistGuard`**; pipe-aware 5-class command gate (`READ..DESTRUCTIVE`); symlink escape guard; host-pinned memory namespaces (`TriadMemoryProvider.scoped`); DPAPI envelopes; RAM/disk homeostasis | `governance/`, `security/runtime_taint.py`, `security/agent_shield.py`, `execution/hook_engine.py`, `memory/triad_provider.py` |
-| **Memory, Calibration & SpecSearch/ACE Evolution** | Portable 100% pure-Python Triad Memory (`CoreMemoryBlockStore` + `MnemosBiTemporalAdapter` + `NativeMSEAEngine` Q-learning/R13 conflicts + SQLite FTS5 BM25 & hash-SVD `HybridVectorIndex` RRF) wired live into `AgentLoop` prefetch/reinforcement; **`SpecSearchOrchestrator`** (`Diagnose → RiskTier → Checkpoint → BenchmarkRegressionGate → Rollback`) and native zero-dep **`ACEContextPlaybook`** (`[str-XXXXX] helpful=N harmful=M` scored strategies injected without mutating static KV-cache prefix); domain Brier-score calibration; UCB1 + MAP-Elites evolution | `memory/`, `evolution/spec_search_ace.py`, `evolution/constitutional_evolver.py`, `cognition/reasoning_bank.py`, `contracts/calibration.py` |
+| **Security, Blind Vault & Authority Boundary** | SHA-256 seal guard; 15-rule `shield` SAST scanner; **`BlindSecretVault`** (host-only DPAPI/PBKDF2 encrypted credentials filled via `browser_act(action="fill_secret")` with domain pinning so plaintext never enters LLM prompts); **`IntentAuthorityChecker`** separating trusted user/schedule intent from `TaintLabel.EXTERNAL` web/email inputs with `ApprovalRequestCard` gating; **`RuntimeTaintTracker`**, **`SSRFValidator`**, **`MountAllowlistGuard`**; pipe-aware 5-class command gate; symlink escape guard | `security/blind_vault.py`, `security/intent_authority.py`, `governance/`, `security/runtime_taint.py`, `security/agent_shield.py`, `execution/hook_engine.py` |
+| **Poison-Proof Memory, Schedules & Workflow Drafts** | Portable 100% pure-Python Triad Memory wired into `AgentLoop` protected by **`MemoryProvenanceFirewall`** (blocks external prompt-injection poisoning) + **`ProceduralNoteStore`** + transparent CRUD; **`RecurringScheduleStore`** with `NaturalScheduleParser`, estimated monthly USD cost, wake-after-sleep catch-up, `$5` per-task check-in guard, & signed `TaskAuditReceipt`; **`ProactiveDraftEngine`** & **`WorkflowDraftManager`** (`Draft -> Sample-Test -> Publish Gate`, n8n MCP compatible); `SpecSearchOrchestrator` & `ACEContextPlaybook` | `memory/memory_firewall.py`, `memory/triad_provider.py`, `runtime/scheduler_receipts.py`, `execution/proactive_and_workflows.py`, `evolution/spec_search_ace.py`, `cognition/reasoning_bank.py`, `contracts/calibration.py` |
 
 ---
 
@@ -195,7 +195,7 @@ pytest tests -q                # Full automated suite (105 unit & integration te
 
 ---
 
-## Complete CLI Reference (All 24 Subcommands)
+## Complete CLI Reference (All 29 Subcommands)
 
 Every capability is accessible through `.\omni-executor.cmd <command> [args]` (or `python -m am_ua.cli <command>`).
 
@@ -209,6 +209,11 @@ Every capability is accessible through `.\omni-executor.cmd <command> [args]` (o
 | **`lsp`** | Query `PersistentLSPClient` JSON-RPC 2.0 stdio server (`basedpyright-langserver`/`pyright-langserver`) or AST/typecheck fallback (`diagnostics`, `definition`, `references`, `hover`) | `diagnostics\|definition\|references\|hover` `<target>` `--workspace DIR` `--language LANG` `--line N` `--typecheck` `--external` |
 | **`daemon`** | Interact with the crash-safe SQLite-WAL `DurableDaemonQueue` and `DurableDaemonWorker` (lease recovery + Record-and-Replay drain) | `enqueue\|stats\|claim\|drain` `--objective TEXT` `--workspace DIR` `--priority N` `--worker-id ID` `--max-tasks N` `--db PATH` |
 | **`pr`** | Governed GitHub Pull Request lifecycle via `GitHubPRBridge` (`AgentShield` audit gate, PR creation / `--dry-run`, and CI check inspection) | `audit\|create\|check` `--workspace DIR` `--title TEXT` `--body TEXT` `--base BRANCH` `--dry-run` `--pr N` |
+| **`vault`** | Manage host-only DPAPI/PBKDF2 encrypted `BlindSecretVault` aliases with domain pinning (`add` reads via `--secret-env`, never prints plaintext) | `add\|list\|revoke` `--alias ID` `--secret-env VAR` `--domains CSV` `--kind TYPE` |
+| **`schedule`** | Manage natural-language recurring schedules (`every weekday at 08:00`), estimated monthly USD cost, and wake-after-sleep catch-up | `add\|list\|pause\|resume\|tick` `--name TEXT` `--expr TEXT` `--provider P` `--id ID` |
+| **`memory`** | Inspect, delete, or check `MemoryProvenanceFirewall` stats across Triad Memory and procedural site notes | `list\|delete\|firewall-stats` `--query TEXT` `--id ID` |
+| **`receipt`** | Inspect signed `TaskAuditReceipt` entries (vault aliases used, approved/blocked actions, tokens, TTFT, USD cost) | `list` `--limit N` `--db PATH` |
+| **`workflow`** | Manage `Draft -> Sample-Test -> Publish Gate` automation workflows (omni & n8n compatible) and failure troubleshooting | `draft\|test\|publish\|list\|troubleshoot` `--name TEXT` `--id ID` `--approve` `--target-system omni\|n8n` |
 | **`route`** | Complexity scoring (`0.0–1.0`), token budget sizing, and SkillOrchestra per-stage provider recommendation | `--query TEXT` `--stage locate\|reason\|verify` |
 | **`evolve-ace`** | Inspect native zero-dep ACE Context Playbook (`[str-XXXXX] helpful=N harmful=M`) and SpecSearch self-evolution status | `--status` |
 | **`ui`** | Localhost Web Mission Control dashboard streaming AG-UI SSE events with live free-tier ↔ USD cap budget toggle | `--port 8765` |
@@ -630,7 +635,7 @@ The repository bundles a sealed real-LLM evaluation suite (`eval/am_bench/`) whe
 | Code tasks v5.2.0 (`c04`, `c05` post-fix re-run) | 2 / 2 passed (`100%` after Self-Review boundary probe + newline unescaping) | [`am_bench_v52_fix_c04_c05_20261121_040648.json`](.proof/am_bench_v52_fix_c04_c05_20261121_040648.json) |
 | Code tasks v3.9 (`eval/am_bench`) | 15 / 15 passed | [`am_bench_v39_rapid_full20_20261117_011748.json`](.proof/am_bench_v39_rapid_full20_20261117_011748.json) |
 | Browser tasks (`eval/am_bench`) | 5 / 5 passed (separate re-run after navigation fix) | [`am_bench_v39_browser_all5_20261117_161109.json`](.proof/am_bench_v39_browser_all5_20261117_161109.json) |
-| Unit & integration test suite | 150+ passed (`tests/`) | `pytest tests -q` ([`tests/`](tests/)) |
+| Unit & integration test suite | 158+ passed (`tests/`) | `pytest tests -q` ([`tests/`](tests/)) |
 | Built-in static analysis | Grade `A`, `0` findings | `.\omni-executor.cmd shield .` |
 
 **Honest Interpretation & Methodological Caveats:**
@@ -660,7 +665,7 @@ The repository bundles a sealed real-LLM evaluation suite (`eval/am_bench/`) whe
 omni-executor/
 ├── Dockerfile                              # Network-isolated container distribution
 ├── omni-executor.cmd                       # CLI wrapper entry point (Windows)
-├── pyproject.toml                          # Package metadata + console scripts `omni-executor`/`omni` (v13.0.0)
+├── pyproject.toml                          # Package metadata + console scripts `omni-executor`/`omni` (v14.0.0)
 ├── llms.txt                                # Machine-readable AI discovery index
 ├── LICENSE                                 # MIT License
 ├── CONTRIBUTING.md                         # Development, testing & extension guide

@@ -24,6 +24,7 @@ from agent.memory_provider import MemoryProvider  # type: ignore[import-untyped]
 
 from .core_blocks import CoreMemoryBlockStore
 from .hybrid_vector_index import HybridVectorIndex
+from .memory_firewall import MemoryProvenanceFirewall, ProceduralNoteStore
 from .mnemos_connector import MnemosBiTemporalAdapter
 from .msea_client import MSEAFrankensteinClient
 
@@ -51,10 +52,14 @@ class ScopedMemoryFacade:
         *,
         memory_type: str = "semantic",
         confidence: float = 0.8,
+        origin: str = "TRUSTED_INTERNAL",
         **ignored_metadata: Any,
     ) -> Dict[str, Any]:
         """Write scoped memory bound strictly to the host-pinned namespace (ignores caller namespace args)."""
         _ = ignored_metadata  # caller/LLM cannot override namespace
+        verdict = self._provider.firewall.validate_write(content, origin=origin)
+        if not verdict.allowed:
+            return {"ok": False, "blocked_by_firewall": True, "reason": verdict.reason, "namespace": self._namespace}
         tag = f"[ns:{self._namespace}]"
         scoped_content = f"{tag} {content.strip()}"
         mn_rec = self._provider.mnemos.write_memory(
@@ -126,6 +131,8 @@ class TriadMemoryProvider(MemoryProvider):
         self.mnemos = MnemosBiTemporalAdapter(base_dir / "mnemos_triad.db", embedding_dim=embedding_dim)
         self.msea = MSEAFrankensteinClient(base_dir / "msea_atoms.json")
         self.hybrid_index = HybridVectorIndex(base_dir / "hybrid_vectors.db", dim=min(256, max(64, int(embedding_dim))))
+        self.firewall = MemoryProvenanceFirewall(strict=True)
+        self.procedural_notes = ProceduralNoteStore(base_dir / "procedural_notes.json")
         self._session_id: str = "default"
         self._agent_context: str = "primary"
         self._prefetched_cache: Dict[str, str] = {}
@@ -246,10 +253,37 @@ class TriadMemoryProvider(MemoryProvider):
         confidence: float = 0.85,
         parent_msea_ids: Optional[List[str]] = None,
         trust_level: str = "TRUSTED_INTERNAL",
+        taint_labels: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Write a structured fact to both Mnemos and MSEA and trigger R13 governance."""
-        if trust_level == "UNTRUSTED_DATA":
-            confidence = min(confidence, 0.20)
+        """Write a structured fact to both Mnemos and MSEA after `MemoryProvenanceFirewall` verification."""
+        verdict = self.firewall.validate_write(content, origin=trust_level, taint_labels=taint_labels)
+        if not verdict.allowed:
+            clamped_conf = min(max(0.0, float(confidence)), 0.15)
+            mn_rec = self.mnemos.write_memory(
+                content,
+                memory_type="semantic",
+                importance=0.1,
+                trust_level="UNTRUSTED_DATA",
+                auto_invalidate_conflicts=False,
+            )
+            ms_atom = self.msea.ingest_atom(
+                content,
+                kind="semantic",
+                fact_key=fact_key,
+                confidence=clamped_conf,
+                parent_ids=parent_msea_ids,
+                source=f"quarantine://{trust_level.lower()}",
+            )
+            gov = self.msea.govern(confidence_threshold=0.25)
+            return {
+                "ok": False,
+                "blocked_by_firewall": True,
+                "reason": verdict.reason,
+                "firewall_stats": self.firewall.stats(),
+                "mnemos_record": mn_rec,
+                "msea_atom": ms_atom,
+                "governance": gov,
+            }
         mn_rec = self.mnemos.write_memory(
             content,
             memory_type="semantic",
@@ -266,7 +300,7 @@ class TriadMemoryProvider(MemoryProvider):
             source=f"triad://{trust_level.lower()}",
         )
         gov = self.msea.govern(confidence_threshold=0.25)
-        if trust_level != "UNTRUSTED_DATA" and confidence >= 0.25:
+        if confidence >= 0.25:
             self.hybrid_index.add(
                 content,
                 namespace="global",
@@ -364,3 +398,32 @@ class TriadMemoryProvider(MemoryProvider):
     def scoped(self, namespace: str) -> ScopedMemoryFacade:
         """Return a memory facade bound immutably by the host to `namespace`."""
         return ScopedMemoryFacade(self, namespace)
+
+    # ---- Transparent Memory Inspection & CRUD (Nod parity) ----
+    def list_memories(self, *, query: str = "", limit: int = 50) -> Dict[str, Any]:
+        atoms = self.msea.inspect_atoms(include_inactive=False)
+        q = (query or "").strip().lower()
+        if q:
+            atoms = [a for a in atoms if q in str(a.get("content", "")).lower() or q in str(a.get("factKey", "")).lower()]
+        notes = self.procedural_notes.list_notes(query=query)
+        return {
+            "ok": True,
+            "atoms": atoms[-max(1, int(limit)):],
+            "procedural_notes": notes[:limit],
+            "firewall_stats": self.firewall.stats(),
+        }
+
+    def delete_memory(self, memory_id_or_key: str) -> Dict[str, Any]:
+        """Allow explicit user deletion of either a procedural note or an MSEA atom."""
+        if self.procedural_notes.delete_note(memory_id_or_key):
+            return {"ok": True, "deleted_kind": "procedural_note", "id": memory_id_or_key}
+        try:
+            atoms = self.msea._load()
+            before = len(atoms)
+            kept = [a for a in atoms if str(a.get("id")) != memory_id_or_key and str(a.get("factKey")) != memory_id_or_key]
+            if len(kept) < before:
+                self.msea._save(kept)
+                return {"ok": True, "deleted_kind": "msea_atom", "id": memory_id_or_key}
+        except Exception:
+            pass
+        return {"ok": False, "error": f"Memory entry not found: {memory_id_or_key!r}"}

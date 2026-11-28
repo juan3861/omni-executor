@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, List, Optional
 from am_ua.execution.durable_engine import DurableExecutionEngine
 from am_ua.execution.record_replay import DeterministicRecordReplayEngine
 from am_ua.runtime.daemon_queue import DurableDaemonQueue
+from am_ua.runtime.scheduler_receipts import RecurringScheduleStore
 
 
 class DurableDaemonWorker:
@@ -29,6 +30,7 @@ class DurableDaemonWorker:
         worker_id: str = "omni-worker-1",
         executor_fn: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
         replay_db_path: Optional[Path | str] = None,
+        schedule_store: Optional[RecurringScheduleStore] = None,
         stale_lease_s: float = 300.0,
         max_attempts: int = 3,
         base_backoff_s: float = 5.0,
@@ -47,8 +49,10 @@ class DurableDaemonWorker:
         durable_p = queue.db_path.parent / "daemon_durable.db"
         self.durable_engine = DurableExecutionEngine(durable_p)
         self.replay_engine = DeterministicRecordReplayEngine(replay_p)
+        self.schedule_store = schedule_store or RecurringScheduleStore(queue.db_path.parent / "schedules.db")
         self.processed_count = 0
         self.recovered_count = 0
+        self.wake_catchups_count = 0
 
     def _emit(self, event: str, **payload: Any) -> None:
         if self.on_event:
@@ -77,14 +81,26 @@ class DurableDaemonWorker:
         ok = res.status.startswith("VERIFIED") or res.status == "COMPLETED_UNVERIFIED"
         return {"ok": ok, "status": res.status, "summary": res.final_summary, "result": asdict(res)}
 
-    def tick(self, *, recover_stale: bool = True) -> Dict[str, Any]:
-        """Run one atomic recovery + claim + record-replay execution cycle."""
+    def tick(self, *, recover_stale: bool = True, enqueue_due_schedules: bool = True) -> Dict[str, Any]:
+        """Run one atomic schedule-catchup + lease-recovery + claim + record-replay execution cycle."""
         recovered = 0
         if recover_stale:
             recovered = self.queue.recover_stale_leases(stale_after_s=self.stale_lease_s)
             if recovered:
                 self.recovered_count += recovered
                 self._emit("leases_recovered", count=recovered)
+
+        if enqueue_due_schedules and self.schedule_store is not None:
+            for sched in self.schedule_store.pop_due_schedules():
+                if sched.get("wake_catchup"):
+                    self.wake_catchups_count += 1
+                    self._emit("wake_after_sleep_catchup", schedule_id=sched["schedule_id"], missed_windows=sched["missed_windows"])
+                self.queue.enqueue(
+                    str(sched["objective"]),
+                    str(sched["workspace"]),
+                    priority=70,
+                    source=f"schedule:{sched['schedule_id']}",
+                )
 
         task = self.queue.claim_next(self.worker_id)
         if task is None:
@@ -119,7 +135,19 @@ class DurableDaemonWorker:
                 }
             self.queue.complete(tid, res if isinstance(res, dict) else {"value": res})
             self.processed_count += 1
-            self._emit("task_completed", task_id=tid, attempts=attempts)
+            receipt = None
+            if self.schedule_store is not None:
+                try:
+                    sched_id = str(task.get("source") or "").split(":", 1)[1] if str(task.get("source") or "").startswith("schedule:") else None
+                    receipt = self.schedule_store.record_receipt(
+                        mission_id=tid,
+                        schedule_id=sched_id,
+                        status=str(res.get("status") or "completed") if isinstance(res, dict) else "completed",
+                        cost_usd=float(res.get("cost_usd", 0.0)) if isinstance(res, dict) else 0.0,
+                    )
+                except Exception:
+                    receipt = None
+            self._emit("task_completed", task_id=tid, attempts=attempts, receipt_id=(receipt or {}).get("receipt_id"))
             return {
                 "ok": True,
                 "claimed": True,
@@ -127,6 +155,7 @@ class DurableDaemonWorker:
                 "status": "completed",
                 "recovered": recovered,
                 "result": res,
+                "receipt": receipt,
             }
         except Exception as exc:
             err = f"{type(exc).__name__}: {exc}"

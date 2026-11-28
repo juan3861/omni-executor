@@ -117,6 +117,8 @@ class AgentRunResult:
     structured_output: Optional[Any] = None
     efficiency_summary: Optional[Dict[str, Any]] = None
     stage_routing_history: Optional[List[Dict[str, Any]]] = None
+    approval_cards: Optional[List[Dict[str, Any]]] = None
+    audit_receipt: Optional[Dict[str, Any]] = None
 
 
 from am_ua.execution.loop_policies import (
@@ -232,6 +234,7 @@ class AgentLoop:
         repo_mapper_factory: Optional[Callable[[Path], Any]] = None,
         knowledge_factory: Optional[Callable[[Path], Any]] = None,
         memory_provider: Optional[Any] = None,
+        blind_vault: Optional[Any] = None,
     ) -> None:
         self.engine = engine
         self.seal_guard = seal_guard
@@ -254,6 +257,7 @@ class AgentLoop:
         self.repo_mapper_factory = repo_mapper_factory
         self.knowledge_factory = knowledge_factory
         self.memory_provider = memory_provider
+        self.blind_vault = blind_vault
         self.subagent_bus = subagent_bus or SubAgentSessionBus()
         self.mcp_hub = mcp_hub or MCPFederationHub()
         self._active: Optional[WorkspaceTools] = None
@@ -501,10 +505,12 @@ class AgentLoop:
         enable_memory_prefetch: bool = True,
         ace_context_rules: Optional[str] = None,
         allow_frontier: bool = False,
+        enable_intent_authority: bool = True,
     ) -> AgentRunResult:
         from am_ua.cognition.stage_router import ComplexityQueryAnalyzer, StageSkillHandbook
         from am_ua.execution.wasm_sandbox import WasmSandboxRunner
         from am_ua.perception.efficiency_telemetry import EfficiencyTracker
+        from am_ua.security.intent_authority import AuthorityScope, IntentAuthorityChecker
 
         mission_id = mission_id or f"agent-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
         complexity_res = ComplexityQueryAnalyzer.analyze(objective or "")
@@ -512,6 +518,15 @@ class AgentLoop:
         efficiency_tracker = EfficiencyTracker()
         _wasm_sandbox = WasmSandboxRunner()
         _ = _wasm_sandbox
+        authority_checker = (
+            IntentAuthorityChecker(AuthorityScope.from_user_objective(objective or "", mission_id=mission_id))
+            if enable_intent_authority
+            else None
+        )
+        approval_cards_log: List[Dict[str, Any]] = []
+        blocked_authority_actions: List[Dict[str, Any]] = []
+        approved_authority_actions: List[Dict[str, Any]] = []
+        vault_aliases_used: List[str] = []
         stage_routing_history: List[Dict[str, Any]] = []
         low_obj = (objective or "").lower()
         s2_kw = ("architect", "refactor", "migrate", "security", "formal", "z3", "proof", "distributed", "kernel", "optimize", "compiler")
@@ -541,6 +556,7 @@ class AgentLoop:
             browser_factory=self.browser_factory,
             repo_mapper_factory=self.repo_mapper_factory,
             knowledge_factory=self.knowledge_factory,
+            blind_vault=self.blind_vault,
         )
         self._active = ws
         if sync_todo_anchor:
@@ -1367,8 +1383,40 @@ class AgentLoop:
                             self.assert_tool_allowed_in_mode(tool, execution_mode)
                             breaker.record_and_check(tool, args)
                             call_args = self._prepare_args(tool, args, ws)
+                            auth_blocked_payload: Optional[Dict[str, Any]] = None
+                            if authority_checker is not None:
+                                auth_dec = authority_checker.check_action(tool, call_args)
+                                if not auth_dec.allowed:
+                                    card_dict = auth_dec.approval_card.to_dict() if auth_dec.approval_card else {}
+                                    if card_dict:
+                                        approval_cards_log.append(card_dict)
+                                    bus.emit(AGUIEventType.CUSTOM, name="APPROVAL_REQUIRED", card=card_dict, category=auth_dec.category)
+                                    approved_now = False
+                                    if effective_wheel_timeout > 0.0:
+                                        w_out = self.wheel_gate.pause_for_human(
+                                            mission_id,
+                                            reason=auth_dec.reason,
+                                            instructions=f"Approve '{tool}' ({auth_dec.category}): {card_dict.get('target_summary', '')}",
+                                            turn=turn,
+                                            timeout_s=effective_wheel_timeout,
+                                        )
+                                        if w_out.action == "RESUMED":
+                                            sig = authority_checker._action_signature(tool, call_args)
+                                            authority_checker.scope.grant_signature(sig)
+                                            approved_authority_actions.append({"turn": turn, "tool": tool, "category": auth_dec.category})
+                                            approved_now = True
+                                    if not approved_now:
+                                        blocked_authority_actions.append({"turn": turn, "tool": tool, "category": auth_dec.category, "reason": auth_dec.reason})
+                                        auth_blocked_payload = {
+                                            "error": auth_dec.reason,
+                                            "blocked_by_intent_authority": True,
+                                            "requires_human_approval": True,
+                                            "approval_card": card_dict,
+                                        }
                             pre_dec = self.hook_engine.run_pre(tool, call_args, ws.ws)
-                            if not pre_dec.allowed:
+                            if auth_blocked_payload is not None:
+                                ok, obs = False, auth_blocked_payload
+                            elif not pre_dec.allowed:
                                 ok, obs = False, {"error": pre_dec.reason, "blocked_by_hook": True}
                             else:
                                 cache_key: Optional[str] = None
@@ -1388,6 +1436,14 @@ class AgentLoop:
                                     elif self.TOOL_EFFECTS.get(tool) != EffectClass.PURE_READ:
                                         read_cache._entries.clear()
                                 if isinstance(obs, dict):
+                                    if authority_checker is not None:
+                                        taints = obs.get("taint_labels") or []
+                                        if tool in ("web_fetch", "browser_observe", "browser_extract") or "external" in taints:
+                                            authority_checker.mark_external_exposure(tool, str(obs)[:1000])
+                                    if tool == "browser_act" and isinstance(obs.get("receipt"), dict):
+                                        v_alias = obs["receipt"].get("secret_filled_alias")
+                                        if v_alias and str(v_alias) not in vault_aliases_used:
+                                            vault_aliases_used.append(str(v_alias))
                                     if ok and tool in ("write_file", "replace_in_file") and call_args:
                                         edited_p = Path(str(call_args.get("path", "")))
                                         if edited_p.suffix.lower() == ".py" and edited_p.is_file():
@@ -1599,19 +1655,42 @@ class AgentLoop:
                         pass
         for t_rec in tool_log:
             event_stream_buf.append({"kind": "observation", "turn": t_rec.get("turn"), "tool": t_rec.get("tool"), "ok": t_rec.get("ok")})
+        eff_sum = efficiency_tracker.summary(quality_score=1.0 if status.startswith("VERIFIED") else 0.0)
+        elapsed_total = round(time.perf_counter() - t_start, 2)
+        p_tok = self.llm.total_prompt_tokens - pt0
+        c_tok = self.llm.total_completion_tokens - ct0
+        receipt_body = {
+            "mission_id": mission_id,
+            "status": status,
+            "providers": list(providers_used),
+            "tokens_prompt": p_tok,
+            "tokens_completion": c_tok,
+            "ttft_mean_ms": eff_sum.get("ttft_mean_ms", 0.0),
+            "cost_usd": eff_sum.get("total_cost_usd", 0.0),
+            "vault_aliases_used": vault_aliases_used,
+            "approved_actions": approved_authority_actions,
+            "blocked_actions": blocked_authority_actions,
+            "changed_files": changed,
+            "elapsed_s": elapsed_total,
+        }
+        receipt_body["digest_sha256"] = hashlib.sha256(
+            json.dumps(receipt_body, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
         result = AgentRunResult(
             mission_id=mission_id, objective=objective, workspace=str(ws.ws), status=status, epistemic_tag=tag.value,
             final_summary=summary, actor_confidence=confidence, actor_providers=providers_used, turns=turn,
             tool_calls=tool_log, verification=verification, judge=judge, changed_files=changed, diff=clip(diff, 20000),
-            tokens={"prompt": self.llm.total_prompt_tokens - pt0, "completion": self.llm.total_completion_tokens - ct0},
-            llm_calls=self.llm.calls - calls0, elapsed_s=round(time.perf_counter() - t_start, 2), stop_reason=stop_reason,
+            tokens={"prompt": p_tok, "completion": c_tok},
+            llm_calls=self.llm.calls - calls0, elapsed_s=elapsed_total, stop_reason=stop_reason,
             brier_score=None if brier is None else round(brier, 5),
             role=active_role, workflow=workflow,
             event_ledger_path=ledger_path_str,
             pre_critic=pre_critic,
             structured_output=structured_output,
-            efficiency_summary=efficiency_tracker.summary(quality_score=1.0 if status.startswith("VERIFIED") else 0.0),
+            efficiency_summary=eff_sum,
             stage_routing_history=stage_routing_history,
+            approval_cards=approval_cards_log or None,
+            audit_receipt=receipt_body,
         )
         if self.trace_dir is not None:
             self.trace_dir.mkdir(parents=True, exist_ok=True)

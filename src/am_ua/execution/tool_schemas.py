@@ -250,13 +250,14 @@ TOOL_JSON_SCHEMAS: Dict[str, Dict[str, Any]] = {
     ),
     "browser_act": _fn(
         "browser_act",
-        "Perform a browser action (click, fill, type, press, scroll, navigate) on an indexed element.",
+        "Perform a browser action (click, fill, fill_secret, type, press, scroll, navigate) on an indexed element.",
         {
-            "action": {"type": "string", "description": "Action kind (click, fill, type, press, scroll, navigate)."},
+            "action": {"type": "string", "description": "Action kind (click, fill, fill_secret, type, press, scroll, navigate)."},
             "idx": {"type": "integer", "description": "Indexed DOM element number."},
             "target": {"type": "string", "description": "Fallback element label/selector."},
             "text": {"type": "string", "description": "Text to enter or key to press."},
             "url": {"type": "string", "description": "URL for navigate action."},
+            "vault_alias": {"type": "string", "description": "BlindSecretVault alias for blind password/card fill without exposing plaintext."},
             "headless": {"type": "boolean"},
         },
         required=("action",),

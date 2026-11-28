@@ -57,6 +57,7 @@ class WorkspaceTools:
         repo_mapper_factory: Optional[Callable[[Path], Any]] = None,
         knowledge_factory: Optional[Callable[[Path], Any]] = None,
         enforce_taint: bool = False,
+        blind_vault: Optional[Any] = None,
     ) -> None:
         from am_ua.security.runtime_taint import RuntimeTaintTracker
 
@@ -71,6 +72,7 @@ class WorkspaceTools:
         self._browser_factory = browser_factory
         self._repo_mapper_factory = repo_mapper_factory
         self._knowledge_factory = knowledge_factory
+        self._blind_vault = blind_vault
         self._browser: Any = None
         self._checkpoints: Dict[str, Dict[str, bytes]] = {}
         self._task_list: List[Dict[str, str]] = []
@@ -648,13 +650,16 @@ class WorkspaceTools:
         if not action:
             return {"ok": False, "error": "missing required 'action'"}
         idx = args.get("idx")
-        return self._get_browser(headless=bool(args.get("headless", True))).act(
-            action,
-            idx=int(idx) if idx is not None else None,
-            target=str(args["target"]) if args.get("target") else None,
-            text=str(args["text"]) if args.get("text") is not None else None,
-            url=str(args["url"]) if args.get("url") else None,
-        )
+        kwargs: Dict[str, Any] = {
+            "idx": int(idx) if idx is not None else None,
+            "target": str(args["target"]) if args.get("target") else None,
+            "text": str(args["text"]) if args.get("text") is not None else None,
+            "url": str(args["url"]) if args.get("url") else None,
+        }
+        if args.get("vault_alias") is not None or action.lower() == "fill_secret":
+            kwargs["vault_alias"] = str(args.get("vault_alias") or args.get("text") or "")
+            kwargs["vault"] = self._blind_vault
+        return self._get_browser(headless=bool(args.get("headless", True))).act(action, **kwargs)
 
     def browser_extract(self, args: Dict[str, Any]) -> Dict[str, Any]:
         selector = str(args.get("selector", "body"))

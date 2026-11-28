@@ -1,10 +1,17 @@
 """Windows DPAPI Secret Protection, Anti-Replay Envelopes & Runtime Taint/SSRF/Mount Guard."""
 
+from .blind_vault import BlindSecretVault, BlindVaultMetadata
 from .dpapi_envelope import (
     AuthenticatedEnvelopeManager,
     EnvelopeTamperedError,
     ReplayAttackError,
     WindowsDPAPIProvider,
+)
+from .intent_authority import (
+    ApprovalRequestCard,
+    AuthorityScope,
+    IntentAuthorityChecker,
+    PermissionCheckDecision,
 )
 from .runtime_taint import (
     AllowedRoot,
@@ -18,8 +25,14 @@ from .runtime_taint import (
 )
 
 __all__ = [
+    "ApprovalRequestCard",
+    "AuthorityScope",
     "AuthenticatedEnvelopeManager",
+    "BlindSecretVault",
+    "BlindVaultMetadata",
     "EnvelopeTamperedError",
+    "IntentAuthorityChecker",
+    "PermissionCheckDecision",
     "ReplayAttackError",
     "WindowsDPAPIProvider",
     "AllowedRoot",

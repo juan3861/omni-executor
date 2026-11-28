@@ -32,6 +32,11 @@ from .durable_engine import (
 )
 from .github_pr_bridge import GitHubPRBridge
 from .human_wheel import HumanWheelGate, WheelOutcome
+from .proactive_and_workflows import (
+    ProactiveDraftEngine,
+    ProactiveOffer,
+    WorkflowDraftManager,
+)
 from .mcp_federation import (
     AetherMindMCPServer,
     MCPFederationHub,
@@ -85,7 +90,10 @@ __all__ = [
     "ToolContract",
     "GitHubPRBridge",
     "HumanWheelGate",
+    "ProactiveDraftEngine",
+    "ProactiveOffer",
     "WheelOutcome",
+    "WorkflowDraftManager",
     "AetherMindMCPServer",
     "MCPFederationHub",
     "HybridModalityRouter",

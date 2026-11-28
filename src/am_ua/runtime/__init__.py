@@ -12,6 +12,11 @@ from .enhancers import (
 )
 from .daemon_queue import DurableDaemonQueue
 from .daemon_worker import DurableDaemonWorker
+from .scheduler_receipts import (
+    NaturalScheduleParser,
+    ParsedSchedule,
+    RecurringScheduleStore,
+)
 from .omh_wiring import (
     ExperimentalArbitrator,
     OMHMaestroBridge,
@@ -22,6 +27,9 @@ __all__ = [
     "ContextBracket",
     "DurableDaemonQueue",
     "DurableDaemonWorker",
+    "NaturalScheduleParser",
+    "ParsedSchedule",
+    "RecurringScheduleStore",
     "PersistentPwshSession",
     "RepeatToolLoopBreaker",
     "RepeatToolLoopError",
